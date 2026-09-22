@@ -18,6 +18,7 @@ build/
 # 환경변수 / 시크릿 — 절대 커밋 금지
 .env
 .env.*
+!.env.example
 src/main/resources/application-local.yml
 src/main/resources/application-secret.yml
 *.pem

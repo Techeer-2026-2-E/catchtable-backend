@@ -1,0 +1,36 @@
+server:
+  port: ${SERVER_PORT:8080}
+
+spring:
+  application:
+    name: catchtable
+
+  datasource:
+    # 기본값은 로컬 docker-compose 기준. 배포 환경에서는 환경변수로 덮어쓴다.
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5433}/${DB_NAME:catchtable}
+    username: ${DB_USERNAME:catchtable}
+    password: ${DB_PASSWORD:catchtable}
+    driver-class-name: org.postgresql.Driver
+
+  jpa:
+    hibernate:
+      ddl-auto: validate   # 스키마 변경은 Flyway로만. update/create 로 바꾸지 말 것
+    properties:
+      hibernate:
+        format_sql: true
+    open-in-view: false
+
+  flyway:
+    enabled: true
+    baseline-on-migrate: true
+    locations: classpath:db/migration
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health, info
+
+logging:
+  level:
+    com.catchtable: DEBUG
