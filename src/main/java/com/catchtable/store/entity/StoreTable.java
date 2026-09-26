@@ -39,5 +39,16 @@ public class StoreTable extends BaseTimeEntity {
         this.capacity = capacity;
         this.status = TableStatus.ACTIVE;
     }
+    public void changeTableNumber(int tableNumber) {
+        this.tableNumber = tableNumber;
+    }
+
+    public void changeCapacity(int capacity) {
+        this.capacity = capacity;
+    }
+
+    public void changeStatus(TableStatus status) {
+        this.status = status;
+    }
 
 }
