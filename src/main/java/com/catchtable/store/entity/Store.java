@@ -1,6 +1,8 @@
 package com.catchtable.store.entity;
 
 import com.catchtable.global.common.BaseTimeEntity;
+import com.catchtable.global.exception.BusinessException;
+import com.catchtable.global.exception.ErrorCode;
 import com.catchtable.member.entity.Member;
 import jakarta.persistence.*;
 import lombok.AccessLevel;
@@ -8,11 +10,18 @@ import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+
 @Entity
 @Table(name="store")
 @Getter
 @NoArgsConstructor(access= AccessLevel.PROTECTED)
 public class Store extends BaseTimeEntity {
+
+    private static final int DEFAULT_BOOKING_OPEN_DAYS = 30;
+    private static final int DEFAULT_BOOKING_DEADLINE_MINUTES = 0;
+
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -44,6 +53,12 @@ public class Store extends BaseTimeEntity {
     @Column(name = "arrival_grace_minutes", nullable = false)
     private int arrivalGraceMinutes;
 
+    @Column(name = "booking_open_days", nullable = false)
+    private int bookingOpenDays;
+
+    @Column(name = "booking_deadline_minutes", nullable = false)
+    private int bookingDeadlineMinutes;
+
 
     @Builder
     private Store(Member owner, String name, StoreCategory category, String address,
@@ -57,5 +72,35 @@ public class Store extends BaseTimeEntity {
         this.reservationDurationMinutes = reservationDurationMinutes;
         this.reservationSlotMinutes = reservationSlotMinutes;
         this.arrivalGraceMinutes = arrivalGraceMinutes;
+        this.bookingOpenDays=DEFAULT_BOOKING_OPEN_DAYS;
+        this.bookingDeadlineMinutes=DEFAULT_BOOKING_DEADLINE_MINUTES;
+    }
+
+    public void changeReservationPolicy(
+            int durationMinutes, int slotMinutes, int arrivalGraceMinutes,
+            int bookingOpenDays, int bookingDeadlineMinutes
+    )
+    {
+        if(arrivalGraceMinutes>=durationMinutes)
+        {
+            throw new BusinessException(ErrorCode.INVALID_RESERVATION_POLICY);
+        }
+        this.reservationDurationMinutes = durationMinutes;
+        this.reservationSlotMinutes = slotMinutes;
+        this.arrivalGraceMinutes = arrivalGraceMinutes;
+        this.bookingOpenDays = bookingOpenDays;
+        this.bookingDeadlineMinutes = bookingDeadlineMinutes;
+    }
+
+    public void validateBookable(LocalDateTime startAt, LocalDateTime now)
+    {
+        LocalDate lastBookableDate=now.toLocalDate().plusDays(bookingOpenDays);
+        if (startAt.toLocalDate().isAfter(lastBookableDate)) {
+            throw new BusinessException(ErrorCode.BOOKING_NOT_OPEN_YET);
+        }
+        //
+        if (startAt.minusMinutes(bookingDeadlineMinutes).isBefore(now)) {
+            throw new BusinessException(ErrorCode.BOOKING_DEADLINE_PASSED);
+        }
     }
 }
