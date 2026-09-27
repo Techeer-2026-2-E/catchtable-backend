@@ -22,7 +22,10 @@ public enum ErrorCode {
     INVALID_TABLE_CAPACITY(HttpStatus.BAD_REQUEST, "최소 인원은 1명 이상이고 최대 인원 이하여야 합니다."),
     INVALID_RESERVATION_POLICY(HttpStatus.BAD_REQUEST, "도착 유예시간은 이용시간보다 짧아야 합니다."),
     BOOKING_NOT_OPEN_YET(HttpStatus.BAD_REQUEST, "아직 예약을 받지 않는 날짜입니다."),
-    BOOKING_DEADLINE_PASSED(HttpStatus.BAD_REQUEST, "예약 마감 시간이 지났습니다.");
+    BOOKING_DEADLINE_PASSED(HttpStatus.BAD_REQUEST, "예약 마감 시간이 지났습니다."),
+    UNAUTHORIZED(HttpStatus.UNAUTHORIZED, "회원 식별 정보가 없습니다."),
+    MEMBER_NOT_FOUND(HttpStatus.NOT_FOUND, "회원을 찾을 수 없습니다."),
+    FORBIDDEN_MEMBER_TYPE(HttpStatus.FORBIDDEN, "이 기능을 사용할 수 없는 회원 유형입니다.");
 
 
 
