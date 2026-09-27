@@ -5,6 +5,7 @@ import jakarta.validation.constraints.Positive;
 
 public record StoreTableUpdateRequest(
         @Positive Integer tableNumber,
+        @Positive Integer minCapacity,
         @Positive Integer capacity,
         TableStatus status
 ) {

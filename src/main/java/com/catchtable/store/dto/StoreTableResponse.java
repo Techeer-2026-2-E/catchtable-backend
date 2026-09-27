@@ -7,6 +7,7 @@ public record StoreTableResponse
         (
                 Long id,
                 int tableNumber,
+                int minCapacity,
                 int capacity,
                 TableStatus status
         ){
@@ -15,6 +16,7 @@ public record StoreTableResponse
         return new StoreTableResponse(
                 table.getId(),
                 table.getTableNumber(),
+                table.getMinCapacity(),
                 table.getCapacity(),
                 table.getStatus()
         );

@@ -47,6 +47,7 @@ public class StoreTableService {
         StoreTable storeTable = StoreTable.builder()
                 .store(store)
                 .tableNumber(request.tableNumber())
+                .minCapacity(request.minCapacity())
                 .capacity(request.capacity())
                 .build();
         return StoreTableResponse.from(storeTableRepository.save(storeTable));
@@ -66,8 +67,13 @@ public class StoreTableService {
 
             // TODO: 인원 축소·INACTIVE 전환 시 미래 예약이 있으면 409 TABLE_HAS_RESERVATIONS (예약 엔티티 생긴 뒤)
 
-            if (request.capacity() != null) {
-                storeTable.changeCapacity(request.capacity());
+            if(request.minCapacity()!=null || request.capacity()!=null)
+            {
+                int minCapacity = (request.minCapacity()!=null)? request.minCapacity() :
+                        storeTable.getMinCapacity();
+                int capacity=(request.capacity() != null) ? request.capacity() : storeTable.getCapacity();
+                storeTable.changeCapacityRange(minCapacity, capacity);
+
             }
             if (request.status() != null) {
                 storeTable.changeStatus(request.status());
