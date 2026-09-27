@@ -6,6 +6,7 @@ import jakarta.validation.constraints.Positive;
 public record StoreTableCreateRequest
         (
                 @NotNull @Positive Integer tableNumber,
+                @Positive Integer minCapacity,
                 @NotNull @Positive Integer capacity
                 ){
 
