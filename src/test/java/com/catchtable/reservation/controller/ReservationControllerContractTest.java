@@ -106,7 +106,13 @@ class ReservationControllerContractTest {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.message").value("요청 값이 올바르지 않습니다."));
 
-
+        mockMvc.perform(post("/api/owner/reservations/10/cancel")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"reason": " "}
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("요청 값이 올바르지 않습니다."));
     }
 
     @Test
