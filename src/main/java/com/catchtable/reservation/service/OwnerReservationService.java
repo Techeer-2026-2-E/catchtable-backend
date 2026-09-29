@@ -68,6 +68,21 @@ public class OwnerReservationService {
         return OwnerReservationResponse.from(reservation);
     }
 
+    @Transactional
+    public OwnerReservationResponse markNoShow(Long ownerId, Long reservationId, String reason) {
+        Reservation reservation = findForUpdate(ownerId, reservationId);
+        try {
+            reservation.markNoShow(
+                    OffsetDateTime.now(),
+                    ownerId,
+                    reservation.getStore().getArrivalGraceMinutes(),
+                    reason
+            );
+        } catch (IllegalStateException exception) {
+            throw conflict(exception);
+        }
+        return OwnerReservationResponse.from(reservation);
+    }
 
     private Reservation findForUpdate(Long ownerId, Long reservationId) {
         return reservationRepository.findByIdAndOwnerIdForUpdate(reservationId, ownerId)

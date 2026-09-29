@@ -58,4 +58,12 @@ public class OwnerReservationController {
         return ownerReservationService.confirmVisit(MOCK_OWNER_ID, reservationId);
     }
 
+    /** 예약 시작 시각+도착 유예시간 이후의 미입장 확정 예약만 노쇼 처리한다. 사유는 필수다. */
+    @PostMapping("/reservations/{reservationId}/no-show")
+    public OwnerReservationResponse markNoShow(
+            @PathVariable Long reservationId,
+            @Valid @RequestBody OwnerReservationActionRequest request
+    ) {
+        return ownerReservationService.markNoShow(MOCK_OWNER_ID, reservationId, request.reason());
+    }
 }
