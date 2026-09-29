@@ -45,6 +45,24 @@ public interface ReservationRepository extends JpaRepository<Reservation, Long> 
             @Param("ownerId") Long ownerId
     );
 
+    List<Reservation> findAllByStore_IdAndStatusAndReservationEndAtAfter(
+            Long storeId, ReservationStatus status, OffsetDateTime now);
+
+    @Query("""
+            select count(r) > 0 from Reservation r
+            where r.tableId = :tableId
+              and r.status = com.catchtable.reservation.entity.ReservationStatus.CONFIRMED
+              and r.reservationEndAt > :now
+              and (:inactive = true or r.partySize < :minCapacity or r.partySize > :capacity)
+            """)
+    boolean existsConflictingTableReservation(
+            @Param("tableId") Long tableId,
+            @Param("now") OffsetDateTime now,
+            @Param("inactive") boolean inactive,
+            @Param("minCapacity") int minCapacity,
+            @Param("capacity") int capacity
+    );
+
     // 방문 확인을 마치고 이용시간이 끝난 확정 예약만 일괄 완료 처리한다.
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("""

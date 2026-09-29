@@ -41,9 +41,10 @@ public class ReservationService {
         if (member == null) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "회원을 찾을 수 없습니다.");
         }
-        Store store = storeRepository.findById(request.storeId())
+        Store store = storeRepository.findByIdForShare(request.storeId())
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "매장을 찾을 수 없습니다."));
 
+        // 설정 변경을 기다렸다면, 잠금을 얻은 시각으로 예약 마감 여부를 다시 판단한다.
         OffsetDateTime now = OffsetDateTime.now();
         availabilityService.validateBookable(store, request.reservationStartAt(), now);
         OffsetDateTime reservationEndAt = request.reservationStartAt()
