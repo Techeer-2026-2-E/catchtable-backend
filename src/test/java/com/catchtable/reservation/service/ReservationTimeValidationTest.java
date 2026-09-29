@@ -1,6 +1,8 @@
 package com.catchtable.reservation.service;
 
 import com.catchtable.store.entity.Store;
+import com.catchtable.store.repository.StoreRepository;
+import com.catchtable.store.repository.StoreTableRepository;
 import com.catchtable.store.service.BusinessHourService;
 import org.junit.jupiter.api.Test;
 import org.springframework.web.server.ResponseStatusException;
@@ -16,7 +18,8 @@ import static org.mockito.Mockito.when;
 class ReservationTimeValidationTest {
 
     private final BusinessHourService businessHourService = mock(BusinessHourService.class);
-    private final ReservationAvailabilityService service = new ReservationAvailabilityService(businessHourService);
+    private final ReservationAvailabilityService service = new ReservationAvailabilityService(
+            mock(StoreRepository.class), mock(StoreTableRepository.class), businessHourService);
     private final Store store = Store.builder()
             .reservationDurationMinutes(120)
             .reservationSlotMinutes(30)
