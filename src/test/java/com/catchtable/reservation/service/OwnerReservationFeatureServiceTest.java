@@ -12,13 +12,16 @@ import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 @SpringBootTest
 @Transactional
@@ -64,6 +67,12 @@ class OwnerReservationFeatureServiceTest {
                 .isEmpty();
         assertThat(ownerReservationService.getReservations(owner.getId() + 999, store.getId(), date, null))
                 .isEmpty();
+
+        assertThat(ownerReservationService.getReservation(owner.getId(), earlier.getId()).customerPhone())
+                .isEqualTo("010-0000-0000");
+        assertThatThrownBy(() -> ownerReservationService.getReservation(owner.getId() + 999, earlier.getId()))
+                .isInstanceOfSatisfying(ResponseStatusException.class,
+                        exception -> assertThat(exception.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND));
     }
 
     private static Member member(String email, UserType type) {
