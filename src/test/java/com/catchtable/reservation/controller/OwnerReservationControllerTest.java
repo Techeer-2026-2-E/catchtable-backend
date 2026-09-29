@@ -82,4 +82,18 @@ class OwnerReservationControllerTest {
                         .contentType(MediaType.APPLICATION_JSON).content("{\"reason\":\" \"}"))
                 .andExpect(status().isBadRequest());
     }
+
+    @Test
+    void visitConfirmationReturnsCheckInActor() throws Exception {
+        OffsetDateTime startAt = OffsetDateTime.parse("2030-01-02T10:00:00+09:00");
+        given(ownerReservationService.confirmVisit(2L, 10L)).willReturn(new OwnerReservationResponse(
+                10L, 3L, 1L, "테스트 고객", "010-0000-0001", 7L,
+                startAt, startAt.plusHours(2), 2, ReservationStatus.CONFIRMED,
+                startAt, 2L, null, null, null, null, null, null));
+
+        mockMvc.perform(post("/api/owner/reservations/10/enter"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("CONFIRMED"))
+                .andExpect(jsonPath("$.checkedInByMemberId").value(2));
+    }
 }

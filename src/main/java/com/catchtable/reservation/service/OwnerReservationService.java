@@ -57,6 +57,16 @@ public class OwnerReservationService {
         return OwnerReservationResponse.from(reservation);
     }
 
+    @Transactional
+    public OwnerReservationResponse confirmVisit(Long ownerId, Long reservationId) {
+        Reservation reservation = findForUpdate(ownerId, reservationId);
+        try {
+            reservation.confirmVisit(OffsetDateTime.now(), ownerId);
+        } catch (IllegalStateException exception) {
+            throw conflict(exception);
+        }
+        return OwnerReservationResponse.from(reservation);
+    }
 
 
     private Reservation findForUpdate(Long ownerId, Long reservationId) {

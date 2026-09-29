@@ -52,5 +52,10 @@ public class OwnerReservationController {
         return ownerReservationService.cancelReservation(MOCK_OWNER_ID, reservationId, request.reason());
     }
 
+    /** 방문 확인 직후에는 확정 상태이고, 이용 종료 시각이 지나면 주기 작업에서 완료 처리한다. */
+    @PostMapping("/reservations/{reservationId}/enter")
+    public OwnerReservationResponse confirmVisit(@PathVariable Long reservationId) {
+        return ownerReservationService.confirmVisit(MOCK_OWNER_ID, reservationId);
+    }
 
 }
