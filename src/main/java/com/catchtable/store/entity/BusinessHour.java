@@ -85,6 +85,8 @@ public class BusinessHour extends BaseTimeEntity {
 
     // 영업일(businessDate) 기준 실제 영업 구간
     public List<OpeningWindow> windowsOn(LocalDate businessDate) {
+        // JPA로 읽은 기존 데이터는 생성자 검증을 거치지 않는다.
+        validate(openTime, closingTime, breakStartTime, breakEndTime);
         LocalDateTime base = businessDate.atStartOfDay();
         int open = toMinutes(openTime);
         int close = offsetFromOpen(closingTime, open, true);
@@ -104,6 +106,11 @@ public class BusinessHour extends BaseTimeEntity {
     // 여는 시각보다 이른 시각은 다음 날로 본다 (예: 18:00 오픈이면 02:00 → 26:00)
     private static void validate(LocalTime openTime, LocalTime closingTime,
                                  LocalTime breakStartTime, LocalTime breakEndTime) {
+        for (LocalTime time : new LocalTime[]{openTime, closingTime, breakStartTime, breakEndTime}) {
+            if (time != null && (time.getSecond() != 0 || time.getNano() != 0)) {
+                throw new BusinessException(ErrorCode.INVALID_BUSINESS_HOUR_PRECISION);
+            }
+        }
         if (openTime.equals(closingTime)) {
             throw new BusinessException(ErrorCode.INVALID_BUSINESS_HOUR);
         }
