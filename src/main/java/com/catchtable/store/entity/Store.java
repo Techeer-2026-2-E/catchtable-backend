@@ -94,13 +94,32 @@ public class Store extends BaseTimeEntity {
 
     public void validateBookable(LocalDateTime startAt, LocalDateTime now)
     {
-        LocalDate lastBookableDate=now.toLocalDate().plusDays(bookingOpenDays);
-        if (startAt.toLocalDate().isAfter(lastBookableDate)) {
+        if(!isBookingOpen(startAt, now))
+        {
             throw new BusinessException(ErrorCode.BOOKING_NOT_OPEN_YET);
         }
-        //
-        if (startAt.minusMinutes(bookingDeadlineMinutes).isBefore(now)) {
+        if(!isBeforeDeadline(startAt, now))
+        {
             throw new BusinessException(ErrorCode.BOOKING_DEADLINE_PASSED);
         }
     }
+    public boolean isBookingOpen(LocalDateTime startAt, LocalDateTime now)
+    {
+        LocalDate lastBookableDate=now.toLocalDate().plusDays(bookingOpenDays);
+        return !startAt.toLocalDate().isAfter(lastBookableDate);
+    }
+
+    // 시작 bookingDeadlineMinutes분 전까지만 예약을 받는다
+    public boolean isBeforeDeadline(LocalDateTime startAt, LocalDateTime now)
+    {
+        return !startAt.minusMinutes(bookingDeadlineMinutes).isBefore(now);
+    }
+
+    // 검색용: 예약 창이 열려 있고 마감 전인지
+    public boolean isWithinBookingWindow(LocalDateTime startAt, LocalDateTime now)
+    {
+        return isBookingOpen(startAt, now) && isBeforeDeadline(startAt, now);
+    }
+
+
 }
