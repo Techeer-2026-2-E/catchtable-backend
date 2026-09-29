@@ -120,8 +120,14 @@ class ReservationControllerContractTest {
 
     @Test
     void serviceErrorsKeepTheirHttpStatus() throws Exception {
+        given(ownerReservationService.getReservation(2L, 99L))
+                .willThrow(new ResponseStatusException(HttpStatus.NOT_FOUND, "예약을 찾을 수 없습니다."));
         given(reservationService.createReservation(eq(1L), any()))
                 .willThrow(new ResponseStatusException(HttpStatus.CONFLICT, "예약 가능한 테이블이 없습니다."));
+
+        mockMvc.perform(get("/api/owner/reservations/99"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.message").value("예약을 찾을 수 없습니다."));
 
         mockMvc.perform(post("/api/user/reservations")
                         .contentType(MediaType.APPLICATION_JSON)

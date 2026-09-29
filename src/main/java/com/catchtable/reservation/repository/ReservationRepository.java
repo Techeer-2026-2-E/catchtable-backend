@@ -9,6 +9,7 @@ import org.springframework.data.repository.query.Param;
 
 import java.time.OffsetDateTime;
 import java.util.List;
+import java.util.Optional;
 
 public interface ReservationRepository extends JpaRepository<Reservation, Long> {
 
@@ -29,4 +30,7 @@ public interface ReservationRepository extends JpaRepository<Reservation, Long> 
             @Param("end") OffsetDateTime end,
             @Param("status") ReservationStatus status
     );
+
+    @EntityGraph(attributePaths = {"member", "store"})
+    Optional<Reservation> findByIdAndStore_Owner_Id(Long id, Long ownerId);
 }
