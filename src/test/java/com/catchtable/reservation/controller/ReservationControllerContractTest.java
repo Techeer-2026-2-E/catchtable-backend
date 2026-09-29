@@ -9,15 +9,20 @@ import com.catchtable.reservation.entity.ReservationStatus;
 import com.catchtable.reservation.service.OwnerReservationService;
 import com.catchtable.reservation.service.ReservationService;
 import com.catchtable.reservation.service.ReservationAvailabilityService;
+import org.hibernate.exception.ConstraintViolationException;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.sql.SQLException;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.util.List;
@@ -194,6 +199,21 @@ class ReservationControllerContractTest {
                 .andExpect(jsonPath("$.message").value("예약 가능한 테이블이 없습니다."));
     }
 
+    @ParameterizedTest
+    @CsvSource({
+            "uk_store_table_store_number,409,DUPLICATE_TABLE_NUMBER",
+            "ck_reservation_party_size,500,INTERNAL_SERVER_ERROR",
+            ",500,INTERNAL_SERVER_ERROR"
+    })
+    void onlyTheKnownDuplicateConstraintBecomes409(String constraint, int statusCode, String errorCode)
+            throws Exception {
+        given(ownerReservationService.getReservation(2L, 10L)).willThrow(new DataIntegrityViolationException(
+                "database details", new ConstraintViolationException("database details", new SQLException(), constraint)));
+
+        mockMvc.perform(get("/api/owner/reservations/10"))
+                .andExpect(status().is(statusCode))
+                .andExpect(jsonPath("$.code").value(errorCode));
+    }
 
     private static ReservationResponse customerResponse(
             ReservationStatus status,
