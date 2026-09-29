@@ -1,6 +1,7 @@
 package com.catchtable.reservation.service;
 
 import com.catchtable.store.entity.Store;
+import com.catchtable.store.service.BusinessHourService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -18,6 +19,7 @@ public class ReservationAvailabilityService {
 
     private static final ZoneId STORE_ZONE = ZoneId.of("Asia/Seoul");
 
+    private final BusinessHourService businessHourService;
 
 
 
@@ -33,6 +35,10 @@ public class ReservationAvailabilityService {
             throw badRequest("예약 시작 시각이 매장의 예약 시간 간격과 맞지 않습니다.");
         }
         store.validateBookable(localStart, localNow);
+        if (!businessHourService.isOpenBetween(store.getId(), localStart,
+                localStart.plusMinutes(store.getReservationDurationMinutes()))) {
+            throw badRequest("예약 시간이 매장 영업시간을 벗어났습니다.");
+        }
     }
 
 
