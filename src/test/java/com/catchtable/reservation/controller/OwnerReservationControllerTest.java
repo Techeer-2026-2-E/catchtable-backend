@@ -96,4 +96,24 @@ class OwnerReservationControllerTest {
                 .andExpect(jsonPath("$.status").value("CONFIRMED"))
                 .andExpect(jsonPath("$.checkedInByMemberId").value(2));
     }
+
+    @Test
+    void noShowRequiresReasonAndReturnsRecordedActor() throws Exception {
+        OffsetDateTime startAt = OffsetDateTime.parse("2030-01-02T10:00:00+09:00");
+        given(ownerReservationService.markNoShow(2L, 10L, "미방문"))
+                .willReturn(new OwnerReservationResponse(
+                        10L, 3L, 1L, "테스트 고객", "010-0000-0001", 7L,
+                        startAt, startAt.plusHours(2), 2, ReservationStatus.NO_SHOW,
+                        null, null, null, null, null, startAt.plusMinutes(10), 2L, "미방문"));
+
+        mockMvc.perform(post("/api/owner/reservations/10/no-show")
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"reason\":\"미방문\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("NO_SHOW"))
+                .andExpect(jsonPath("$.noShowByMemberId").value(2));
+
+        mockMvc.perform(post("/api/owner/reservations/10/no-show")
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"reason\":\" \"}"))
+                .andExpect(status().isBadRequest());
+    }
 }

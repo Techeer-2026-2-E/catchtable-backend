@@ -174,4 +174,26 @@ public class Reservation extends BaseTimeEntity {
         this.checkedInByMemberId = ownerId;
     }
 
+    public void markNoShow(OffsetDateTime noShowAt, Long ownerId, int arrivalGraceMinutes, String reason) {
+        Objects.requireNonNull(noShowAt);
+        Objects.requireNonNull(ownerId);
+
+        if (status == ReservationStatus.NO_SHOW) {
+            return;
+        }
+        if (arrivalGraceMinutes < 0) {
+            throw new IllegalArgumentException("도착 유예시간은 0분 이상이어야 합니다.");
+        }
+        // 입장 확인이 없고 도착 유예시간이 끝난 시각 이후인 확정 예약만 노쇼 처리할 수 있다.
+        if (status != ReservationStatus.CONFIRMED
+                || checkedInAt != null
+                || noShowAt.isBefore(reservationStartAt.plusMinutes(arrivalGraceMinutes))) {
+            throw new IllegalStateException("노쇼 처리할 수 없는 예약입니다.");
+        }
+
+        this.status = ReservationStatus.NO_SHOW;
+        this.noShowAt = noShowAt;
+        this.noShowByMemberId = ownerId;
+        this.noShowReason = reason;
+    }
 }
