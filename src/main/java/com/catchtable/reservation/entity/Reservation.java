@@ -19,6 +19,7 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 
 import java.time.OffsetDateTime;
+import java.util.Objects;
 
 @Entity
 @Table(name = "reservation")
@@ -88,7 +89,57 @@ public class Reservation extends BaseTimeEntity {
     @Column(name = "no_show_by_member_id")
     private Long noShowByMemberId;
 
+    private Reservation(
+            Member member,
+            Store store,
+            Long tableId,
+            OffsetDateTime reservationStartAt,
+            OffsetDateTime reservationEndAt,
+            int partySize,
+            OffsetDateTime confirmedAt
+    ) {
+        this.member = Objects.requireNonNull(member);
+        this.store = Objects.requireNonNull(store);
+        this.tableId = Objects.requireNonNull(tableId);
+        this.reservationStartAt = Objects.requireNonNull(reservationStartAt);
+        this.reservationEndAt = Objects.requireNonNull(reservationEndAt);
+        this.confirmedAt = Objects.requireNonNull(confirmedAt);
 
+        if (tableId <= 0) {
+            throw new IllegalArgumentException("테이블 식별자는 1 이상이어야 합니다.");
+        }
+        if (partySize <= 0) {
+            throw new IllegalArgumentException("예약 인원은 1명 이상이어야 합니다.");
+        }
+        if (!reservationStartAt.isBefore(reservationEndAt)) {
+            throw new IllegalArgumentException("예약 시작 시각은 종료 시각보다 빨라야 합니다.");
+        }
+
+        this.partySize = partySize;
+        // 승인 대기 단계가 없어 생성 즉시 확정한다.
+        this.status = ReservationStatus.CONFIRMED;
+        this.requestedAt = confirmedAt;
+    }
+
+    public static Reservation confirmed(
+            Member member,
+            Store store,
+            Long tableId,
+            OffsetDateTime reservationStartAt,
+            OffsetDateTime reservationEndAt,
+            int partySize,
+            OffsetDateTime confirmedAt
+    ) {
+        return new Reservation(
+                member,
+                store,
+                tableId,
+                reservationStartAt,
+                reservationEndAt,
+                partySize,
+                confirmedAt
+        );
+    }
 
 
 
