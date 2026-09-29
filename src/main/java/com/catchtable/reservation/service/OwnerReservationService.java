@@ -46,12 +46,29 @@ public class OwnerReservationService {
         );
     }
 
+    @Transactional
+    public OwnerReservationResponse cancelReservation(Long ownerId, Long reservationId, String reason) {
+        Reservation reservation = findForUpdate(ownerId, reservationId);
+        try {
+            reservation.cancelByOwner(OffsetDateTime.now(), reason);
+        } catch (IllegalStateException exception) {
+            throw conflict(exception);
+        }
+        return OwnerReservationResponse.from(reservation);
+    }
 
 
 
+    private Reservation findForUpdate(Long ownerId, Long reservationId) {
+        return reservationRepository.findByIdAndOwnerIdForUpdate(reservationId, ownerId)
+                .orElseThrow(OwnerReservationService::notFound);
+    }
 
     private static ResponseStatusException notFound() {
         return new ResponseStatusException(HttpStatus.NOT_FOUND, "예약을 찾을 수 없습니다.");
     }
 
+    private static ResponseStatusException conflict(IllegalStateException exception) {
+        return new ResponseStatusException(HttpStatus.CONFLICT, exception.getMessage(), exception);
+    }
 }
