@@ -98,7 +98,7 @@ public class Store extends BaseTimeEntity {
         if (startAt.toLocalDate().isAfter(lastBookableDate)) {
             throw new BusinessException(ErrorCode.BOOKING_NOT_OPEN_YET);
         }
-        //
+        // 정확히 예약 마감 시각에 요청한 경우는 허용하고, 그 이후부터 거절한다.
         if (startAt.minusMinutes(bookingDeadlineMinutes).isBefore(now)) {
             throw new BusinessException(ErrorCode.BOOKING_DEADLINE_PASSED);
         }
