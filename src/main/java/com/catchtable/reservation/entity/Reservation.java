@@ -21,6 +21,7 @@ import lombok.NoArgsConstructor;
 import java.time.OffsetDateTime;
 import java.util.Objects;
 
+/** 상태 변경 요청이 재전송되면 최초 처리 시각과 사유를 유지한다. */
 @Entity
 @Table(name = "reservation")
 @Getter
@@ -141,6 +142,22 @@ public class Reservation extends BaseTimeEntity {
         );
     }
 
+    // 점주는 현재 구현상 시작 시각이 지나도 입장 확인 전이면 취소할 수 있다.
+    public void cancelByOwner(OffsetDateTime cancelledAt, String reason) {
+        Objects.requireNonNull(cancelledAt);
+
+        if (status == ReservationStatus.CANCELLED) {
+            return;
+        }
+        if (status != ReservationStatus.CONFIRMED || checkedInAt != null) {
+            throw new IllegalStateException("취소할 수 없는 예약입니다.");
+        }
+
+        this.status = ReservationStatus.CANCELLED;
+        this.cancelledAt = cancelledAt;
+        this.cancellationActor = CancellationActor.OWNER;
+        this.cancellationReason = reason;
+    }
 
 
 }
