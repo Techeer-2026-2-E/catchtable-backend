@@ -1,16 +1,13 @@
 package com.catchtable.reservation.controller;
 
+import com.catchtable.global.auth.LoginMember;
 import com.catchtable.reservation.dto.CreateReservationRequest;
 import com.catchtable.reservation.dto.ReservationResponse;
 import com.catchtable.reservation.service.ReservationService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.ResponseStatus;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 
 @RestController
 @RequestMapping("/api/user/reservations")
@@ -27,6 +24,15 @@ public class ReservationController {
     @ResponseStatus(HttpStatus.CREATED)
     public ReservationResponse createReservation(@Valid @RequestBody CreateReservationRequest request) {
         return reservationService.createReservation(MOCK_CUSTOMER_ID, request);
+    }
+    /** 예약 시작 전의 본인 확정 예약만 취소할 수 있다. 이미 취소된 예약은 그대로 반환한다. */
+    @PostMapping("/{reservationId}/cancel")
+    public ReservationResponse cancelReservation(
+            @LoginMember Long memberId,
+            @PathVariable Long reservationId
+    )
+    {
+        return reservationService.cancelReservation(memberId, reservationId);
     }
 
 }
