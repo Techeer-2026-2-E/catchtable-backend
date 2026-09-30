@@ -6,6 +6,7 @@ import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -43,4 +44,17 @@ public interface ReservationRepository extends JpaRepository<Reservation, Long> 
             @Param("id") Long id,
             @Param("ownerId") Long ownerId
     );
+
+    // 방문 확인을 마치고 이용시간이 끝난 확정 예약만 일괄 완료 처리한다.
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("""
+            update Reservation r
+            set r.status = com.catchtable.reservation.entity.ReservationStatus.COMPLETED,
+                r.completedAt = :completedAt,
+                r.updatedAt = :completedAt
+            where r.status = com.catchtable.reservation.entity.ReservationStatus.CONFIRMED
+              and r.checkedInAt is not null
+              and r.reservationEndAt <= :completedAt
+            """)
+    int completeVisitedReservations(@Param("completedAt") OffsetDateTime completedAt);
 }

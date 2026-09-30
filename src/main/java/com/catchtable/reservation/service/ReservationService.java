@@ -13,6 +13,7 @@ import jakarta.persistence.EntityManager;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
@@ -74,5 +75,10 @@ public class ReservationService {
     }
 
 
+    @Scheduled(fixedDelayString = "${reservation.completion-interval-ms:60000}")
+    @Transactional
+    public int completeFinishedReservations() {
+        return reservationRepository.completeVisitedReservations(OffsetDateTime.now());
+    }
 
 }
