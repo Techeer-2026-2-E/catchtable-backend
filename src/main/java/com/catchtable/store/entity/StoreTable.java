@@ -28,10 +28,10 @@ public class StoreTable extends BaseTimeEntity {
     @Column(name = "table_number", nullable = false)
     private int tableNumber;
 
-    //최소
+    // 예약 가능 인원 범위: minCapacity <= 예약 인원 <= capacity.
     @Column(name = "min_capacity", nullable = false)
     private int minCapacity;
-    //최대 인원
+
     @Column(nullable = false)
     private int capacity;
 

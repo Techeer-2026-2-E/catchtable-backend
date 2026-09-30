@@ -5,6 +5,8 @@ import com.catchtable.global.exception.ErrorCode;
 import com.catchtable.store.dto.OpeningWindow;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 
 import java.time.DayOfWeek;
 import java.time.LocalDate;
@@ -77,6 +79,21 @@ class BusinessHourTest {
         assertThatThrownBy(() -> hour("10:00", "10:00", null, null))
                 .isInstanceOf(BusinessException.class)
                 .extracting("errorCode").isEqualTo(ErrorCode.INVALID_BUSINESS_HOUR);
+    }
+
+    @ParameterizedTest
+    @CsvSource({
+            "10:00:01,22:00,15:00,16:00",
+            "10:00,10:00:01,,",
+            "10:00,22:00,15:00:01,16:00",
+            "10:00,22:00,15:00,16:00:01",
+            "10:00:00.000000001,22:00,,"
+    })
+    void rejectsSecondsAndNanosecondsInEveryBusinessTime(String open, String close,
+                                                        String breakStart, String breakEnd) {
+        assertThatThrownBy(() -> hour(open, close, breakStart, breakEnd))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode").isEqualTo(ErrorCode.INVALID_BUSINESS_HOUR_PRECISION);
     }
 
     @Test

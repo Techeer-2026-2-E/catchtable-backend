@@ -109,7 +109,8 @@ public class Store extends BaseTimeEntity {
         return !startAt.toLocalDate().isAfter(lastBookableDate);
     }
 
-    // 시작 bookingDeadlineMinutes분 전까지만 예약을 받는다
+    // 시작 bookingDeadlineMinutes분 전까지만 예약을 받는다.
+    // 정확히 예약 마감 시각에 요청한 경우는 허용하고, 그 이후부터 거절한다.
     public boolean isBeforeDeadline(LocalDateTime startAt, LocalDateTime now)
     {
         return !startAt.minusMinutes(bookingDeadlineMinutes).isBefore(now);
