@@ -216,6 +216,62 @@ class ReservationSettingsTest {
         assertThat(reserve()).isNotNull();
     }
 
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    @Timeout(20)
+    void concurrentTableNumbersReturnConflictEvenWhenThePrecheckPasses(boolean update) throws Exception {
+        Long otherTableId = jdbc.queryForObject("""
+                INSERT INTO store_table (store_id, table_number, capacity, status)
+                VALUES (?, 2, 6, 'ACTIVE') RETURNING id
+                """, Long.class, storeId);
+        var mvc = MockMvcBuilders.standaloneSetup(new OwnerStoreTableController(tables))
+                .setControllerAdvice(new GlobalExceptionHandler()).build();
+        var executor = Executors.newFixedThreadPool(2);
+        try (var lock = jdbc.getDataSource().getConnection()) {
+            lock.setAutoCommit(false);
+            // SELECT 사전 검사는 통과시키고 INSERT/UPDATE만 멈춰 두 요청이 반드시 경합하게 한다.
+            try (var statement = lock.createStatement()) {
+                statement.execute("LOCK TABLE store_table IN SHARE MODE");
+            }
+            List<Future<MvcResult>> requests = new ArrayList<>();
+            for (Long id : List.of(tableId, otherTableId)) {
+                requests.add(executor.submit(() -> mvc.perform((update
+                                ? patch("/api/owner/stores/{storeId}/tables/{id}", storeId, id)
+                                : post("/api/owner/stores/{storeId}/tables", storeId))
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(update ? "{\"tableNumber\":9}" : "{\"tableNumber\":9,\"capacity\":6}"))
+                        .andReturn()));
+            }
+            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+            int blocked = 0;
+            while (blocked < 2 && System.nanoTime() < deadline) {
+                blocked = jdbc.queryForObject("""
+                        SELECT count(*) FROM pg_stat_activity
+                        WHERE datname = current_database() AND wait_event_type = 'Lock'
+                          AND (lower(query) LIKE '%insert%into%store_table%'
+                               OR lower(query) LIKE '%update%store_table%')
+                        """, Integer.class);
+                if (blocked < 2) Thread.sleep(10);
+            }
+            lock.commit();
+            assertThat(blocked).as("both writes passed their duplicate-number check").isEqualTo(2);
+            List<Integer> statuses = new ArrayList<>();
+            for (var request : requests) {
+                MvcResult result = request.get(5, TimeUnit.SECONDS);
+                statuses.add(result.getResponse().getStatus());
+                if (result.getResponse().getStatus() == 409) {
+                    jsonPath("$.code").value("DUPLICATE_TABLE_NUMBER").match(result);
+                }
+            }
+            assertThat(statuses).containsExactlyInAnyOrder(update ? 200 : 201, 409);
+            assertThat(jdbc.queryForObject("""
+                    SELECT count(*) FROM store_table WHERE store_id = ? AND table_number = 9
+                    """, Integer.class, storeId)).isEqualTo(1);
+        } finally {
+            executor.shutdown();
+            if (!executor.awaitTermination(5, TimeUnit.SECONDS)) executor.shutdownNow();
+        }
+    }
 
     @ParameterizedTest
     @CsvSource({"hours,true", "hours,false", "table,true", "table,false"})
