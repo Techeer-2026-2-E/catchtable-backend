@@ -1,6 +1,7 @@
 package com.catchtable.store.repository;
 
 import com.catchtable.store.entity.StoreTable;
+import com.catchtable.store.entity.TableStatus;
 import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
@@ -8,6 +9,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.time.OffsetDateTime;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -20,6 +22,8 @@ public interface StoreTableRepository extends JpaRepository<StoreTable, Long> {
     // 예약 배정과 테이블 변경은 같은 행을 잠가 인원·상태 검사 중 새 예약이 생기지 않게 한다.
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     Optional<StoreTable> findByIdAndStoreId(Long id, Long storeId);
+
+    List<StoreTable> findAllByStoreIdInAndStatus(Collection<Long> storeIds, TableStatus status);
 
     // 잠긴 테이블은 건너뛰고 가장 작은 적합 테이블을 선점한다. [시작, 종료)라 끝점이 맞닿는 예약은 허용된다.
     @Query(value = """
