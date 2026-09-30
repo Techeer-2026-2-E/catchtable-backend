@@ -1,9 +1,14 @@
 package com.catchtable.reservation.service;
 
+import com.catchtable.global.exception.BusinessException;
+import com.catchtable.global.exception.ErrorCode;
 import com.catchtable.member.entity.Member;
+import com.catchtable.notification.dto.CustomerNotificationEvent;
+import com.catchtable.notification.dto.NotificationType;
 import com.catchtable.reservation.dto.CreateReservationRequest;
 import com.catchtable.reservation.dto.ReservationResponse;
 import com.catchtable.reservation.entity.Reservation;
+import com.catchtable.reservation.entity.ReservationStatus;
 import com.catchtable.reservation.repository.ReservationRepository;
 import com.catchtable.store.entity.Store;
 import com.catchtable.store.entity.StoreTable;
@@ -11,6 +16,7 @@ import com.catchtable.store.repository.StoreRepository;
 import com.catchtable.store.repository.StoreTableRepository;
 import jakarta.persistence.EntityManager;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -30,6 +36,7 @@ public class ReservationService {
     private final StoreTableRepository storeTableRepository;
     private final ReservationAvailabilityService availabilityService;
     private final EntityManager entityManager;
+    private final ApplicationEventPublisher eventPublisher;
 
     @Transactional
     public ReservationResponse createReservation(Long memberId, CreateReservationRequest request) {
@@ -73,6 +80,31 @@ public class ReservationService {
         } catch (DataIntegrityViolationException exception) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "예약 가능한 테이블이 없습니다.", exception);
         }
+    }
+
+    @Transactional
+    public ReservationResponse cancelReservation(Long memberId, Long reservationId)
+    {
+        Reservation reservation=reservationRepository.findByIdAndMemberIdForUpdate(reservationId, memberId)
+                .orElseThrow(()->new BusinessException(ErrorCode.RESERVATION_NOT_FOUND));
+        if(reservation.getStatus()== ReservationStatus.CANCELLED)
+        {
+            return ReservationResponse.from(reservation);
+        }
+        try{
+            reservation.cancelByCustomer(OffsetDateTime.now());
+        }
+        catch(IllegalStateException exception)
+        {
+            throw new BusinessException(ErrorCode.RESERVATION_NOT_CANCELLABLE);
+        }
+        eventPublisher.publishEvent(new CustomerNotificationEvent(
+                memberId,
+                NotificationType.RESERVATION_CANCELED,
+                reservation.getId(),
+                "예약이 취소되었습니다"
+        ));
+        return ReservationResponse.from(reservation);
     }
 
 

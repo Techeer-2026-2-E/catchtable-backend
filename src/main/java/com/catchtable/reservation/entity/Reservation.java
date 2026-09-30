@@ -159,6 +159,27 @@ public class Reservation extends BaseTimeEntity {
         this.cancellationReason = reason;
     }
 
+    //예약 시작과 같아도 취소 불가
+    public void cancelByCustomer(OffsetDateTime cancelledAt)
+    {
+        Objects.requireNonNull(cancelledAt);
+
+        if(status==ReservationStatus.CANCELLED)
+        {
+            return;
+        }
+        if (status != ReservationStatus.CONFIRMED || checkedInAt != null) {
+            throw new IllegalStateException("취소할 수 없는 예약입니다.");
+        }
+        if (!cancelledAt.isBefore(reservationStartAt)) {
+            throw new IllegalStateException("예약 시작 시각 이후에는 취소할 수 없습니다.");
+        }
+
+        this.status = ReservationStatus.CANCELLED;
+        this.cancelledAt = cancelledAt;
+        this.cancellationActor = CancellationActor.CUSTOMER;
+    }
+
     public void confirmVisit(OffsetDateTime checkedInAt, Long ownerId) {
         Objects.requireNonNull(checkedInAt);
         Objects.requireNonNull(ownerId);
