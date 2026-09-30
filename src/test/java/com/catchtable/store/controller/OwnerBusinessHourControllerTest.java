@@ -146,6 +146,14 @@ class OwnerBusinessHourControllerTest {
     }
 
     @Test
+    void secondsInBusinessHoursReturn400() throws Exception {
+        putHours(storeId, """
+                {"businessHours": [{"dayOfWeek": "MONDAY", "openTime": "10:00:00", "closingTime": "10:00:01"}]}""")
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_BUSINESS_HOUR_PRECISION"));
+    }
+
+    @Test
     @DisplayName("없는 매장이면 404")
     void storeNotFound() throws Exception {
         mockMvc.perform(get("/api/owner/stores/{storeId}/business-hours", -1L))
