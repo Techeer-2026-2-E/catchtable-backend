@@ -4,6 +4,7 @@ import com.catchtable.store.entity.BusinessHour;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 import java.time.DayOfWeek;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -13,4 +14,6 @@ public interface BusinessHourRepository extends JpaRepository<BusinessHour, Long
     List<BusinessHour> findAllByStoreIdOrderByDayOfWeekAsc(Long storeId);
 
     Optional<BusinessHour> findByStoreIdAndDayOfWeek(Long storeId, DayOfWeek dayOfWeek);
+
+    List<BusinessHour> findAllByStoreIdInAndDayOfWeekIn(Collection<Long> storeIds, Collection<DayOfWeek> daysOfWeek);
 }
