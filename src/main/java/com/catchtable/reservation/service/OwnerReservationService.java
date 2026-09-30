@@ -39,10 +39,19 @@ public class OwnerReservationService {
                 .toList();
     }
 
+    public OwnerReservationResponse getReservation(Long ownerId, Long reservationId) {
+        return OwnerReservationResponse.from(
+                reservationRepository.findByIdAndStore_Owner_Id(reservationId, ownerId)
+                        .orElseThrow(OwnerReservationService::notFound)
+        );
+    }
 
 
 
 
 
+    private static ResponseStatusException notFound() {
+        return new ResponseStatusException(HttpStatus.NOT_FOUND, "예약을 찾을 수 없습니다.");
+    }
 
 }
