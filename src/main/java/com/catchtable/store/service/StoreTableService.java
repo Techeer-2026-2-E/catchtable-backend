@@ -3,17 +3,20 @@ package com.catchtable.store.service;
 
 import com.catchtable.global.exception.BusinessException;
 import com.catchtable.global.exception.ErrorCode;
+import com.catchtable.reservation.repository.ReservationRepository;
 import com.catchtable.store.dto.StoreTableCreateRequest;
 import com.catchtable.store.dto.StoreTableResponse;
 import com.catchtable.store.dto.StoreTableUpdateRequest;
 import com.catchtable.store.entity.Store;
 import com.catchtable.store.entity.StoreTable;
+import com.catchtable.store.entity.TableStatus;
 import com.catchtable.store.repository.StoreRepository;
 import com.catchtable.store.repository.StoreTableRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.OffsetDateTime;
 import java.util.List;
 
 @Service
@@ -23,6 +26,7 @@ public class StoreTableService {
 
     private final StoreRepository storeRepository;
     private final StoreTableRepository storeTableRepository;
+    private final ReservationRepository reservationRepository;
 
     // TODO: 점주 본인 매장인지 확인 (로그인 기능 만든 후 작업)
 
@@ -54,8 +58,7 @@ public class StoreTableService {
     }
 
     @Transactional
-    public StoreTableResponse updateTable(Long storeId, Long tableId, StoreTableUpdateRequest request)
-    {
+    public StoreTableResponse updateTable(Long storeId, Long tableId, StoreTableUpdateRequest request) {
         StoreTable storeTable = storeTableRepository.findByIdAndStoreId(tableId, storeId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.TABLE_NOT_FOUND));
         if (request.tableNumber() != null && request.tableNumber() != storeTable.getTableNumber()) {
@@ -65,23 +68,21 @@ public class StoreTableService {
             storeTable.changeTableNumber(request.tableNumber());
         }
 
-            // TODO: 인원 축소·INACTIVE 전환 시 미래 예약이 있으면 409 TABLE_HAS_RESERVATIONS (예약 엔티티 생긴 뒤)
-
-            if(request.minCapacity()!=null || request.capacity()!=null)
-            {
-                int minCapacity = (request.minCapacity()!=null)? request.minCapacity() :
-                        storeTable.getMinCapacity();
-                int capacity=(request.capacity() != null) ? request.capacity() : storeTable.getCapacity();
-                storeTable.changeCapacityRange(minCapacity, capacity);
-
-            }
-            if (request.status() != null) {
-                storeTable.changeStatus(request.status());
-            }
-            return StoreTableResponse.from(storeTable);
+        if (request.minCapacity() != null || request.capacity() != null) {
+            int minCapacity = request.minCapacity() != null ? request.minCapacity() : storeTable.getMinCapacity();
+            int capacity = request.capacity() != null ? request.capacity() : storeTable.getCapacity();
+            storeTable.changeCapacityRange(minCapacity, capacity);
         }
-
+        if (request.status() != null) {
+            storeTable.changeStatus(request.status());
+        }
+        // 이용 중인 예약도 포함한다. 새 범위 안에 들어가는 예약은 설정 변경을 막지 않는다.
+        if ((request.minCapacity() != null || request.capacity() != null || request.status() != null)
+                && reservationRepository.existsConflictingTableReservation(
+                        tableId, OffsetDateTime.now(), storeTable.getStatus() == TableStatus.INACTIVE,
+                        storeTable.getMinCapacity(), storeTable.getCapacity())) {
+            throw new BusinessException(ErrorCode.TABLE_HAS_RESERVATIONS);
+        }
+        return StoreTableResponse.from(storeTable);
     }
-
-
-
+}

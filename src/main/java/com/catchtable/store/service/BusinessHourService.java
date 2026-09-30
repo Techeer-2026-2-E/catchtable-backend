@@ -2,6 +2,9 @@ package com.catchtable.store.service;
 
 import com.catchtable.global.exception.BusinessException;
 import com.catchtable.global.exception.ErrorCode;
+import com.catchtable.reservation.entity.Reservation;
+import com.catchtable.reservation.entity.ReservationStatus;
+import com.catchtable.reservation.repository.ReservationRepository;
 import com.catchtable.store.dto.BusinessHourRequest;
 import com.catchtable.store.dto.BusinessHourResponse;
 import com.catchtable.store.dto.BusinessHourUpdateRequest;
@@ -17,6 +20,8 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
+import java.time.ZoneId;
 import java.util.EnumMap;
 import java.util.EnumSet;
 import java.util.List;
@@ -29,8 +34,11 @@ import java.util.stream.Stream;
 @Transactional(readOnly = true)
 public class BusinessHourService {
 
+    private static final ZoneId STORE_ZONE = ZoneId.of("Asia/Seoul");
+
     private final StoreRepository storeRepository;
     private final BusinessHourRepository businessHourRepository;
+    private final ReservationRepository reservationRepository;
 
     // TODO: 점주 본인 매장인지 확인 (로그인 기능 만든 후 작업)
 
@@ -46,7 +54,8 @@ public class BusinessHourService {
     // 일주일치를 통째로 교체. 이미 있는 요일은 수정, 새 요일은 추가, 빠진 요일은 소프트 삭제(= 휴무)
     @Transactional
     public List<BusinessHourResponse> replaceBusinessHours(Long storeId, BusinessHourUpdateRequest request) {
-        Store store = storeRepository.findById(storeId)
+        // 예약 생성의 공유 잠금과 맞물려, 영업시간 검증 중 새 예약이 생기지 않게 한다.
+        Store store = storeRepository.findByIdForUpdate(storeId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.STORE_NOT_FOUND));
 
         Set<DayOfWeek> requestedDays = EnumSet.noneOf(DayOfWeek.class);
@@ -59,8 +68,6 @@ public class BusinessHourService {
         Map<DayOfWeek, BusinessHour> existing = new EnumMap<>(DayOfWeek.class);
         businessHourRepository.findAllByStoreIdOrderByDayOfWeekAsc(storeId)
                 .forEach(hour -> existing.put(hour.getDayOfWeek(), hour));
-
-        // TODO: 영업시간 축소·휴무 전환 시 영향받는 미래 예약 처리 (예약 엔티티 생긴 뒤)
 
         for (BusinessHourRequest hour : request.businessHours()) {
             BusinessHour current = existing.remove(hour.dayOfWeek());
@@ -81,7 +88,22 @@ public class BusinessHourService {
         existing.values().forEach(BusinessHour::delete);
         businessHourRepository.flush();
 
-        return businessHourRepository.findAllByStoreIdOrderByDayOfWeekAsc(storeId).stream()
+        List<BusinessHour> updatedHours = businessHourRepository.findAllByStoreIdOrderByDayOfWeekAsc(storeId);
+        // 저장은 아직 같은 트랜잭션 안이다. 충돌이 있으면 추가·변경·휴무 처리를 모두 롤백한다.
+        for (Reservation reservation : reservationRepository.findAllByStore_IdAndStatusAndReservationEndAtAfter(
+                storeId, ReservationStatus.CONFIRMED, OffsetDateTime.now())) {
+            LocalDateTime start = reservation.getReservationStartAt().atZoneSameInstant(STORE_ZONE).toLocalDateTime();
+            LocalDateTime end = reservation.getReservationEndAt().atZoneSameInstant(STORE_ZONE).toLocalDateTime();
+            boolean covered = Stream.of(start.toLocalDate().minusDays(1), start.toLocalDate())
+                    .flatMap(date -> updatedHours.stream()
+                            .filter(hour -> hour.getDayOfWeek() == date.getDayOfWeek())
+                            .flatMap(hour -> hour.windowsOn(date).stream()))
+                    .anyMatch(window -> window.covers(start, end));
+            if (!covered) {
+                throw new BusinessException(ErrorCode.BUSINESS_HOUR_HAS_RESERVATIONS);
+            }
+        }
+        return updatedHours.stream()
                 .map(BusinessHourResponse::from)
                 .toList();
     }
