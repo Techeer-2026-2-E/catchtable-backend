@@ -3,9 +3,7 @@ package com.catchtable.store.dto;
 import com.catchtable.store.entity.Store;
 import com.catchtable.store.entity.StoreCategory;
 
-import java.util.List;
-
-public record StoreDetailResponse (
+public record StoreInfoResponse(
         Long id,
         String name,
         StoreCategory category,
@@ -13,14 +11,12 @@ public record StoreDetailResponse (
         String address,
         String description,
         String phone,
-        String imageUrl,
-        boolean waitingAvailable,
-        List<BusinessHourResponse> businessHours   // 없는 요일은 휴무
-){
+        String imageUrl
+) {
 
-    public static StoreDetailResponse of(Store store, List<BusinessHourResponse> businessHours)
+    public static StoreInfoResponse from(Store store)
     {
-        return new StoreDetailResponse(
+        return new StoreInfoResponse(
                 store.getId(),
                 store.getName(),
                 store.getCategory(),
@@ -28,11 +24,7 @@ public record StoreDetailResponse (
                 store.getAddress(),
                 store.getDescription(),
                 store.getPhone(),
-                store.getImageUrl(),
-                store.isWaitingAvailable(),
-                businessHours
+                store.getImageUrl()
         );
-
     }
-
 }
