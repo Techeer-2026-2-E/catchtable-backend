@@ -29,6 +29,8 @@ public enum ErrorCode {
     BOOKING_DEADLINE_PASSED(HttpStatus.BAD_REQUEST, "예약 마감 시간이 지났습니다."),
     UNAUTHORIZED(HttpStatus.UNAUTHORIZED, "회원 식별 정보가 없습니다."),
     MEMBER_NOT_FOUND(HttpStatus.NOT_FOUND, "회원을 찾을 수 없습니다."),
+    RESERVATION_NOT_FOUND(HttpStatus.NOT_FOUND, "예약을 찾을 수 없습니다."),
+    RESERVATION_NOT_CANCELLABLE(HttpStatus.CONFLICT, "취소할 수 없는 예약입니다."),
     FORBIDDEN_MEMBER_TYPE(HttpStatus.FORBIDDEN, "이 기능을 사용할 수 없는 회원 유형입니다.");
 
 
