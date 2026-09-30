@@ -159,5 +159,19 @@ public class Reservation extends BaseTimeEntity {
         this.cancellationReason = reason;
     }
 
+    public void confirmVisit(OffsetDateTime checkedInAt, Long ownerId) {
+        Objects.requireNonNull(checkedInAt);
+        Objects.requireNonNull(ownerId);
+
+        if (this.checkedInAt != null) {
+            return;
+        }
+        if (status != ReservationStatus.CONFIRMED) {
+            throw new IllegalStateException("방문 확인을 할 수 없는 예약입니다.");
+        }
+
+        this.checkedInAt = checkedInAt;
+        this.checkedInByMemberId = ownerId;
+    }
 
 }
