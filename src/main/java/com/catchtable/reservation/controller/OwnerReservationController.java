@@ -1,12 +1,16 @@
 package com.catchtable.reservation.controller;
 
+import com.catchtable.reservation.dto.OwnerReservationActionRequest;
 import com.catchtable.reservation.dto.OwnerReservationResponse;
 import com.catchtable.reservation.entity.ReservationStatus;
 import com.catchtable.reservation.service.OwnerReservationService;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -39,6 +43,14 @@ public class OwnerReservationController {
         return ownerReservationService.getReservation(MOCK_OWNER_ID, reservationId);
     }
 
+    /** 취소 사유는 필수이며, 입장 확인 전의 확정 예약만 취소할 수 있다. */
+    @PostMapping("/reservations/{reservationId}/cancel")
+    public OwnerReservationResponse cancelReservation(
+            @PathVariable Long reservationId,
+            @Valid @RequestBody OwnerReservationActionRequest request
+    ) {
+        return ownerReservationService.cancelReservation(MOCK_OWNER_ID, reservationId, request.reason());
+    }
 
 
 }

@@ -3,11 +3,13 @@ package com.catchtable.reservation.service;
 import com.catchtable.member.entity.Member;
 import com.catchtable.member.entity.UserType;
 import com.catchtable.reservation.dto.OwnerReservationResponse;
+import com.catchtable.reservation.entity.CancellationActor;
 import com.catchtable.reservation.entity.Reservation;
 import com.catchtable.reservation.entity.ReservationStatus;
 import com.catchtable.reservation.repository.ReservationRepository;
 import com.catchtable.store.entity.Store;
 import com.catchtable.store.entity.StoreCategory;
+import com.catchtable.store.repository.StoreTableRepository;
 import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -31,6 +33,7 @@ class OwnerReservationFeatureServiceTest {
     @Autowired private JdbcTemplate jdbcTemplate;
     @Autowired private ReservationRepository reservationRepository;
     @Autowired private OwnerReservationService ownerReservationService;
+    @Autowired private StoreTableRepository storeTableRepository;
 
     @Test
     void listsOnlyOwnedStoreReservationsForDateInStartOrder() {
@@ -73,6 +76,44 @@ class OwnerReservationFeatureServiceTest {
         assertThatThrownBy(() -> ownerReservationService.getReservation(owner.getId() + 999, earlier.getId()))
                 .isInstanceOfSatisfying(ResponseStatusException.class,
                         exception -> assertThat(exception.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND));
+    }
+
+    @Test
+    void ownerCancellationIsIdempotentAndReleasesTheTable() {
+        Member owner = member("owner-cancel@example.com", UserType.OWNER);
+        Member customer = member("customer-cancel@example.com", UserType.CUSTOMER);
+        entityManager.persist(owner);
+        entityManager.persist(customer);
+        Store store = Store.builder().owner(owner).name("owner cancellation store")
+                .category(StoreCategory.KOREAN).address("Seoul")
+                .reservationDurationMinutes(60).reservationSlotMinutes(30).arrivalGraceMinutes(10).build();
+        entityManager.persist(store);
+        entityManager.flush();
+        Long tableId = jdbcTemplate.queryForObject("""
+                INSERT INTO store_table (store_id, table_number, min_capacity, capacity, status)
+                VALUES (?, 1, 1, 4, 'ACTIVE') RETURNING id
+                """, Long.class, store.getId());
+        OffsetDateTime startAt = OffsetDateTime.parse("2030-01-02T10:00:00+09:00");
+        Reservation reservation = reservationRepository.saveAndFlush(Reservation.confirmed(
+                customer, store, tableId, startAt, startAt.plusHours(1), 2, startAt.minusDays(1)));
+
+        assertThat(storeTableRepository.countAvailable(store.getId(), 2, startAt, startAt.plusHours(1))).isZero();
+        assertThatThrownBy(() -> ownerReservationService.cancelReservation(
+                owner.getId() + 999, reservation.getId(), "매장 사정"))
+                .isInstanceOfSatisfying(ResponseStatusException.class,
+                        exception -> assertThat(exception.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND));
+
+        OwnerReservationResponse cancelled = ownerReservationService.cancelReservation(
+                owner.getId(), reservation.getId(), "매장 사정");
+        OwnerReservationResponse repeated = ownerReservationService.cancelReservation(
+                owner.getId(), reservation.getId(), "다른 사유");
+        entityManager.flush();
+
+        assertThat(cancelled.status()).isEqualTo(ReservationStatus.CANCELLED);
+        assertThat(cancelled.cancellationActor()).isEqualTo(CancellationActor.OWNER);
+        assertThat(repeated.cancelledAt()).isEqualTo(cancelled.cancelledAt());
+        assertThat(repeated.cancellationReason()).isEqualTo("매장 사정");
+        assertThat(storeTableRepository.countAvailable(store.getId(), 2, startAt, startAt.plusHours(1))).isEqualTo(1);
     }
 
     private static Member member(String email, UserType type) {
