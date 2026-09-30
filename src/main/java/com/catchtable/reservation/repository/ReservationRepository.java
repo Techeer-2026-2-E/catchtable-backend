@@ -45,6 +45,13 @@ public interface ReservationRepository extends JpaRepository<Reservation, Long> 
             @Param("ownerId") Long ownerId
     );
 
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select r from Reservation r where r.id = :id and r.member.id= :memberId")
+    Optional<Reservation> findByIdAndMemberIdForUpdate(
+            @Param("id") Long id,
+            @Param("memberId") Long memberId
+    );
+
     List<Reservation> findAllByStore_IdAndStatusAndReservationEndAtAfter(
             Long storeId, ReservationStatus status, OffsetDateTime now);
 
@@ -75,4 +82,6 @@ public interface ReservationRepository extends JpaRepository<Reservation, Long> 
               and r.reservationEndAt <= :completedAt
             """)
     int completeVisitedReservations(@Param("completedAt") OffsetDateTime completedAt);
+
+
 }
