@@ -21,6 +21,8 @@ import org.springframework.web.server.ResponseStatusException;
 
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
+import java.util.ArrayList;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -34,6 +36,7 @@ class OwnerReservationFeatureServiceTest {
     @Autowired private ReservationRepository reservationRepository;
     @Autowired private OwnerReservationService ownerReservationService;
     @Autowired private StoreTableRepository storeTableRepository;
+    @Autowired private ReservationService reservationService;
 
     @Test
     void listsOnlyOwnedStoreReservationsForDateInStartOrder() {
@@ -148,6 +151,54 @@ class OwnerReservationFeatureServiceTest {
         assertThatThrownBy(() -> ownerReservationService.cancelReservation(owner.getId(), reservation.getId(), "매장 사정"))
                 .isInstanceOfSatisfying(ResponseStatusException.class,
                         exception -> assertThat(exception.getStatusCode()).isEqualTo(HttpStatus.CONFLICT));
+    }
+
+    @Test
+    void noShowRequiresGracePeriodAndUnvisitedReservation() {
+        Member owner = member("owner-no-show@example.com", UserType.OWNER);
+        Member customer = member("customer-no-show@example.com", UserType.CUSTOMER);
+        entityManager.persist(owner);
+        entityManager.persist(customer);
+        Store store = Store.builder().owner(owner).name("no-show store")
+                .category(StoreCategory.KOREAN).address("Seoul")
+                .reservationDurationMinutes(60).reservationSlotMinutes(30).arrivalGraceMinutes(10).build();
+        entityManager.persist(store);
+        entityManager.flush();
+        List<Long> tableIds = new ArrayList<>();
+        for (int tableNumber = 1; tableNumber <= 3; tableNumber++) {
+            tableIds.add(jdbcTemplate.queryForObject("""
+                    INSERT INTO store_table (store_id, table_number, min_capacity, capacity, status)
+                    VALUES (?, ?, 1, 4, 'ACTIVE') RETURNING id
+                    """, Long.class, store.getId(), tableNumber));
+        }
+        OffsetDateTime now = OffsetDateTime.now();
+        Reservation late = reservationRepository.saveAndFlush(Reservation.confirmed(
+                customer, store, tableIds.get(0), now.minusHours(2), now.minusHours(1), 2, now.minusDays(1)));
+        Reservation early = reservationRepository.saveAndFlush(Reservation.confirmed(
+                customer, store, tableIds.get(1), now.minusMinutes(5), now.plusMinutes(55), 2, now.minusDays(1)));
+        Reservation visited = reservationRepository.saveAndFlush(Reservation.confirmed(
+                customer, store, tableIds.get(2), now.minusMinutes(30), now.plusMinutes(30), 2, now.minusDays(1)));
+        ownerReservationService.confirmVisit(owner.getId(), visited.getId());
+
+        assertThatThrownBy(() -> ownerReservationService.markNoShow(owner.getId(), early.getId(), "미방문"))
+                .isInstanceOfSatisfying(ResponseStatusException.class,
+                        exception -> assertThat(exception.getStatusCode()).isEqualTo(HttpStatus.CONFLICT));
+        assertThatThrownBy(() -> ownerReservationService.markNoShow(owner.getId(), visited.getId(), "미방문"))
+                .isInstanceOfSatisfying(ResponseStatusException.class,
+                        exception -> assertThat(exception.getStatusCode()).isEqualTo(HttpStatus.CONFLICT));
+        assertThatThrownBy(() -> ownerReservationService.markNoShow(owner.getId() + 999, late.getId(), "미방문"))
+                .isInstanceOfSatisfying(ResponseStatusException.class,
+                        exception -> assertThat(exception.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND));
+
+        OwnerReservationResponse first = ownerReservationService.markNoShow(owner.getId(), late.getId(), "미방문");
+        OwnerReservationResponse repeated = ownerReservationService.markNoShow(owner.getId(), late.getId(), "다른 사유");
+        assertThat(first.status()).isEqualTo(ReservationStatus.NO_SHOW);
+        assertThat(first.noShowByMemberId()).isEqualTo(owner.getId());
+        assertThat(repeated.noShowAt()).isEqualTo(first.noShowAt());
+        assertThat(repeated.noShowReason()).isEqualTo("미방문");
+        assertThat(reservationService.completeFinishedReservations()).isZero();
+        assertThat(reservationRepository.findById(late.getId()).orElseThrow().getStatus())
+                .isEqualTo(ReservationStatus.NO_SHOW);
     }
 
     private static Member member(String email, UserType type) {
