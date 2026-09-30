@@ -114,6 +114,40 @@ class OwnerReservationFeatureServiceTest {
         assertThat(repeated.cancelledAt()).isEqualTo(cancelled.cancelledAt());
         assertThat(repeated.cancellationReason()).isEqualTo("매장 사정");
         assertThat(storeTableRepository.countAvailable(store.getId(), 2, startAt, startAt.plusHours(1))).isEqualTo(1);
+        assertThatThrownBy(() -> ownerReservationService.confirmVisit(owner.getId(), reservation.getId()))
+                .isInstanceOfSatisfying(ResponseStatusException.class,
+                        exception -> assertThat(exception.getStatusCode()).isEqualTo(HttpStatus.CONFLICT));
+    }
+
+    @Test
+    void visitConfirmationRecordsActorOnceWithoutChangingReservationStatus() {
+        Member owner = member("owner-visit@example.com", UserType.OWNER);
+        Member customer = member("customer-visit@example.com", UserType.CUSTOMER);
+        entityManager.persist(owner);
+        entityManager.persist(customer);
+        Store store = Store.builder().owner(owner).name("owner visit store")
+                .category(StoreCategory.KOREAN).address("Seoul")
+                .reservationDurationMinutes(60).reservationSlotMinutes(30).arrivalGraceMinutes(10).build();
+        entityManager.persist(store);
+        entityManager.flush();
+        Long tableId = jdbcTemplate.queryForObject("""
+                INSERT INTO store_table (store_id, table_number, min_capacity, capacity, status)
+                VALUES (?, 1, 1, 4, 'ACTIVE') RETURNING id
+                """, Long.class, store.getId());
+        OffsetDateTime startAt = OffsetDateTime.now().minusMinutes(1);
+        Reservation reservation = reservationRepository.saveAndFlush(Reservation.confirmed(
+                customer, store, tableId, startAt, startAt.plusHours(1), 2, startAt.minusDays(1)));
+
+        OwnerReservationResponse first = ownerReservationService.confirmVisit(owner.getId(), reservation.getId());
+        OwnerReservationResponse repeated = ownerReservationService.confirmVisit(owner.getId(), reservation.getId());
+
+        assertThat(first.status()).isEqualTo(ReservationStatus.CONFIRMED);
+        assertThat(first.checkedInAt()).isNotNull();
+        assertThat(first.checkedInByMemberId()).isEqualTo(owner.getId());
+        assertThat(repeated.checkedInAt()).isEqualTo(first.checkedInAt());
+        assertThatThrownBy(() -> ownerReservationService.cancelReservation(owner.getId(), reservation.getId(), "매장 사정"))
+                .isInstanceOfSatisfying(ResponseStatusException.class,
+                        exception -> assertThat(exception.getStatusCode()).isEqualTo(HttpStatus.CONFLICT));
     }
 
     private static Member member(String email, UserType type) {
