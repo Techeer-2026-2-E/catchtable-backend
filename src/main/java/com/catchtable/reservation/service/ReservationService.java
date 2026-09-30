@@ -2,6 +2,7 @@ package com.catchtable.reservation.service;
 
 import com.catchtable.member.entity.Member;
 import com.catchtable.reservation.dto.CreateReservationRequest;
+import com.catchtable.reservation.dto.ReservationResponse;
 import com.catchtable.reservation.entity.Reservation;
 import com.catchtable.reservation.repository.ReservationRepository;
 import com.catchtable.store.entity.Store;
@@ -30,7 +31,7 @@ public class ReservationService {
     private final EntityManager entityManager;
 
     @Transactional
-    public Reservation createReservation(Long memberId, CreateReservationRequest request) {
+    public ReservationResponse createReservation(Long memberId, CreateReservationRequest request) {
         if (request.partySize() <= 0) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "예약 인원은 1명 이상이어야 합니다.");
         }
@@ -58,7 +59,7 @@ public class ReservationService {
 
         // 조회 직후 발생한 동시 예약도 DB의 시간 중복 제약에서 최종 차단한다.
         try {
-            return reservationRepository.saveAndFlush(Reservation.confirmed(
+            return ReservationResponse.from(reservationRepository.saveAndFlush(Reservation.confirmed(
                     member,
                     store,
                     table.getId(),
@@ -66,7 +67,7 @@ public class ReservationService {
                     reservationEndAt,
                     request.partySize(),
                     now
-            ));
+            )));
         } catch (DataIntegrityViolationException exception) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "예약 가능한 테이블이 없습니다.", exception);
         }
