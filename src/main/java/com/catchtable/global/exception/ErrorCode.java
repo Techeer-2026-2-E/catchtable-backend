@@ -16,6 +16,8 @@ public enum ErrorCode {
     STORE_NOT_FOUND(HttpStatus.NOT_FOUND, "매장을 찾을 수 없습니다"),
     TABLE_NOT_FOUND(HttpStatus.NOT_FOUND, "테이블을 찾을 수 없습니다"),
     DUPLICATE_TABLE_NUMBER(HttpStatus.CONFLICT, "이미 사용 중인 테이블 번호입니다."),
+    TABLE_HAS_RESERVATIONS(HttpStatus.CONFLICT, "변경한 테이블 조건과 충돌하는 예약이 있습니다."),
+    BUSINESS_HOUR_HAS_RESERVATIONS(HttpStatus.CONFLICT, "변경한 영업시간과 충돌하는 예약이 있습니다."),
     DUPLICATE_BUSINESS_DAY(HttpStatus.BAD_REQUEST, "같은 요일의 영업시간이 중복되었습니다."),
     INVALID_BUSINESS_HOUR(HttpStatus.BAD_REQUEST, "영업 시작 시각과 종료 시각이 같을 수 없습니다."),
     INVALID_BUSINESS_HOUR_PRECISION(HttpStatus.BAD_REQUEST, "영업시간은 분 단위로 입력해야 합니다."),
