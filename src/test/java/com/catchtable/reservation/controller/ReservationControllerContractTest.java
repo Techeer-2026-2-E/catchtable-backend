@@ -2,9 +2,11 @@ package com.catchtable.reservation.controller;
 
 import com.catchtable.reservation.dto.AvailabilityResponse;
 import com.catchtable.reservation.dto.AvailableTableCountResponse;
+import com.catchtable.reservation.dto.OwnerReservationResponse;
 import com.catchtable.reservation.dto.ReservationResponse;
 import com.catchtable.reservation.entity.CancellationActor;
 import com.catchtable.reservation.entity.ReservationStatus;
+import com.catchtable.reservation.service.OwnerReservationService;
 import com.catchtable.reservation.service.ReservationService;
 import com.catchtable.reservation.service.ReservationAvailabilityService;
 import org.junit.jupiter.api.Test;
@@ -29,7 +31,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-@WebMvcTest({ReservationController.class, StoreAvailabilityController.class})
+@WebMvcTest({ReservationController.class, OwnerReservationController.class, StoreAvailabilityController.class})
 class ReservationControllerContractTest {
 
     private static final OffsetDateTime START_AT = OffsetDateTime.parse("2030-01-02T10:00:00+09:00");
@@ -39,6 +41,9 @@ class ReservationControllerContractTest {
 
     @MockBean
     private ReservationService reservationService;
+
+    @MockBean
+    private OwnerReservationService ownerReservationService;
 
     @MockBean
     private ReservationAvailabilityService availabilityService;
@@ -155,4 +160,28 @@ class ReservationControllerContractTest {
         );
     }
 
+    private static OwnerReservationResponse ownerResponse(ReservationStatus status, String reason) {
+        OffsetDateTime cancelledAt = status == ReservationStatus.CANCELLED ? START_AT.minusDays(1) : null;
+        OffsetDateTime noShowAt = status == ReservationStatus.NO_SHOW ? START_AT.plusMinutes(10) : null;
+        return new OwnerReservationResponse(
+                10L,
+                3L,
+                1L,
+                "테스트 고객",
+                "010-0000-0001",
+                7L,
+                START_AT,
+                START_AT.plusHours(2),
+                2,
+                status,
+                null,
+                null,
+                cancelledAt,
+                status == ReservationStatus.CANCELLED ? CancellationActor.OWNER : null,
+                status == ReservationStatus.CANCELLED ? reason : null,
+                noShowAt,
+                status == ReservationStatus.NO_SHOW ? 2L : null,
+                status == ReservationStatus.NO_SHOW ? reason : null
+        );
+    }
 }
