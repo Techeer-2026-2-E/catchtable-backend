@@ -91,6 +91,52 @@ class ReservationControllerContractTest {
                 .andExpect(jsonPath("$.status").value("CONFIRMED"));
     }
 
+    @Test
+    void ownerReservationRoutesFollowTheHttpContract() throws Exception {
+        OwnerReservationResponse confirmed = ownerResponse(ReservationStatus.CONFIRMED, null);
+        OwnerReservationResponse cancelled = ownerResponse(ReservationStatus.CANCELLED, "매장 사정");
+        OwnerReservationResponse noShow = ownerResponse(ReservationStatus.NO_SHOW, "미방문");
+        given(ownerReservationService.getReservations(
+                2L, 3L, LocalDate.parse("2030-01-02"), ReservationStatus.CONFIRMED
+        )).willReturn(List.of(confirmed));
+        given(ownerReservationService.getReservation(2L, 10L)).willReturn(confirmed);
+        given(ownerReservationService.cancelReservation(2L, 10L, "매장 사정")).willReturn(cancelled);
+        given(ownerReservationService.confirmVisit(2L, 10L)).willReturn(confirmed);
+        given(ownerReservationService.markNoShow(2L, 10L, "미방문")).willReturn(noShow);
+
+        mockMvc.perform(get("/api/owner/stores/3/reservations")
+                        .queryParam("date", "2030-01-02")
+                        .queryParam("status", "CONFIRMED"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].customerName").value("테스트 고객"));
+
+        mockMvc.perform(get("/api/owner/reservations/10"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.reservationId").value(10));
+
+        mockMvc.perform(post("/api/owner/reservations/10/cancel")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"reason": "매장 사정"}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("CANCELLED"));
+
+        mockMvc.perform(post("/api/owner/reservations/10/enter"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.reservationId").value(10));
+
+        mockMvc.perform(post("/api/owner/reservations/10/no-show")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"reason": "미방문"}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("NO_SHOW"));
+
+        verify(ownerReservationService).getReservation(2L, 10L);
+        verify(ownerReservationService).confirmVisit(2L, 10L);
+    }
 
     @Test
     void invalidRequestsReturnBadRequest() throws Exception {
