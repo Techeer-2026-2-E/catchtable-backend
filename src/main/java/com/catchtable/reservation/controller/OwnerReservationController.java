@@ -34,6 +34,10 @@ public class OwnerReservationController {
         return ownerReservationService.getReservations(MOCK_OWNER_ID, storeId, date, status);
     }
 
+    @GetMapping("/reservations/{reservationId}")
+    public OwnerReservationResponse getReservation(@PathVariable Long reservationId) {
+        return ownerReservationService.getReservation(MOCK_OWNER_ID, reservationId);
+    }
 
 
 

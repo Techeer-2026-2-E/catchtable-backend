@@ -44,4 +44,18 @@ class OwnerReservationControllerTest {
         mockMvc.perform(get("/api/owner/stores/3/reservations"))
                 .andExpect(status().isBadRequest());
     }
+
+    @Test
+    void detailReturnsOneOwnedReservation() throws Exception {
+        OffsetDateTime startAt = OffsetDateTime.parse("2030-01-02T10:00:00+09:00");
+        given(ownerReservationService.getReservation(2L, 10L)).willReturn(new OwnerReservationResponse(
+                10L, 3L, 1L, "테스트 고객", "010-0000-0001", 7L,
+                startAt, startAt.plusHours(2), 2, ReservationStatus.CONFIRMED,
+                null, null, null, null, null, null, null, null));
+
+        mockMvc.perform(get("/api/owner/reservations/10"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.reservationId").value(10))
+                .andExpect(jsonPath("$.customerPhone").value("010-0000-0001"));
+    }
 }
