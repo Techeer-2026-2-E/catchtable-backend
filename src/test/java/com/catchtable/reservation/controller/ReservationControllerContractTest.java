@@ -1,5 +1,7 @@
 package com.catchtable.reservation.controller;
 
+import com.catchtable.reservation.dto.AvailabilityResponse;
+import com.catchtable.reservation.dto.AvailableTableCountResponse;
 import com.catchtable.reservation.dto.ReservationResponse;
 import com.catchtable.reservation.entity.CancellationActor;
 import com.catchtable.reservation.entity.ReservationStatus;
@@ -27,7 +29,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-@WebMvcTest({ReservationController.class})
+@WebMvcTest({ReservationController.class, StoreAvailabilityController.class})
 class ReservationControllerContractTest {
 
     private static final OffsetDateTime START_AT = OffsetDateTime.parse("2030-01-02T10:00:00+09:00");
@@ -41,6 +43,30 @@ class ReservationControllerContractTest {
     @MockBean
     private ReservationAvailabilityService availabilityService;
 
+    @Test
+    void availabilityRoutesReturnCountsWithoutExposingTableChoice() throws Exception {
+        LocalDate date = LocalDate.parse("2030-01-02");
+        given(availabilityService.getAvailability(3L, date, 2))
+                .willReturn(new AvailabilityResponse(3L, date, 2,
+                        List.of(new AvailabilityResponse.Slot(START_AT, 1, true))));
+        given(availabilityService.getAvailableTableCount(3L, START_AT, 2))
+                .willReturn(new AvailableTableCountResponse(3L, START_AT, 2, 1));
+
+        mockMvc.perform(get("/api/user/stores/3/availability")
+                        .queryParam("date", date.toString()).queryParam("partySize", "2"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.slots[0].availableTableCount").value(1))
+                .andExpect(jsonPath("$.slots[0].available").value(true));
+
+        mockMvc.perform(get("/api/user/stores/3/tables")
+                        .queryParam("reservationStartAt", START_AT.toString()).queryParam("partySize", "2"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.availableTableCount").value(1));
+
+        mockMvc.perform(get("/api/user/stores/3/availability"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("요청 값이 올바르지 않습니다."));
+    }
 
     @Test
     void customerCanCreateAnAutomaticallyConfirmedReservation() throws Exception {
