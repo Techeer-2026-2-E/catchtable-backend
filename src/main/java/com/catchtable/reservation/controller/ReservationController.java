@@ -19,6 +19,12 @@ public class ReservationController {
 
     private final ReservationService reservationService;
 
+    /** 알림 수신 또는 SSE 재접속 후 본인 예약의 최신 상태와 취소 사유를 조회한다. */
+    @GetMapping("/{reservationId}")
+    public ReservationResponse getReservation(@LoginMember Long memberId, @PathVariable Long reservationId) {
+        return reservationService.getReservation(memberId, reservationId);
+    }
+
     /** 생성 시 가용 여부를 다시 확인하고 바로 확정(201)한다. 그 사이 테이블이 소진되면 409를 반환한다. */
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
