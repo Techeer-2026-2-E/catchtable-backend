@@ -2,6 +2,8 @@ package com.catchtable.reservation.service;
 
 import com.catchtable.member.entity.Member;
 import com.catchtable.member.entity.UserType;
+import com.catchtable.notification.dto.CustomerNotificationEvent;
+import com.catchtable.notification.dto.NotificationType;
 import com.catchtable.reservation.dto.OwnerReservationResponse;
 import com.catchtable.reservation.entity.CancellationActor;
 import com.catchtable.reservation.entity.Reservation;
@@ -14,8 +16,12 @@ import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.test.context.event.ApplicationEvents;
+import org.springframework.test.context.event.RecordApplicationEvents;
+import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
@@ -26,8 +32,13 @@ import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @SpringBootTest
+@AutoConfigureMockMvc
+@RecordApplicationEvents
 @Transactional
 class OwnerReservationFeatureServiceTest {
 
@@ -37,6 +48,8 @@ class OwnerReservationFeatureServiceTest {
     @Autowired private OwnerReservationService ownerReservationService;
     @Autowired private StoreTableRepository storeTableRepository;
     @Autowired private ReservationService reservationService;
+    @Autowired private ApplicationEvents applicationEvents;
+    @Autowired private MockMvc mockMvc;
 
     @Test
     void listsOnlyOwnedStoreReservationsForDateInStartOrder() {
@@ -82,7 +95,7 @@ class OwnerReservationFeatureServiceTest {
     }
 
     @Test
-    void ownerCancellationIsIdempotentAndReleasesTheTable() {
+    void ownerCancellationIsIdempotentAndReleasesTheTable() throws Exception {
         Member owner = member("owner-cancel@example.com", UserType.OWNER);
         Member customer = member("customer-cancel@example.com", UserType.CUSTOMER);
         entityManager.persist(owner);
@@ -120,6 +133,24 @@ class OwnerReservationFeatureServiceTest {
         assertThatThrownBy(() -> ownerReservationService.confirmVisit(owner.getId(), reservation.getId()))
                 .isInstanceOfSatisfying(ResponseStatusException.class,
                         exception -> assertThat(exception.getStatusCode()).isEqualTo(HttpStatus.CONFLICT));
+
+        assertThat(applicationEvents.stream(CustomerNotificationEvent.class).toList()).containsExactly(
+                new CustomerNotificationEvent(customer.getId(), NotificationType.RESERVATION_CANCELED,
+                        reservation.getId(), "점주가 예약을 취소했습니다. 사유: 매장 사정"));
+
+        // 연결이 끊겨 알림을 놓쳐도 DB에서 최신 상태와 최초 취소 사유를 다시 읽는다.
+        entityManager.clear();
+        mockMvc.perform(get("/api/user/reservations/{reservationId}", reservation.getId())
+                        .header("X-Member-Id", customer.getId()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("CANCELLED"))
+                .andExpect(jsonPath("$.cancellationActor").value("OWNER"))
+                .andExpect(jsonPath("$.cancellationReason").value("매장 사정"));
+        mockMvc.perform(get("/api/user/reservations/{reservationId}", reservation.getId())
+                        .header("X-Member-Id", owner.getId()))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(get("/api/user/reservations/{reservationId}", reservation.getId()))
+                .andExpect(status().isUnauthorized());
     }
 
     @Test
@@ -151,6 +182,7 @@ class OwnerReservationFeatureServiceTest {
         assertThatThrownBy(() -> ownerReservationService.cancelReservation(owner.getId(), reservation.getId(), "매장 사정"))
                 .isInstanceOfSatisfying(ResponseStatusException.class,
                         exception -> assertThat(exception.getStatusCode()).isEqualTo(HttpStatus.CONFLICT));
+        assertThat(applicationEvents.stream(CustomerNotificationEvent.class)).isEmpty();
     }
 
     @Test
