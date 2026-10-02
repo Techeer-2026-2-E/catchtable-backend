@@ -31,10 +31,15 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ErrorResponse> handleDataIntegrity(DataIntegrityViolationException e) {
         // 사전 중복 검사 이후의 동시 INSERT와 트랜잭션 커밋 시점의 UPDATE 충돌도 처리한다.
         for (Throwable cause = e; cause != null; cause = cause.getCause()) {
-            if (cause instanceof ConstraintViolationException violation
-                    && "uk_store_table_store_number".equals(violation.getConstraintName())) {
-                ErrorCode code = ErrorCode.DUPLICATE_TABLE_NUMBER;
-                return ResponseEntity.status(code.getStatus()).body(ErrorResponse.of(code));
+            if (cause instanceof ConstraintViolationException violation) {
+                ErrorCode code = switch (String.valueOf(violation.getConstraintName())) {
+                    case "uk_store_table_store_number" -> ErrorCode.DUPLICATE_TABLE_NUMBER;
+                    case "uk_review_reservation" -> ErrorCode.REVIEW_ALREADY_EXISTS;
+                    default -> null;
+                };
+                if (code != null) {
+                    return ResponseEntity.status(code.getStatus()).body(ErrorResponse.of(code));
+                }
             }
         }
         return handleUnexpected(e);
