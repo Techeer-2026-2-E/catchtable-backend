@@ -103,4 +103,17 @@ public class Store extends BaseTimeEntity {
             throw new BusinessException(ErrorCode.BOOKING_DEADLINE_PASSED);
         }
     }
+
+    // 웨이팅 접수 시작
+    public void openWaiting() { this.waitingAvailable = true; }
+
+    // 웨이팅 접수 종료
+    public void closeWaiting() { this.waitingAvailable = false; }
+
+    // 접수 중 여부 검증 (마감 시 WAITING_CLOSED)
+    public void validateWaitingAvailable() {
+        if (!waitingAvailable) {
+            throw new BusinessException(ErrorCode.WAITING_CLOSED);
+        }
+    }
 }
