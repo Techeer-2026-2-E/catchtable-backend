@@ -22,7 +22,13 @@ public enum ErrorCode {
     INVALID_TABLE_CAPACITY(HttpStatus.BAD_REQUEST, "최소 인원은 1명 이상이고 최대 인원 이하여야 합니다."),
     INVALID_RESERVATION_POLICY(HttpStatus.BAD_REQUEST, "도착 유예시간은 이용시간보다 짧아야 합니다."),
     BOOKING_NOT_OPEN_YET(HttpStatus.BAD_REQUEST, "아직 예약을 받지 않는 날짜입니다."),
-    BOOKING_DEADLINE_PASSED(HttpStatus.BAD_REQUEST, "예약 마감 시간이 지났습니다.");
+    BOOKING_DEADLINE_PASSED(HttpStatus.BAD_REQUEST, "예약 마감 시간이 지났습니다."),
+
+    // 웨이팅
+    MEMBER_NOT_FOUND(HttpStatus.NOT_FOUND, "회원을 찾을 수 없습니다."),
+    WAITING_CLOSED(HttpStatus.CONFLICT, "현재 웨이팅 접수를 받지 않는 매장입니다."),
+    DUPLICATE_ACTIVE_WAITING(HttpStatus.CONFLICT, "이미 이 매장에 진행 중인 웨이팅이 있습니다."),
+    WAITING_CONFLICT(HttpStatus.CONFLICT, "웨이팅 신청이 몰리고 있습니다. 잠시 후 다시 시도해 주세요.");
 
 
 

@@ -10,6 +10,7 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
+import org.springframework.web.bind.MissingRequestHeaderException;
 
 @Slf4j
 @RestControllerAdvice
@@ -33,7 +34,7 @@ public class GlobalExceptionHandler {
     }
 
     // JSON 문법 오류·타입 불일치, 경로 변수 타입 불일치 (예: /tables/abc)
-    @ExceptionHandler({HttpMessageNotReadableException.class, MethodArgumentTypeMismatchException.class})
+    @ExceptionHandler({HttpMessageNotReadableException.class, MethodArgumentTypeMismatchException.class, MissingRequestHeaderException.class})
     public ResponseEntity<ErrorResponse> handleBadRequest(Exception e) {
         return ResponseEntity.badRequest().body(ErrorResponse.of(ErrorCode.INVALID_INPUT));
     }
