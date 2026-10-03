@@ -1,5 +1,6 @@
 package com.catchtable.store.service;
 
+import com.catchtable.reservation.repository.ReservationRepository;
 import com.catchtable.store.entity.BusinessHour;
 import com.catchtable.store.repository.BusinessHourRepository;
 import com.catchtable.store.repository.StoreRepository;
@@ -25,7 +26,7 @@ class BusinessHourServiceTest {
 
     private final BusinessHourRepository businessHourRepository = mock(BusinessHourRepository.class);
     private final BusinessHourService service =
-            new BusinessHourService(mock(StoreRepository.class), businessHourRepository);
+            new BusinessHourService(mock(StoreRepository.class), businessHourRepository, mock(ReservationRepository.class));
 
     // 금 18:00~02:00 (브레이크 23:00~23:30), 토 휴무, 일 11:00~21:00 (브레이크 15:00~16:00)
     @BeforeEach

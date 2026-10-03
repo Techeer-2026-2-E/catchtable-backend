@@ -42,4 +42,15 @@ public class Member extends BaseTimeEntity {
         this.userType = userType;
     }
 
+    public void changeProfile(String name, String phone)
+    {
+        if(name != null)
+        {
+            this.name=name;
+        }
+        if(phone!=null)
+        {
+            this.phone=phone;
+        }
+    }
 }
