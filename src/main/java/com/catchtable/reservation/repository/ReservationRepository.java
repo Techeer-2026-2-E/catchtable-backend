@@ -38,6 +38,9 @@ public interface ReservationRepository extends JpaRepository<Reservation, Long> 
     @EntityGraph(attributePaths = {"member", "store"})
     Optional<Reservation> findByIdAndStore_Owner_Id(Long id, Long ownerId);
 
+    @EntityGraph(attributePaths = {"store"})
+    Optional<Reservation> findByIdAndMember_Id(Long id, Long memberId);
+
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select r from Reservation r where r.id = :id and r.store.owner.id = :ownerId")
     Optional<Reservation> findByIdAndOwnerIdForUpdate(

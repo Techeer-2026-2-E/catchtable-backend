@@ -31,8 +31,11 @@ public enum ErrorCode {
     MEMBER_NOT_FOUND(HttpStatus.NOT_FOUND, "회원을 찾을 수 없습니다."),
     RESERVATION_NOT_FOUND(HttpStatus.NOT_FOUND, "예약을 찾을 수 없습니다."),
     RESERVATION_NOT_CANCELLABLE(HttpStatus.CONFLICT, "취소할 수 없는 예약입니다."),
-    FORBIDDEN_MEMBER_TYPE(HttpStatus.FORBIDDEN, "이 기능을 사용할 수 없는 회원 유형입니다.");
-
+    FORBIDDEN_MEMBER_TYPE(HttpStatus.FORBIDDEN, "이 기능을 사용할 수 없는 회원 유형입니다."),
+    WAITING_CLOSED(HttpStatus.CONFLICT, "현재 웨이팅 접수를 받지 않는 매장입니다."),
+    DUPLICATE_ACTIVE_WAITING(HttpStatus.CONFLICT, "이미 이 매장에 진행 중인 웨이팅이 있습니다."),
+    WAITING_CONFLICT(HttpStatus.CONFLICT, "웨이팅 신청이 몰리고 있습니다. 잠시 후 다시 시도해 주세요."),
+    MENU_NOT_FOUND(HttpStatus.NOT_FOUND, "메뉴를 찾을 수 없습니다.");
 
 
 
