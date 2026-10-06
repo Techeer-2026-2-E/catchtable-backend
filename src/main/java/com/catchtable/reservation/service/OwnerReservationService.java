@@ -1,10 +1,13 @@
 package com.catchtable.reservation.service;
 
+import com.catchtable.notification.dto.CustomerNotificationEvent;
+import com.catchtable.notification.dto.NotificationType;
 import com.catchtable.reservation.dto.OwnerReservationResponse;
 import com.catchtable.reservation.entity.Reservation;
 import com.catchtable.reservation.entity.ReservationStatus;
 import com.catchtable.reservation.repository.ReservationRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -23,6 +26,7 @@ public class OwnerReservationService {
     private static final ZoneId STORE_ZONE = ZoneId.of("Asia/Seoul");
 
     private final ReservationRepository reservationRepository;
+    private final ApplicationEventPublisher eventPublisher;
 
     public List<OwnerReservationResponse> getReservations(
             Long ownerId,
@@ -49,11 +53,20 @@ public class OwnerReservationService {
     @Transactional
     public OwnerReservationResponse cancelReservation(Long ownerId, Long reservationId, String reason) {
         Reservation reservation = findForUpdate(ownerId, reservationId);
+        if (reservation.getStatus() == ReservationStatus.CANCELLED) {
+            return OwnerReservationResponse.from(reservation);
+        }
         try {
             reservation.cancelByOwner(OffsetDateTime.now(), reason);
         } catch (IllegalStateException exception) {
             throw conflict(exception);
         }
+        eventPublisher.publishEvent(new CustomerNotificationEvent(
+                reservation.getMember().getId(),
+                NotificationType.RESERVATION_CANCELED,
+                reservation.getId(),
+                "점주가 예약을 취소했습니다. 사유: " + reservation.getCancellationReason()
+        ));
         return OwnerReservationResponse.from(reservation);
     }
 

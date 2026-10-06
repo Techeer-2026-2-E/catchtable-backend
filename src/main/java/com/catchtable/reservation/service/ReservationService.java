@@ -38,6 +38,11 @@ public class ReservationService {
     private final EntityManager entityManager;
     private final ApplicationEventPublisher eventPublisher;
 
+    public ReservationResponse getReservation(Long memberId, Long reservationId) {
+        return ReservationResponse.from(reservationRepository.findByIdAndMember_Id(reservationId, memberId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.RESERVATION_NOT_FOUND)));
+    }
+
     @Transactional
     public ReservationResponse createReservation(Long memberId, CreateReservationRequest request) {
         if (request.partySize() <= 0) {
