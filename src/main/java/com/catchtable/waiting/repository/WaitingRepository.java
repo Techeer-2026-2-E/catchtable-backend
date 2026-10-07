@@ -2,12 +2,14 @@ package com.catchtable.waiting.repository;
 
 import com.catchtable.waiting.entity.Waiting;
 import com.catchtable.waiting.entity.WaitingStatus;
+import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.time.LocalDate;
 import java.util.Collection;
+import java.util.List;
 import java.util.Optional;
 
 public interface WaitingRepository extends JpaRepository<Waiting, Long> {
@@ -27,4 +29,8 @@ public interface WaitingRepository extends JpaRepository<Waiting, Long> {
     // 내 앞 대기 팀 수
     long countByStoreIdAndWaitingDateAndStatusInAndWaitNumberLessThan(
             Long storeId, LocalDate waitingDate, Collection<WaitingStatus> statuses, int waitNumber);
+
+    // 고객 내역 조회용 (매장명 표시를 위해 매장 함께 조회)
+    @EntityGraph(attributePaths = {"store"})
+    List<Waiting> findAllByMemberIdAndStatusIn(Long memberId, Collection<WaitingStatus> statuses);
 }
