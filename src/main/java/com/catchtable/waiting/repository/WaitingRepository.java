@@ -33,4 +33,7 @@ public interface WaitingRepository extends JpaRepository<Waiting, Long> {
     // 고객 내역 조회용 (매장명 표시를 위해 매장 함께 조회)
     @EntityGraph(attributePaths = {"store"})
     List<Waiting> findAllByMemberIdAndStatusIn(Long memberId, Collection<WaitingStatus> statuses);
+
+    @EntityGraph(attributePaths = {"store"})
+    Optional<Waiting> findByIdAndMemberId(Long id, Long memberId);
 }
