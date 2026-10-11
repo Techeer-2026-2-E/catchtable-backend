@@ -36,4 +36,8 @@ public interface WaitingRepository extends JpaRepository<Waiting, Long> {
 
     @EntityGraph(attributePaths = {"store"})
     Optional<Waiting> findByIdAndMemberId(Long id, Long memberId);
+
+
+    List<Waiting> findAllByStoreIdAndWaitingDateAndStatusInOrderByWaitNumberAsc(
+            Long storeId, LocalDate waitingDate, Collection<WaitingStatus> statuses);
 }
