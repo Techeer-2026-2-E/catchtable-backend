@@ -9,6 +9,7 @@ import com.catchtable.store.entity.Store;
 import com.catchtable.store.entity.StoreCategory;
 import com.catchtable.store.entity.TableStatus;
 import com.catchtable.store.repository.BusinessHourRepository;
+import com.catchtable.store.repository.MenuRepository;
 import com.catchtable.store.repository.StoreRepository;
 import com.catchtable.store.repository.StoreTableRepository;
 import lombok.RequiredArgsConstructor;
@@ -33,6 +34,7 @@ public class StoreService {
     private final StoreRepository storeRepository;
     private final BusinessHourRepository businessHourRepository;
     private final StoreTableRepository storeTableRepository;
+    private final MenuRepository menuRepository;
     private final Clock clock;
 
     public StoreDetailResponse getStoreDetail(Long storeId)
@@ -44,7 +46,11 @@ public class StoreService {
                 businessHourRepository.findAllByStoreIdOrderByDayOfWeekAsc(storeId).stream()
                         .map(BusinessHourResponse::from)
                         .toList();
-        return StoreDetailResponse.of(store, businessHours);
+        List<MenuResponse> menus=
+                menuRepository.findAllByStoreIdOrderByIdAsc(storeId).stream()
+                        .map(MenuResponse::from)
+                        .toList();
+        return StoreDetailResponse.of(store, businessHours, menus);
     }
 
     public List<CategoryResponse> getCategories()
