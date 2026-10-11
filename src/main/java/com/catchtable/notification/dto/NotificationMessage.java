@@ -8,6 +8,7 @@ public record NotificationMessage(
         NotificationType type,
         Long targetId,
         String message,
+        NotificationPayload payload,
         LocalDateTime occurredAt
 ) {
     public static NotificationMessage from(CustomerNotificationEvent event, LocalDateTime now) {
@@ -17,6 +18,7 @@ public record NotificationMessage(
                 event.type(),
                 event.targetId(),
                 event.message(),
+                event.payload(),
                 now
         );
     }
