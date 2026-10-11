@@ -2,7 +2,17 @@ package com.catchtable.notification.repository;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
+import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
+
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -64,5 +74,58 @@ class SseEmitterRepositoryTest {
         repository.delete(99L, new SseEmitter());
 
         assertThat(repository.findAllByMemberId(99L)).isEmpty();
+    }
+
+    @Test
+    @Timeout(15)
+    @DisplayName("마지막 기존 연결의 삭제와 재접속이 겹쳐도 새 연결을 보관한다")
+    @SuppressWarnings("unchecked")
+    void reconnectSurvivesTheLastOldConnectionClosing() throws Exception {
+        SseEmitter oldConnection = new SseEmitter();
+        SseEmitter newConnection = new SseEmitter();
+        CountDownLatch adding = new CountDownLatch(1);
+        CountDownLatch deleting = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        var list = new CopyOnWriteArrayList<SseEmitter>() {
+            @Override
+            public boolean add(SseEmitter emitter) {
+                if (emitter == newConnection) {
+                    adding.countDown();
+                    try {
+                        if (!release.await(10, TimeUnit.SECONDS)) throw new AssertionError("save was not released");
+                    } catch (InterruptedException exception) {
+                        Thread.currentThread().interrupt();
+                        throw new AssertionError(exception);
+                    }
+                }
+                return super.add(emitter);
+            }
+        };
+        list.add(oldConnection);
+        var members = (Map<Long, List<SseEmitter>>) ReflectionTestUtils.getField(repository, "emitters");
+        members.put(1L, list);
+        try (var executor = Executors.newFixedThreadPool(2)) {
+            var saving = executor.submit(() -> repository.save(1L, newConnection));
+            try {
+                assertThat(adding.await(5, TimeUnit.SECONDS)).isTrue();
+                var closing = executor.submit(() -> {
+                    deleting.countDown();
+                    repository.delete(1L, oldConnection);
+                });
+                assertThat(deleting.await(5, TimeUnit.SECONDS)).isTrue();
+                try {
+                    closing.get(2, TimeUnit.SECONDS);
+                } catch (TimeoutException expectedWhenSaveAndDeleteAreAtomic) {
+                    // 등록과 삭제가 원자적으로 처리되면 등록 완료까지 삭제가 기다린다.
+                } finally {
+                    release.countDown();
+                }
+                saving.get(5, TimeUnit.SECONDS);
+                closing.get(5, TimeUnit.SECONDS);
+                assertThat(repository.findAllByMemberId(1L)).containsExactly(newConnection);
+            } finally {
+                release.countDown();
+            }
+        }
     }
 }
