@@ -59,6 +59,15 @@ public class Store extends BaseTimeEntity {
     @Column(name = "booking_deadline_minutes", nullable = false)
     private int bookingDeadlineMinutes;
 
+    @Column(name="description",length = 1000)
+    private String description;
+
+    @Column(length = 20)
+    private String phone;
+
+    @Column(name="image_url",length = 2048)
+    private String imageUrl;
+
 
     @Builder
     private Store(Member owner, String name, StoreCategory category, String address,
@@ -130,5 +139,19 @@ public class Store extends BaseTimeEntity {
     // 검색용: 예약 창이 열려 있고 마감 전인지
     public boolean isWithinBookingWindow(LocalDateTime startAt, LocalDateTime now) {
         return isBookingOpen(startAt, now) && isBeforeDeadline(startAt, now);
+    }
+
+    public void changeInfo(String name, StoreCategory category, String address,
+                           String description, String phone, String imageUrl) {
+        if (name != null) this.name = name;
+        if (category != null) this.category = category;
+        if (address != null) this.address = address;
+        if (description != null) this.description = emptyToNull(description);
+        if (phone != null) this.phone = emptyToNull(phone);
+        if (imageUrl != null) this.imageUrl = emptyToNull(imageUrl);
+    }
+
+    private static String emptyToNull(String value) {
+        return value.isBlank() ? null : value;
     }
 }

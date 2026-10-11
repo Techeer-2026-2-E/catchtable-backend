@@ -11,6 +11,9 @@ public record StoreDetailResponse (
         StoreCategory category,
         String categoryName,
         String address,
+        String description,
+        String phone,
+        String imageUrl,
         boolean waitingAvailable,
         List<BusinessHourResponse> businessHours   // 없는 요일은 휴무
 ){
@@ -23,6 +26,9 @@ public record StoreDetailResponse (
                 store.getCategory(),
                 store.getCategory().getDescription(),
                 store.getAddress(),
+                store.getDescription(),
+                store.getPhone(),
+                store.getImageUrl(),
                 store.isWaitingAvailable(),
                 businessHours
         );
