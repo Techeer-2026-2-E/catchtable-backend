@@ -11,6 +11,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.time.OffsetDateTime;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -40,6 +41,10 @@ public interface ReservationRepository extends JpaRepository<Reservation, Long> 
 
     @EntityGraph(attributePaths = {"store"})
     Optional<Reservation> findByIdAndMember_Id(Long id, Long memberId);
+
+    // 고객 내역 조회용, 매장명을 함께 내려주므로 매장을 같이 가져온다.
+    @EntityGraph(attributePaths = {"store"})
+    List<Reservation> findAllByMember_IdAndStatusIn(Long memberId, Collection<ReservationStatus> statuses);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select r from Reservation r where r.id = :id and r.store.owner.id = :ownerId")
