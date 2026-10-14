@@ -6,11 +6,12 @@ import com.catchtable.global.exception.ErrorCode;
 import com.catchtable.reservation.entity.Reservation;
 import com.catchtable.reservation.entity.ReservationStatus;
 import com.catchtable.reservation.repository.ReservationRepository;
-import com.catchtable.review.dto.ReviewCreateRequest;
-import com.catchtable.review.dto.ReviewResponse;
+import com.catchtable.review.dto.*;
 import com.catchtable.review.entity.Review;
 import com.catchtable.review.repository.ReviewRepository;
+import com.catchtable.store.repository.StoreRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Slice;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -28,6 +29,7 @@ public class ReviewService {
     private final ReviewRepository reviewRepository;
     private final ReservationRepository reservationRepository;
     private final Clock clock;
+    private final StoreRepository storeRepository;
 
     @Transactional
     public ReviewResponse createReview(Long memberId, ReviewCreateRequest request)
@@ -55,4 +57,31 @@ public class ReviewService {
 
         return ReviewResponse.from(reviewRepository.saveAndFlush(review));
     }
+
+    public StoreReviewListResponse getStoreReviews(Long storeId, ReviewListCondition condition)
+    {
+        if(!storeRepository.existsById(storeId))
+        {
+            throw new BusinessException(ErrorCode.STORE_NOT_FOUND);
+        }
+
+        ReviewSummary summary=reviewRepository.summarizeByStoreId(storeId);
+        Slice<StoreReviewResponse> reviews=reviewRepository
+                .findSliceByStoreId(storeId, condition.toPageable())
+                .map(StoreReviewResponse::from);
+
+        return StoreReviewListResponse.of(
+                roundRating(summary.averageRating()),
+                summary.reviewCount(),
+                reviews);
+
+    }
+    private static Double roundRating(Double average)
+    {
+        if (average == null) {
+            return null;
+        }
+        return Math.round(average * 10) / 10.0;
+    }
+
 }
