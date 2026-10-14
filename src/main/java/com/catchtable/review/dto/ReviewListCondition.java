@@ -13,7 +13,7 @@ public record ReviewListCondition
         )
 {
     public ReviewListCondition{
-        if(sort==null) sort=ReviewSort.Latest;
+        if(sort==null) sort=ReviewSort.LATEST;
         if(page==null) page=0;
         if(size==null) size=10;
     }

@@ -3,7 +3,7 @@ package com.catchtable.review.dto;
 import org.springframework.data.domain.Sort;
 
 public enum ReviewSort {
-    Latest(Sort.by(Sort.Order.desc("createdAt"),Sort.Order.desc("id"))),
+    LATEST(Sort.by(Sort.Order.desc("createdAt"),Sort.Order.desc("id"))),
     RATING(Sort.by(Sort.Order.desc("rating"), Sort.Order.desc("createdAt"),
             Sort.Order.desc("id")));
 
