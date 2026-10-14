@@ -11,11 +11,15 @@ public record StoreDetailResponse (
         StoreCategory category,
         String categoryName,
         String address,
+        String description,
+        String phone,
+        String imageUrl,
         boolean waitingAvailable,
-        List<BusinessHourResponse> businessHours   // 없는 요일은 휴무
+        List<BusinessHourResponse> businessHours,   // 없는 요일은 휴무
+        List<MenuResponse> menus
 ){
 
-    public static StoreDetailResponse of(Store store, List<BusinessHourResponse> businessHours)
+    public static StoreDetailResponse of(Store store, List<BusinessHourResponse> businessHours, List<MenuResponse> menus)
     {
         return new StoreDetailResponse(
                 store.getId(),
@@ -23,8 +27,12 @@ public record StoreDetailResponse (
                 store.getCategory(),
                 store.getCategory().getDescription(),
                 store.getAddress(),
+                store.getDescription(),
+                store.getPhone(),
+                store.getImageUrl(),
                 store.isWaitingAvailable(),
-                businessHours
+                businessHours,
+                menus
         );
 
     }
