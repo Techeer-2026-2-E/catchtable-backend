@@ -48,6 +48,11 @@ class UserStoreControllerTest {
                 storeId, dayOfWeek, open, close, deleted);
     }
 
+    private void insertMenu(String name, int price, String description) {
+        jdbcTemplate.update("INSERT INTO menu (store_id, name, price, description) VALUES (?, ?, ?, ?)",
+                storeId, name, price, description);
+    }
+
     @Test
     @DisplayName("매장 기본 정보와 영업시간을 요일 순으로 조회한다")
     void getStoreDetail() throws Exception {
@@ -78,6 +83,30 @@ class UserStoreControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.businessHours", hasSize(1)))
                 .andExpect(jsonPath("$.businessHours[0].dayOfWeek").value("MONDAY"));
+    }
+
+    @Test
+    @DisplayName("메뉴를 등록순으로 함께 조회한다")
+    void includeMenus() throws Exception {
+        insertMenu("런치 코스", 45000, "점심 한정");
+        insertMenu("콜키지", 0, null);
+
+        mockMvc.perform(get("/api/user/stores/{storeId}", storeId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.menus", hasSize(2)))
+                .andExpect(jsonPath("$.menus[0].name").value("런치 코스"))
+                .andExpect(jsonPath("$.menus[0].price").value(45000))
+                .andExpect(jsonPath("$.menus[0].description").value("점심 한정"))
+                .andExpect(jsonPath("$.menus[1].name").value("콜키지"))
+                .andExpect(jsonPath("$.menus[1].price").value(0));
+    }
+
+    @Test
+    @DisplayName("메뉴가 없으면 빈 배열")
+    void emptyMenus() throws Exception {
+        mockMvc.perform(get("/api/user/stores/{storeId}", storeId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.menus", hasSize(0)));
     }
 
     @Test
