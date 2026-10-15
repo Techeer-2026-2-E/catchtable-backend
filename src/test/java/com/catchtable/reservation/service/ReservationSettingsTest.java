@@ -186,8 +186,72 @@ class ReservationSettingsTest {
                         e -> assertThat(e.getStatusCode()).isEqualTo(HttpStatus.CONFLICT));
     }
 
+    @Test
+    void expiryBoundaryReleasesHoldsAndNoLongerBlocksSettings() {
+        var hold = reservations.createHold(customerId, new CreateReservationRequest(storeId, start, 4));
+        assertThatThrownBy(() -> tables.updateTable(storeId, tableId,
+                new StoreTableUpdateRequest(null, null, null, TableStatus.INACTIVE)))
+                .extracting("errorCode").isEqualTo(ErrorCode.TABLE_HAS_RESERVATIONS);
+        assertThatThrownBy(() -> hours.replaceBusinessHours(storeId, new BusinessHourUpdateRequest(List.of())))
+                .extracting("errorCode").isEqualTo(ErrorCode.BUSINESS_HOUR_HAS_RESERVATIONS);
 
+        var transaction = new TransactionTemplate(transactionManager);
+        assertThat(transaction.<Integer>execute(s -> reservationRepository.expireHolds(storeId, hold.expiresAt().minusNanos(1000))))
+                .isZero();
+        assertThat(transaction.<Integer>execute(s -> reservationRepository.expireHolds(storeId, hold.expiresAt())))
+                .isEqualTo(1);
+        assertThat(reservations.getHold(customerId, hold.holdId()).status()).isEqualTo(ReservationStatus.EXPIRED);
+        assertThat(transaction.<Integer>execute(s -> reservationRepository.expireHolds(storeId, hold.expiresAt())))
+                .isZero();
+        assertThat(tables.updateTable(storeId, tableId,
+                new StoreTableUpdateRequest(null, null, null, TableStatus.INACTIVE)).status())
+                .isEqualTo(TableStatus.INACTIVE);
+        assertThat(hours.replaceBusinessHours(storeId, new BusinessHourUpdateRequest(List.of()))).isEmpty();
+    }
 
+    @Test
+    void getAndScheduledExpiryDoNotReleaseConfirmedReservations() {
+        var first = reservations.createHold(customerId, new CreateReservationRequest(storeId, start, 4));
+        var second = reservations.createHold(customerId, new CreateReservationRequest(storeId, start.plusHours(2), 4));
+        var confirmed = reservations.createHold(customerId, new CreateReservationRequest(storeId, start.plusHours(4), 4));
+        // 결제 확정 상태의 픽스처. 결제 승인 API는 아직 연결하지 않는다.
+        jdbc.update("UPDATE reservation SET status = 'CONFIRMED', confirmed_at = requested_at WHERE id = ?",
+                confirmed.holdId());
+        jdbc.update("""
+                UPDATE reservation SET requested_at = requested_at - INTERVAL '10 minutes',
+                    hold_expires_at = hold_expires_at - INTERVAL '10 minutes' WHERE store_id = ?
+                """, storeId);
+        assertThat(reservations.getHold(customerId, first.holdId()).status()).isEqualTo(ReservationStatus.EXPIRED);
+        reservations.expireHolds();
+        assertThat(reservations.getHold(customerId, second.holdId()).status()).isEqualTo(ReservationStatus.EXPIRED);
+        assertThat(reservations.getHold(customerId, confirmed.holdId()).status()).isEqualTo(ReservationStatus.CONFIRMED);
+        assertThat(availability.getAvailableTableCount(storeId, start.plusHours(4), 4).availableTableCount()).isZero();
+    }
+
+    @Test
+    @Timeout(10)
+    void expirySkipsALockedReservationUntilItsStateChangeFinishes() throws Exception {
+        var hold = reservations.createHold(customerId, new CreateReservationRequest(storeId, start, 4));
+        jdbc.update("""
+                UPDATE reservation SET requested_at = requested_at - INTERVAL '10 minutes',
+                    hold_expires_at = hold_expires_at - INTERVAL '10 minutes' WHERE id = ?
+                """, hold.holdId());
+        try (var lock = jdbc.getDataSource().getConnection()) {
+            lock.setAutoCommit(false);
+            try (var statement = lock.prepareStatement("SELECT id FROM reservation WHERE id = ? FOR UPDATE")) {
+                statement.setLong(1, hold.holdId());
+                statement.executeQuery().close();
+            }
+            reservations.expireHolds();
+            assertThat(jdbc.queryForObject("SELECT status FROM reservation WHERE id = ?", String.class, hold.holdId()))
+                    .isEqualTo("PENDING_PAYMENT");
+            assertThatThrownBy(this::reserve).isInstanceOfSatisfying(ResponseStatusException.class,
+                    e -> assertThat(e.getStatusCode()).isEqualTo(HttpStatus.CONFLICT));
+            lock.commit();
+        }
+        assertThat(reserve()).isNotNull();
+        assertThat(reservations.getHold(customerId, hold.holdId()).status()).isEqualTo(ReservationStatus.EXPIRED);
+    }
 
     static Stream<StoreTableUpdateRequest> conflictingTableChanges() {
         return Stream.of(
