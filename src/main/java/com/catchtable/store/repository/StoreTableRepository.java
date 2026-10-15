@@ -37,6 +37,7 @@ public interface StoreTableRepository extends JpaRepository<StoreTable, Long> {
                   SELECT 1
                   FROM reservation r
                   WHERE r.table_id = st.id
+                    AND (CAST(:excludedReservationId AS BIGINT) IS NULL OR r.id <> :excludedReservationId)
                     AND r.status NOT IN ('CANCELLED', 'EXPIRED')
                     AND tstzrange(r.reservation_start_at, r.reservation_end_at, '[)')
                         && tstzrange(CAST(:reservationStartAt AS TIMESTAMPTZ),
@@ -50,7 +51,8 @@ public interface StoreTableRepository extends JpaRepository<StoreTable, Long> {
             @Param("storeId") Long storeId,
             @Param("partySize") int partySize,
             @Param("reservationStartAt") OffsetDateTime reservationStartAt,
-            @Param("reservationEndAt") OffsetDateTime reservationEndAt
+            @Param("reservationEndAt") OffsetDateTime reservationEndAt,
+            @Param("excludedReservationId") Long excludedReservationId
     );
 
     // 조회용 수량은 선점하지 않는 순간값이며, 실제 생성 시 위 쿼리로 다시 확인한다.

@@ -8,6 +8,7 @@ import com.catchtable.reservation.controller.ReservationController;
 import com.catchtable.reservation.controller.OwnerReservationController;
 import com.catchtable.reservation.dto.CreateReservationRequest;
 import com.catchtable.reservation.dto.ReservationHoldResponse;
+import com.catchtable.reservation.dto.OwnerReservationUpdateRequest;
 import com.catchtable.notification.repository.SseEmitterRepository;
 import com.catchtable.reservation.entity.ReservationStatus;
 import com.catchtable.reservation.repository.ReservationRepository;
@@ -544,13 +545,173 @@ class ReservationSettingsTest {
         assertThat(reserve()).isNotNull();
     }
 
+    @Test
+    void changeApiValidatesOwnerAndPartialInputAndNotifiesOnlyOnceOnRetry() throws Exception {
+        Long id = reserve();
+        var original = reservationRepository.findById(id).orElseThrow();
+        var mvc = MockMvcBuilders.standaloneSetup(new OwnerReservationController(ownerReservations))
+                .setCustomArgumentResolvers(new LoginMemberArgumentResolver())
+                .setControllerAdvice(new GlobalExceptionHandler()).build();
+        String path = "/api/owner/reservations/" + id;
+        mvc.perform(patch(path).contentType(MediaType.APPLICATION_JSON).content("{\"partySize\":2}"))
+                .andExpect(status().isUnauthorized());
+        mvc.perform(patch(path).header("X-Member-Id", customerId)
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"partySize\":2}"))
+                .andExpect(status().isForbidden());
+        for (String body : List.of("{}", "{\"partySize\":0}", "{\"reservationStartAt\":\"bad-date\"}")) {
+            mvc.perform(patch(path).header("X-Member-Id", ownerId).contentType(MediaType.APPLICATION_JSON).content(body))
+                    .andExpect(status().isBadRequest());
+        }
+        Long otherOwner = jdbc.queryForObject("""
+                INSERT INTO member (name, phone, user_type) VALUES ('other', '010-0000-0099', 'OWNER') RETURNING id
+                """, Long.class);
+        SseEmitter emitter = mock(SseEmitter.class);
+        emitterRepository.save(customerId, emitter);
+        try {
+            mvc.perform(patch(path).header("X-Member-Id", otherOwner)
+                            .contentType(MediaType.APPLICATION_JSON).content("{\"partySize\":2}"))
+                    .andExpect(status().isNotFound());
+            for (int attempt = 0; attempt < 2; attempt++) {
+                mvc.perform(patch(path).header("X-Member-Id", ownerId)
+                                .contentType(MediaType.APPLICATION_JSON).content("{\"partySize\":2}"))
+                        .andExpect(status().isOk()).andExpect(jsonPath("$.partySize").value(2));
+            }
+            verify(emitter, times(1)).send(any(SseEmitter.SseEventBuilder.class));
+            var changed = reservationRepository.findById(id).orElseThrow();
+            assertThat(changed.getReservationStartAt()).isEqualTo(original.getReservationStartAt());
+            assertThat(changed.getRequestedAt()).isEqualTo(original.getRequestedAt());
+            assertThat(changed.getConfirmedAt()).isEqualTo(original.getConfirmedAt());
+        } finally {
+            emitterRepository.delete(customerId, emitter);
+            jdbc.update("DELETE FROM member WHERE id = ?", otherOwner);
+        }
+    }
 
+    @Test
+    void changingAnOverlappingTimeExcludesItselfAndReleasesTheOldSlotOnCommit() {
+        Long id = reserve();
+        var overlapping = ownerReservations.updateReservation(ownerId, id,
+                new OwnerReservationUpdateRequest(start.plusHours(1), null));
+        assertThat(overlapping.tableId()).isEqualTo(tableId);
+        assertThat(overlapping.reservationStartAt().toInstant()).isEqualTo(start.plusHours(1).toInstant());
+        assertThat(overlapping.reservationEndAt().toInstant()).isEqualTo(start.plusHours(3).toInstant());
 
+        var moved = ownerReservations.updateReservation(ownerId, id,
+                new OwnerReservationUpdateRequest(start.plusHours(4), null));
+        assertThat(moved.reservationId()).isEqualTo(id);
+        assertThat(availability.getAvailableTableCount(storeId, start, 4).availableTableCount()).isEqualTo(1);
+        assertThat(availability.getAvailableTableCount(storeId, start.plusHours(4), 4).availableTableCount()).isZero();
+    }
 
+    @Test
+    void increasingPartySizeReassignsATableInTheSameStore() {
+        Long id = reserve();
+        Long bigger = jdbc.queryForObject("""
+                INSERT INTO store_table (store_id, table_number, min_capacity, capacity, status)
+                VALUES (?, 2, 4, 8, 'ACTIVE') RETURNING id
+                """, Long.class, storeId);
+        var changed = ownerReservations.updateReservation(ownerId, id, new OwnerReservationUpdateRequest(null, 8));
+        assertThat(changed.storeId()).isEqualTo(storeId);
+        assertThat(changed.reservationId()).isEqualTo(id);
+        assertThat(changed.tableId()).isEqualTo(bigger);
+        assertThat(changed.partySize()).isEqualTo(8);
+        assertThat(availability.getAvailableTableCount(storeId, start, 4).availableTableCount()).isEqualTo(1);
+    }
 
+    @ParameterizedTest
+    @ValueSource(booleans = {true, false})
+    void blockedDestinationKeepsOriginalReservationAndSlot(boolean hold) {
+        Long id = reserve();
+        var original = reservations.getReservation(customerId, id);
+        var destination = new CreateReservationRequest(storeId, start.plusHours(4), 4);
+        if (hold) reservations.createHold(customerId, destination);
+        else reservations.createReservation(customerId, destination);
 
+        assertThatThrownBy(() -> ownerReservations.updateReservation(ownerId, id,
+                new OwnerReservationUpdateRequest(destination.reservationStartAt(), 4)))
+                .isInstanceOfSatisfying(ResponseStatusException.class,
+                        failure -> assertThat(failure.getStatusCode()).isEqualTo(HttpStatus.CONFLICT));
+        assertThat(reservations.getReservation(customerId, id)).isEqualTo(original);
+        assertThat(availability.getAvailableTableCount(storeId, start, 4).availableTableCount()).isZero();
+    }
 
+    @Test
+    void closedHoursAndInvalidSlotChangesKeepOriginalReservation() {
+        Long id = reserve();
+        var original = reservations.getReservation(customerId, id);
+        for (var invalidTime : List.of(start.withHour(23), start.plusMinutes(1))) {
+            assertThatThrownBy(() -> ownerReservations.updateReservation(ownerId, id,
+                    new OwnerReservationUpdateRequest(invalidTime, null)))
+                    .isInstanceOfSatisfying(ResponseStatusException.class,
+                            failure -> assertThat(failure.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST));
+        }
+        assertThat(reservations.getReservation(customerId, id)).isEqualTo(original);
+    }
 
+    @Test
+    void onlyAnUnenteredFutureConfirmedReservationCanBeChangedPendingTeamPolicy() {
+        Long checkedIn = reserve();
+        ownerReservations.confirmVisit(ownerId, checkedIn);
+        Long canceled = reservations.createReservation(customerId,
+                new CreateReservationRequest(storeId, start.plusHours(2), 4)).reservationId();
+        ownerReservations.cancelReservation(ownerId, canceled, "매장 사정");
+        Long pending = reservations.createHold(customerId,
+                new CreateReservationRequest(storeId, start.plusHours(4), 4)).holdId();
+        Long past = reservations.createReservation(customerId,
+                new CreateReservationRequest(storeId, start.plusHours(6), 4)).reservationId();
+        jdbc.update("""
+                UPDATE reservation SET reservation_start_at = now() - INTERVAL '1 minute',
+                    reservation_end_at = now() + INTERVAL '119 minutes' WHERE id = ?
+                """, past);
+        for (Long id : List.of(checkedIn, canceled, pending, past)) {
+            var original = reservations.getReservation(customerId, id);
+            assertThatThrownBy(() -> ownerReservations.updateReservation(ownerId, id,
+                    new OwnerReservationUpdateRequest(start.plusDays(1), 2)))
+                    .isInstanceOfSatisfying(BusinessException.class,
+                            failure -> assertThat(failure.getErrorCode()).isEqualTo(ErrorCode.RESERVATION_NOT_MODIFIABLE));
+            assertThat(reservations.getReservation(customerId, id)).isEqualTo(original);
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {true, false})
+    @Timeout(15)
+    void changeAndNewBookingCannotClaimTheSameDestination(boolean hold) throws Exception {
+        Long id = reserve();
+        OffsetDateTime destination = start.plusHours(4);
+        CountDownLatch ready = new CountDownLatch(2);
+        CountDownLatch startRace = new CountDownLatch(1);
+        try (var executor = Executors.newFixedThreadPool(2)) {
+            var change = executor.submit(() -> attemptReservationAction(ready, startRace,
+                    () -> ownerReservations.updateReservation(ownerId, id, new OwnerReservationUpdateRequest(destination, 4))));
+            var create = executor.submit(() -> attemptReservationAction(ready, startRace, () -> {
+                var request = new CreateReservationRequest(storeId, destination, 4);
+                if (hold) reservations.createHold(customerId, request);
+                else reservations.createReservation(customerId, request);
+            }));
+            await(ready);
+            startRace.countDown();
+            boolean changed = change.get(10, TimeUnit.SECONDS);
+            boolean created = create.get(10, TimeUnit.SECONDS);
+            assertThat(changed).isNotEqualTo(created);
+            assertThat(reservations.getReservation(customerId, id).reservationStartAt().toInstant())
+                    .isEqualTo((changed ? destination : start).toInstant());
+        }
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM reservation WHERE store_id = ? AND reservation_start_at = ?",
+                Integer.class, storeId, destination)).isEqualTo(1);
+    }
+
+    private boolean attemptReservationAction(CountDownLatch ready, CountDownLatch startRace, Runnable action) {
+        ready.countDown();
+        await(startRace);
+        try {
+            action.run();
+            return true;
+        } catch (ResponseStatusException exception) {
+            assertThat(exception.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+            return false;
+        }
+    }
 
     private Long reserve() {
         return reservations.createReservation(customerId, new CreateReservationRequest(storeId, start, 4))
