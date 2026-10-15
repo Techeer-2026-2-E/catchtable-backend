@@ -176,6 +176,19 @@ public class Reservation extends BaseTimeEntity {
         status = getStatusAt(now);
     }
 
+    public void releaseHold(OffsetDateTime now) {
+        expireHold(now);
+        if (status == ReservationStatus.EXPIRED || status == ReservationStatus.CANCELLED) {
+            return;
+        }
+        if (status != ReservationStatus.PENDING_PAYMENT) {
+            throw new IllegalStateException("결제 대기 선점만 해제할 수 있습니다.");
+        }
+        status = ReservationStatus.CANCELLED;
+        cancelledAt = now;
+        cancellationActor = CancellationActor.CUSTOMER;
+        cancellationReason = "결제 전 선점 취소";
+    }
 
 
 
