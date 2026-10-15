@@ -11,7 +11,7 @@ public enum WaitingStatus {
     CONFIRMED,  // 도착 의사 응답
     SEATED,     // 착석 완료
     CANCELED,   // 취소 (고객/점주)
-    EXPIRED;    // 순번 만료 (미응답·미착석)
+    NO_SHOW;   // 순번 종료 (미응답·미착석·자동 만료)
 
     // 진행 중 상태 묶음 → 중복 신청 체크, 앞 팀 수 계산용
     public static final Set<WaitingStatus> ACTIVE =

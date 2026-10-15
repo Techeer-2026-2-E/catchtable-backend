@@ -4,6 +4,8 @@ import com.catchtable.global.exception.BusinessException;
 import com.catchtable.global.exception.ErrorCode;
 import com.catchtable.member.entity.Member;
 import com.catchtable.member.repository.MemberRepository;
+import com.catchtable.notification.dto.CustomerNotificationEvent;
+import com.catchtable.notification.dto.NotificationType;
 import com.catchtable.store.entity.Store;
 import com.catchtable.store.repository.StoreRepository;
 import com.catchtable.waiting.dto.WaitingCreateResult;
@@ -12,11 +14,12 @@ import com.catchtable.waiting.entity.Waiting;
 import com.catchtable.waiting.entity.WaitingStatus;
 import com.catchtable.waiting.repository.WaitingRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Clock;
 import java.time.LocalDate;
-import java.time.ZoneId;
 import java.util.Optional;
 
 @Service
@@ -24,12 +27,11 @@ import java.util.Optional;
 @Transactional(readOnly = true)
 public class WaitingService {
 
-    // 날짜 기준 시간대 (한국)
-    private static final ZoneId ZONE = ZoneId.of("Asia/Seoul");
-
     private final WaitingRepository waitingRepository;
     private final StoreRepository storeRepository;
     private final MemberRepository memberRepository;
+    private final ApplicationEventPublisher eventPublisher;
+    private final Clock clock;
 
     // 원격 웨이팅 신청
     @Transactional
@@ -39,7 +41,7 @@ public class WaitingService {
                 .orElseThrow(() -> new BusinessException(ErrorCode.STORE_NOT_FOUND));
 
         // 오늘 날짜
-        LocalDate today = LocalDate.now(ZONE);
+        LocalDate today = LocalDate.now(clock);
 
         // 2. 진행 중 웨이팅 확인 (마감 체크보다 먼저 → 재시도 시 항상 같은 결과)
         Optional<Waiting> existing = waitingRepository
@@ -69,6 +71,10 @@ public class WaitingService {
         // 5. 저장
         Waiting saved = waitingRepository.save(
                 Waiting.create(member, store, today, partyCount, nextNumber));
+
+        eventPublisher.publishEvent(new CustomerNotificationEvent(
+                store.getOwner().getId(), NotificationType.WAITING_CHANGED, storeId,
+                "대기 목록이 변경되었습니다."));
 
         return new WaitingCreateResult(toResponse(saved, storeId), true);
     }

@@ -7,7 +7,6 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 @Component
@@ -17,8 +16,11 @@ public class SseEmitterRepository {
 
     public void save(Long memberId, SseEmitter emitter)
     {
-        emitters.computeIfAbsent(memberId, id -> new CopyOnWriteArrayList<>())
-                .add(emitter);
+        emitters.compute(memberId, (id, list) -> {
+            if (list == null) list = new CopyOnWriteArrayList<>();
+            list.add(emitter);
+            return list;
+        });
     }
 
     public void delete(Long memberId, SseEmitter emitter)
