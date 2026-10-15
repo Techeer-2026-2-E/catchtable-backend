@@ -1,18 +1,28 @@
 package com.catchtable.reservation.service;
 
+import com.catchtable.global.exception.BusinessException;
+import com.catchtable.global.exception.ErrorCode;
+import com.catchtable.member.entity.UserType;
+import com.catchtable.member.repository.MemberRepository;
 import com.catchtable.notification.dto.CustomerNotificationEvent;
 import com.catchtable.notification.dto.NotificationType;
 import com.catchtable.reservation.dto.OwnerReservationResponse;
 import com.catchtable.reservation.entity.Reservation;
 import com.catchtable.reservation.entity.ReservationStatus;
 import com.catchtable.reservation.repository.ReservationRepository;
+import com.catchtable.store.entity.Store;
+import com.catchtable.store.entity.StoreTable;
+import com.catchtable.store.repository.StoreRepository;
+import com.catchtable.store.repository.StoreTableRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.time.Clock;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
@@ -27,6 +37,8 @@ public class OwnerReservationService {
 
     private final ReservationRepository reservationRepository;
     private final ApplicationEventPublisher eventPublisher;
+    private final Clock clock;
+
 
     public List<OwnerReservationResponse> getReservations(
             Long ownerId,
@@ -36,17 +48,19 @@ public class OwnerReservationService {
     ) {
         OffsetDateTime start = date.atStartOfDay(STORE_ZONE).toOffsetDateTime();
         OffsetDateTime end = date.plusDays(1).atStartOfDay(STORE_ZONE).toOffsetDateTime();
+        OffsetDateTime now = OffsetDateTime.now(clock);
 
         return reservationRepository.findAllForOwner(ownerId, storeId, start, end, status)
                 .stream()
-                .map(OwnerReservationResponse::from)
+                .map(reservation -> OwnerReservationResponse.from(reservation, now))
+                .filter(reservation -> status == null || reservation.status() == status)
                 .toList();
     }
 
     public OwnerReservationResponse getReservation(Long ownerId, Long reservationId) {
         return OwnerReservationResponse.from(
                 reservationRepository.findByIdAndStore_Owner_Id(reservationId, ownerId)
-                        .orElseThrow(OwnerReservationService::notFound)
+                        .orElseThrow(OwnerReservationService::notFound), OffsetDateTime.now(clock)
         );
     }
 
@@ -54,7 +68,7 @@ public class OwnerReservationService {
     public OwnerReservationResponse cancelReservation(Long ownerId, Long reservationId, String reason) {
         Reservation reservation = findForUpdate(ownerId, reservationId);
         if (reservation.getStatus() == ReservationStatus.CANCELLED) {
-            return OwnerReservationResponse.from(reservation);
+            return OwnerReservationResponse.from(reservation, OffsetDateTime.now(clock));
         }
         try {
             reservation.cancelByOwner(OffsetDateTime.now(), reason);
@@ -67,7 +81,7 @@ public class OwnerReservationService {
                 reservation.getId(),
                 "점주가 예약을 취소했습니다. 사유: " + reservation.getCancellationReason()
         ));
-        return OwnerReservationResponse.from(reservation);
+        return OwnerReservationResponse.from(reservation, OffsetDateTime.now(clock));
     }
 
     @Transactional
@@ -78,7 +92,7 @@ public class OwnerReservationService {
         } catch (IllegalStateException exception) {
             throw conflict(exception);
         }
-        return OwnerReservationResponse.from(reservation);
+        return OwnerReservationResponse.from(reservation, OffsetDateTime.now(clock));
     }
 
     @Transactional
@@ -94,7 +108,7 @@ public class OwnerReservationService {
         } catch (IllegalStateException exception) {
             throw conflict(exception);
         }
-        return OwnerReservationResponse.from(reservation);
+        return OwnerReservationResponse.from(reservation, OffsetDateTime.now(clock));
     }
 
     private Reservation findForUpdate(Long ownerId, Long reservationId) {

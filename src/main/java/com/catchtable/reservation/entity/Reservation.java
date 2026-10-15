@@ -19,6 +19,7 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 
 import java.time.OffsetDateTime;
+import java.time.temporal.ChronoUnit;
 import java.util.Objects;
 
 /** 상태 변경 요청이 재전송되면 최초 처리 시각과 사유를 유지한다. */
@@ -59,8 +60,11 @@ public class Reservation extends BaseTimeEntity {
     @Column(name = "requested_at", nullable = false)
     private OffsetDateTime requestedAt;
 
-    @Column(name = "confirmed_at", nullable = false)
+    @Column(name = "confirmed_at")
     private OffsetDateTime confirmedAt;
+
+    @Column(name = "hold_expires_at")
+    private OffsetDateTime holdExpiresAt;
 
     @Column(name = "cancelled_at")
     private OffsetDateTime cancelledAt;
@@ -97,14 +101,14 @@ public class Reservation extends BaseTimeEntity {
             OffsetDateTime reservationStartAt,
             OffsetDateTime reservationEndAt,
             int partySize,
-            OffsetDateTime confirmedAt
+            OffsetDateTime requestedAt
     ) {
         this.member = Objects.requireNonNull(member);
         this.store = Objects.requireNonNull(store);
         this.tableId = Objects.requireNonNull(tableId);
         this.reservationStartAt = Objects.requireNonNull(reservationStartAt);
         this.reservationEndAt = Objects.requireNonNull(reservationEndAt);
-        this.confirmedAt = Objects.requireNonNull(confirmedAt);
+        this.requestedAt = Objects.requireNonNull(requestedAt);
 
         if (tableId <= 0) {
             throw new IllegalArgumentException("테이블 식별자는 1 이상이어야 합니다.");
@@ -117,9 +121,6 @@ public class Reservation extends BaseTimeEntity {
         }
 
         this.partySize = partySize;
-        // 승인 대기 단계가 없어 생성 즉시 확정한다.
-        this.status = ReservationStatus.CONFIRMED;
-        this.requestedAt = confirmedAt;
     }
 
     public static Reservation confirmed(
@@ -131,7 +132,7 @@ public class Reservation extends BaseTimeEntity {
             int partySize,
             OffsetDateTime confirmedAt
     ) {
-        return new Reservation(
+        Reservation reservation = new Reservation(
                 member,
                 store,
                 tableId,
@@ -140,7 +141,43 @@ public class Reservation extends BaseTimeEntity {
                 partySize,
                 confirmedAt
         );
+        reservation.status = ReservationStatus.CONFIRMED;
+        reservation.confirmedAt = confirmedAt;
+        return reservation;
     }
+
+    public static Reservation held(
+            Member member,
+            Store store,
+            Long tableId,
+            OffsetDateTime reservationStartAt,
+            OffsetDateTime reservationEndAt,
+            int partySize,
+            OffsetDateTime requestedAt
+    ) {
+        // PostgreSQL의 마이크로초 정밀도와 맞춰 생성 응답과 재조회 만료시간을 유지한다.
+        requestedAt = Objects.requireNonNull(requestedAt).truncatedTo(ChronoUnit.MICROS);
+        Reservation reservation = new Reservation(
+                member, store, tableId, reservationStartAt, reservationEndAt, partySize, requestedAt);
+        reservation.status = ReservationStatus.PENDING_PAYMENT;
+        reservation.holdExpiresAt = requestedAt.plusMinutes(5);
+        return reservation;
+    }
+
+    public ReservationStatus getStatusAt(OffsetDateTime now) {
+        Objects.requireNonNull(now);
+        if (status == ReservationStatus.PENDING_PAYMENT && !holdExpiresAt.isAfter(now)) {
+            return ReservationStatus.EXPIRED;
+        }
+        return status;
+    }
+
+    public void expireHold(OffsetDateTime now) {
+        status = getStatusAt(now);
+    }
+
+
+
 
     // 점주는 현재 구현상 시작 시각이 지나도 입장 확인 전이면 취소할 수 있다.
     public void cancelByOwner(OffsetDateTime cancelledAt, String reason) {

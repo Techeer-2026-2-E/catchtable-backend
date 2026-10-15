@@ -2,6 +2,7 @@ package com.catchtable.reservation.controller;
 
 import com.catchtable.global.auth.LoginMember;
 import com.catchtable.reservation.dto.CreateReservationRequest;
+import com.catchtable.reservation.dto.ReservationHoldResponse;
 import com.catchtable.reservation.dto.ReservationResponse;
 import com.catchtable.reservation.service.ReservationService;
 import jakarta.validation.Valid;
@@ -31,6 +32,19 @@ public class ReservationController {
     public ReservationResponse createReservation(@Valid @RequestBody CreateReservationRequest request) {
         return reservationService.createReservation(MOCK_CUSTOMER_ID, request);
     }
+
+    /** 결제 대기 예약과 5분 선점을 함께 만든다. */
+    @PostMapping("/holds")
+    @ResponseStatus(HttpStatus.CREATED)
+    public ReservationHoldResponse createHold(
+            @LoginMember Long memberId,
+            @Valid @RequestBody CreateReservationRequest request
+    ) {
+        return reservationService.createHold(memberId, request);
+    }
+
+
+
     /** 예약 시작 전의 본인 확정 예약만 취소할 수 있다. 이미 취소된 예약은 그대로 반환한다. */
     @PostMapping("/{reservationId}/cancel")
     public ReservationResponse cancelReservation(
