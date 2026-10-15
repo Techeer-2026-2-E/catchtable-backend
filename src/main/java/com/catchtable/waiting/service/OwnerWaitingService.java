@@ -83,8 +83,6 @@ public class OwnerWaitingService {
             if (WaitingStatus.ACTIVE.contains(history.getPreviousStatus())) {
                 publishTermination(waiting, NotificationType.WAITING_EXPIRED,
                         "미응답·미착석으로 웨이팅이 종료되었습니다. 사유: " + waiting.getEndDetail());
-                eventPublisher.publishEvent(new WaitingQueueChangedEvent(
-                        waiting.getStore().getId(), waiting.getWaitingDate()));
             }
         }
         return WaitingTerminationResponse.from(waiting);
@@ -96,6 +94,8 @@ public class OwnerWaitingService {
         eventPublisher.publishEvent(new CustomerNotificationEvent(
                 waiting.getStore().getOwner().getId(), NotificationType.WAITING_CHANGED,
                 waiting.getStore().getId(), "대기 목록이 변경되었습니다."));
+        eventPublisher.publishEvent(new WaitingQueueChangedEvent(
+                waiting.getStore().getId(), waiting.getWaitingDate()));
     }
 
     private Waiting findOwnerWaitingForUpdate(Long memberId, Long waitingId) {
