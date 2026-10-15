@@ -3,7 +3,14 @@ package com.catchtable.reservation.service;
 import com.catchtable.global.exception.BusinessException;
 import com.catchtable.global.exception.ErrorCode;
 import com.catchtable.global.exception.GlobalExceptionHandler;
+import com.catchtable.global.auth.LoginMemberArgumentResolver;
+import com.catchtable.reservation.controller.ReservationController;
+import com.catchtable.reservation.controller.OwnerReservationController;
 import com.catchtable.reservation.dto.CreateReservationRequest;
+import com.catchtable.reservation.dto.ReservationHoldResponse;
+import com.catchtable.notification.repository.SseEmitterRepository;
+import com.catchtable.reservation.entity.ReservationStatus;
+import com.catchtable.reservation.repository.ReservationRepository;
 import com.catchtable.store.controller.OwnerStoreTableController;
 import com.catchtable.store.dto.BusinessHourRequest;
 import com.catchtable.store.dto.BusinessHourUpdateRequest;
@@ -11,6 +18,7 @@ import com.catchtable.store.dto.StoreTableUpdateRequest;
 import com.catchtable.store.entity.TableStatus;
 import com.catchtable.store.service.BusinessHourService;
 import com.catchtable.store.service.StoreTableService;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -23,14 +31,17 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.server.ResponseStatusException;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.time.LocalTime;
+import java.time.Duration;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
@@ -45,8 +56,15 @@ import java.util.stream.Stream;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.times;
+import static org.mockito.ArgumentMatchers.any;
 
 // 서비스 트랜잭션이 실제로 커밋·롤백되도록 테스트 전체에는 @Transactional을 붙이지 않는다.
 @SpringBootTest
@@ -59,6 +77,9 @@ class ReservationSettingsTest {
     @Autowired private StoreTableService tables;
     @Autowired private BusinessHourService hours;
     @Autowired private PlatformTransactionManager transactionManager;
+    @Autowired private ReservationRepository reservationRepository;
+    @Autowired private ObjectMapper objectMapper;
+    @Autowired private SseEmitterRepository emitterRepository;
 
     private Long ownerId;
     private Long customerId;
@@ -101,6 +122,40 @@ class ReservationSettingsTest {
         jdbc.update("DELETE FROM store WHERE id = ?", storeId);
         jdbc.update("DELETE FROM member WHERE id IN (?, ?)", ownerId, customerId);
     }
+
+    @Test
+    void holdApiKeepsTheServerDeadlineAndProtectsItsOwnerAndTable() throws Exception {
+        var mvc = MockMvcBuilders.standaloneSetup(new ReservationController(reservations))
+                .setCustomArgumentResolvers(new LoginMemberArgumentResolver())
+                .setControllerAdvice(new GlobalExceptionHandler()).build();
+        var request = new CreateReservationRequest(storeId, start, 4);
+        String body = objectMapper.writeValueAsString(request);
+        mvc.perform(post("/api/user/reservations/holds").contentType(MediaType.APPLICATION_JSON).content(body))
+                .andExpect(status().isUnauthorized());
+        mvc.perform(post("/api/user/reservations/holds").header("X-Member-Id", customerId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new CreateReservationRequest(storeId, start, 0))))
+                .andExpect(status().isBadRequest());
+
+        var result = mvc.perform(post("/api/user/reservations/holds").header("X-Member-Id", customerId)
+                        .contentType(MediaType.APPLICATION_JSON).content(body))
+                .andExpect(status().isCreated()).andExpect(jsonPath("$.status").value("PENDING_PAYMENT"))
+                .andReturn();
+        var hold = objectMapper.readValue(result.getResponse().getContentAsString(), ReservationHoldResponse.class);
+        assertThat(hold.holdId()).isEqualTo(hold.reservationId());
+        assertThat(hold.remainingSeconds()).isBetween(290L, 300L);
+        OffsetDateTime requestedAt = jdbc.queryForObject("SELECT requested_at FROM reservation WHERE id = ?",
+                OffsetDateTime.class, hold.holdId());
+        assertThat(Duration.between(requestedAt, hold.expiresAt())).isEqualTo(Duration.ofMinutes(5));
+        assertThat(jdbc.queryForObject("SELECT confirmed_at FROM reservation WHERE id = ?",
+                OffsetDateTime.class, hold.holdId())).isNull();
+        assertThat(availability.getAvailableTableCount(storeId, start, 4).availableTableCount()).isZero();
+        assertThatThrownBy(this::reserve).isInstanceOfSatisfying(ResponseStatusException.class,
+                e -> assertThat(e.getStatusCode()).isEqualTo(HttpStatus.CONFLICT));
+    }
+
+
+
 
     static Stream<StoreTableUpdateRequest> conflictingTableChanges() {
         return Stream.of(
@@ -274,14 +329,16 @@ class ReservationSettingsTest {
     }
 
     @ParameterizedTest
-    @CsvSource({"hours,true", "hours,false", "table,true", "table,false"})
+    @CsvSource({"hours,true,false", "hours,false,false", "table,true,false", "table,false,false"})
     @Timeout(20)
-    void reservationAndSettingsCannotCommitAConflict(String setting, boolean settingsFirst) throws Exception {
+    void reservationAndSettingsCannotCommitAConflict(String setting, boolean settingsFirst, boolean hold) throws Exception {
         Runnable change = setting.equals("hours")
                 ? () -> hours.replaceBusinessHours(storeId, new BusinessHourUpdateRequest(List.of()))
                 : () -> tables.updateTable(storeId, tableId,
                         new StoreTableUpdateRequest(null, null, null, TableStatus.INACTIVE));
-        Runnable create = this::reserve;
+        Runnable create = hold
+                ? () -> reservations.createHold(customerId, new CreateReservationRequest(storeId, start, 4))
+                : this::reserve;
         CountDownLatch firstReady = new CountDownLatch(1);
         CountDownLatch releaseFirst = new CountDownLatch(1);
         CountDownLatch secondReady = new CountDownLatch(1);
@@ -346,6 +403,16 @@ class ReservationSettingsTest {
             if (!executor.awaitTermination(5, TimeUnit.SECONDS)) executor.shutdownNow();
         }
     }
+
+
+
+
+
+
+
+
+
+
 
     private Long reserve() {
         return reservations.createReservation(customerId, new CreateReservationRequest(storeId, start, 4))
