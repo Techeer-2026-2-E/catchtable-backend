@@ -76,6 +76,34 @@ public class ReviewService {
                 reviews);
 
     }
+    public MyReviewListResponse getMyReviews(Long memberId, ReviewListCondition condition)
+    {
+        Slice<MyReviewResponse> reviews = reviewRepository
+                .findSliceByMemberId(memberId, condition.toPageable())
+                .map(MyReviewResponse::from);
+        return MyReviewListResponse.of(reviews);
+    }
+
+    @Transactional
+    public ReviewResponse updateReview(Long memberId, Long reviewId, ReviewUpdateRequest request)
+    {
+        Review review = reviewRepository.findByIdAndReservation_Member_Id(reviewId, memberId)
+                .filter(r -> !r.isDeleted())   // 삭제된 리뷰는 고칠 대상이 없음 → 404
+                .orElseThrow(() -> new BusinessException(ErrorCode.REVIEW_NOT_FOUND));
+
+        review.update(request.rating(), request.content(), request.imageUrl());
+        return ReviewResponse.from(review);
+    }
+
+    @Transactional
+    public void deleteReview(Long memberId, Long reviewId)
+    {
+        Review review = reviewRepository.findByIdAndReservation_Member_Id(reviewId, memberId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.REVIEW_NOT_FOUND));
+
+        review.delete(OffsetDateTime.now(clock));   // 이미 삭제됐으면 아무것도 안 함 → 204
+    }
+
     private static Double roundRating(Double average)
     {
         if (average == null) {

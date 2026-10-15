@@ -41,7 +41,8 @@ public enum ErrorCode {
     MENU_NOT_FOUND(HttpStatus.NOT_FOUND, "메뉴를 찾을 수 없습니다."),
     REVIEW_NOT_WRITABLE(HttpStatus.CONFLICT, "이용 완료된 예약에만 리뷰를 작성할 수 있습니다."),
     REVIEW_WRITE_PERIOD_EXPIRED(HttpStatus.CONFLICT, "리뷰 작성 기간이 지났습니다."),
-    REVIEW_ALREADY_EXISTS(HttpStatus.CONFLICT, "이미 리뷰를 작성한 예약입니다.");
+    REVIEW_ALREADY_EXISTS(HttpStatus.CONFLICT, "이미 리뷰를 작성한 예약입니다."),
+    REVIEW_NOT_FOUND(HttpStatus.NOT_FOUND, "리뷰를 찾을 수 없습니다.");
 
 
 
