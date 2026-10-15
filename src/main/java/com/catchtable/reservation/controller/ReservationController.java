@@ -8,6 +8,7 @@ import com.catchtable.reservation.service.ReservationService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
@@ -49,6 +50,11 @@ public class ReservationController {
         return reservationService.getHold(memberId, holdId);
     }
 
+    @DeleteMapping("/holds/{holdId}")
+    public ResponseEntity<Void> releaseHold(@LoginMember Long memberId, @PathVariable Long holdId) {
+        reservationService.releaseHold(memberId, holdId);
+        return ResponseEntity.noContent().build();
+    }
 
     /** 예약 시작 전의 본인 확정 예약만 취소할 수 있다. 이미 취소된 예약은 그대로 반환한다. */
     @PostMapping("/{reservationId}/cancel")

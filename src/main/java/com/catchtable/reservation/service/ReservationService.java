@@ -64,6 +64,15 @@ public class ReservationService {
         return ReservationHoldResponse.from(reservation, now);
     }
 
+    @Transactional
+    public void releaseHold(Long memberId, Long holdId) {
+        Reservation reservation = findHoldForUpdate(memberId, holdId);
+        try {
+            reservation.releaseHold(OffsetDateTime.now(clock));
+        } catch (IllegalStateException exception) {
+            throw new BusinessException(ErrorCode.RESERVATION_NOT_CANCELLABLE);
+        }
+    }
 
     private Reservation findHoldForUpdate(Long memberId, Long holdId) {
         return reservationRepository.findByIdAndMemberIdForUpdate(holdId, memberId)
