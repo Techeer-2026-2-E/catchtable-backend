@@ -125,7 +125,4 @@ public interface ReservationRepository extends JpaRepository<Reservation, Long> 
     int completeVisitedReservations(@Param("completedAt") OffsetDateTime completedAt);
 
 
-
-    List<Reservation> findAllByStore_IdAndStatusAndReservationEndAtAfter(
-            Long storeId, ReservationStatus status, OffsetDateTime now);
 }
