@@ -29,7 +29,9 @@ docker compose exec -T postgres psql -U catchtable -d catchtable < scripts/local
 - 점주 취소·미응답·노쇼 종료가 커밋되면 같은 매장·날짜의 남은 고객에게 `WAITING_POSITION_CHANGED` SSE를 보낸다. `payload`에 `waitingId`, `currentPosition`, `teamsAhead`, `status`를 담으며, 종료 재요청이나 사유만 정정한 경우에는 다시 보내지 않는다.
 - 선점 생성: `POST /api/user/reservations/holds`, 본문은 기존 예약 생성과 같은 `storeId`, `reservationStartAt`, `partySize`. 본인 선점 조회·해제: `GET`, `DELETE /api/user/reservations/holds/{holdId}`. 모두 `X-Member-Id`를 받는다.
 - 선점은 `PENDING_PAYMENT` 예약 자체다. `holdId`와 `reservationId`가 같고, 생성 시각부터 5분인 `expiresAt`과 `serverTime`, `remainingSeconds`를 반환한다. 조회·재접속으로 기한이 연장되지 않는다. 명시적 해제는 `CANCELLED`, 시간 만료는 `EXPIRED`다. 반환된 테이블은 다시 예약할 수 있고 무료 예약은 즉시 확정된다.
+- 예약 변경: `PATCH /api/owner/reservations/{reservationId}`, `X-Member-Id`와 본문 `{"reservationStartAt":"2026-10-20T18:00:00+09:00","partySize":4}`. 한 필드만 보내도 된다. 새 조건에 맞는 테이블 확보와 예약 변경이 함께 커밋되며, 실패하면 기존 예약을 유지한다. 성공하면 고객에게 `RESERVATION_CHANGED` SSE를 보낸다.
 
+예약 변경은 현재 시작 전의 미입장 확정 예약에 한정한다. 시작 시각 이후의 변경 허용 여부는 팀 논의 대기다. 결제 승인·결과 재확인·환불은 아직 연결하지 않았으며, 공통 결제 계약이 정해지면 승인 중/결과 불명인 선점의 자동 만료와 명시적 해제를 함께 연동해야 한다.
 
 신규 마이그레이션은 `V12`(웨이팅 종료·이력), `V13`(예약 선점)이다. 현재 dev에 머지된 리뷰 기능의 `V11` 다음으로 적용한다.
 

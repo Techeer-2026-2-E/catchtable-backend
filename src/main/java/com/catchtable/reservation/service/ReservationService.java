@@ -106,7 +106,8 @@ public class ReservationService {
                         store.getId(),
                         request.partySize(),
                         request.reservationStartAt(),
-                        reservationEndAt
+                        reservationEndAt,
+                        null
                 )
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.CONFLICT, "예약 가능한 테이블이 없습니다."));
 

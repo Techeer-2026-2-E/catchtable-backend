@@ -1,7 +1,9 @@
 package com.catchtable.reservation.controller;
 
+import com.catchtable.global.auth.LoginMember;
 import com.catchtable.reservation.dto.OwnerReservationActionRequest;
 import com.catchtable.reservation.dto.OwnerReservationResponse;
+import com.catchtable.reservation.dto.OwnerReservationUpdateRequest;
 import com.catchtable.reservation.entity.ReservationStatus;
 import com.catchtable.reservation.service.OwnerReservationService;
 import jakarta.validation.Valid;
@@ -9,6 +11,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -27,6 +30,14 @@ public class OwnerReservationController {
     private static final long MOCK_OWNER_ID = 2L;
 
     private final OwnerReservationService ownerReservationService;
+
+    @PatchMapping("/reservations/{reservationId}")
+    public OwnerReservationResponse updateReservation(
+            @LoginMember Long ownerId, @PathVariable Long reservationId,
+            @Valid @RequestBody OwnerReservationUpdateRequest request
+    ) {
+        return ownerReservationService.updateReservation(ownerId, reservationId, request);
+    }
 
     /** date는 서울 기준 예약 시작일(영업일 아님)이다. status를 생략하면 모든 상태를 조회한다. */
     @GetMapping("/stores/{storeId}/reservations")
