@@ -13,6 +13,7 @@ import com.catchtable.store.entity.StoreTable;
 import com.catchtable.store.repository.StoreRepository;
 import com.catchtable.store.repository.StoreTableRepository;
 import com.catchtable.waiting.dto.OwnerWaitingResponse;
+import com.catchtable.waiting.dto.WaitingQueueChangedEvent;
 import com.catchtable.waiting.dto.WaitingTerminationResponse;
 import com.catchtable.waiting.entity.Waiting;
 import com.catchtable.waiting.entity.WaitingEndHistory;
@@ -82,6 +83,8 @@ public class OwnerWaitingService {
             if (WaitingStatus.ACTIVE.contains(history.getPreviousStatus())) {
                 publishTermination(waiting, NotificationType.WAITING_EXPIRED,
                         "미응답·미착석으로 웨이팅이 종료되었습니다. 사유: " + waiting.getEndDetail());
+                eventPublisher.publishEvent(new WaitingQueueChangedEvent(
+                        waiting.getStore().getId(), waiting.getWaitingDate()));
             }
         }
         return WaitingTerminationResponse.from(waiting);
