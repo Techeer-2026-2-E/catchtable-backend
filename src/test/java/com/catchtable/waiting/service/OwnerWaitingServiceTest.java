@@ -49,6 +49,7 @@ class OwnerWaitingServiceTest {
 
     @Autowired OwnerWaitingService service;
     @Autowired WaitingQueryService queryService;
+    @Autowired WaitingService waitingService;
     @Autowired WaitingRepository waitingRepository;
     @Autowired WaitingEndHistoryRepository historyRepository;
     @Autowired MemberRepository memberRepository;
@@ -277,6 +278,45 @@ class OwnerWaitingServiceTest {
         }
         assertThat(waitingRepository.findById(waiting.getId()).orElseThrow().getStatus()).isEqualTo(WaitingStatus.CANCELED);
         verifyOneTerminationNotification();
+    }
+
+    @Test
+    void openAndCloseToggleWaitingAndRepeatedRequestsSucceed() {
+        assertThat(service.openWaiting(owner.getId(), store.getId()).waitingAvailable()).isTrue();
+        assertThat(service.openWaiting(owner.getId(), store.getId()).waitingAvailable()).isTrue();
+        assertThat(storeRepository.findById(store.getId()).orElseThrow().isWaitingAvailable()).isTrue();
+
+        var closed = service.closeWaiting(owner.getId(), store.getId());
+        assertThat(closed.storeId()).isEqualTo(store.getId());
+        assertThat(closed.waitingAvailable()).isFalse();
+        assertThat(service.closeWaiting(owner.getId(), store.getId()).waitingAvailable()).isFalse();
+        assertThat(storeRepository.findById(store.getId()).orElseThrow().isWaitingAvailable()).isFalse();
+    }
+
+    @Test
+    void openAndCloseCheckOwnerRoleAndStoreOwnership() {
+        Member other = member("다른 점주", UserType.OWNER);
+        assertBusinessFailure(() -> service.openWaiting(customer.getId(), store.getId()), ErrorCode.FORBIDDEN_MEMBER_TYPE);
+        assertBusinessFailure(() -> service.closeWaiting(customer.getId(), store.getId()), ErrorCode.FORBIDDEN_MEMBER_TYPE);
+        assertBusinessFailure(() -> service.openWaiting(other.getId(), store.getId()), ErrorCode.STORE_NOT_FOUND);
+        assertBusinessFailure(() -> service.closeWaiting(other.getId(), store.getId()), ErrorCode.STORE_NOT_FOUND);
+        assertBusinessFailure(() -> service.openWaiting(owner.getId(), -1L), ErrorCode.STORE_NOT_FOUND);
+        assertThat(storeRepository.findById(store.getId()).orElseThrow().isWaitingAvailable()).isFalse();
+    }
+
+    @Test
+    void closingRejectsNewApplicationsButKeepsWaitingTeams() {
+        service.openWaiting(owner.getId(), store.getId());
+        Long firstId = waitingService.createWaiting(customer.getId(), store.getId(), 2).response().waitingId();
+        Waiting called = waiting(2, WaitingStatus.CALLED);
+        Member late = member("늦은 고객", UserType.CUSTOMER);
+
+        service.closeWaiting(owner.getId(), store.getId());
+
+        assertBusinessFailure(() -> waitingService.createWaiting(late.getId(), store.getId(), 2), ErrorCode.WAITING_CLOSED);
+        assertThat(waitingRepository.findById(firstId).orElseThrow().getStatus()).isEqualTo(WaitingStatus.WAITING);
+        assertThat(waitingRepository.findById(called.getId()).orElseThrow().getStatus()).isEqualTo(WaitingStatus.CALLED);
+        assertThat(queryService.getMyWaiting(customer.getId(), firstId).currentPosition()).isEqualTo(1);
     }
 
     private boolean outcome(Runnable action) {
