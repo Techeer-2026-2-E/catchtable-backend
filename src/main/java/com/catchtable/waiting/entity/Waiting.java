@@ -1,6 +1,8 @@
 package com.catchtable.waiting.entity;
 
 import com.catchtable.global.common.BaseTimeEntity;
+import com.catchtable.global.exception.BusinessException;
+import com.catchtable.global.exception.ErrorCode;
 import com.catchtable.member.entity.Member;
 import com.catchtable.store.entity.Store;
 import jakarta.persistence.*;
@@ -9,6 +11,8 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 
 import java.time.LocalDate;
+import java.time.OffsetDateTime;
+import java.util.Objects;
 
 // 웨이팅 엔티티
 @Entity
@@ -61,6 +65,20 @@ public class Waiting extends BaseTimeEntity {
     @Column(nullable = false, length = 20)
     private WaitingStatus status;
 
+    @Version
+    @Column(nullable = false)
+    private long version;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "end_reason", length = 30)
+    private WaitingEndReason endReason;
+
+    @Column(name = "end_detail", length = 300)
+    private String endDetail;
+
+    @Column(name = "ended_at")
+    private OffsetDateTime endedAt;
+
     private Waiting(Member member, Store store, LocalDate waitingDate, int partyCount, int waitNumber) {
         this.member = member;
         this.store = store;
@@ -73,5 +91,50 @@ public class Waiting extends BaseTimeEntity {
     // 생성 팩토리
     public static Waiting create(Member member, Store store, LocalDate waitingDate, int partyCount, int waitNumber) {
         return new Waiting(member, store, waitingDate, partyCount, waitNumber);
+    }
+
+    public WaitingEndHistory cancelByOwner(String reason, Long actorId, OffsetDateTime now) {
+        String detail = validateDetail(reason);
+        if (status == WaitingStatus.CANCELED) {
+            return null;
+        }
+        if (!WaitingStatus.ACTIVE.contains(status)) {
+            throw new BusinessException(ErrorCode.WAITING_NOT_CANCELLABLE);
+        }
+        return end(WaitingStatus.CANCELED, WaitingEndReason.OWNER_CANCELED, detail, actorId, now);
+    }
+
+    public WaitingEndHistory markNoShow(WaitingEndReason reason, String detail, Long actorId, OffsetDateTime now) {
+        if (reason != WaitingEndReason.NO_RESPONSE && reason != WaitingEndReason.NO_SHOW) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT);
+        }
+        detail = validateDetail(detail);
+        if (status != WaitingStatus.CALLED && status != WaitingStatus.CONFIRMED && status != WaitingStatus.NO_SHOW) {
+            throw new BusinessException(ErrorCode.WAITING_NOT_TERMINABLE);
+        }
+        if (status == WaitingStatus.NO_SHOW && endReason == reason && Objects.equals(endDetail, detail)) {
+            return null;
+        }
+        return end(WaitingStatus.NO_SHOW, reason, detail, actorId, now);
+    }
+
+    private WaitingEndHistory end(WaitingStatus nextStatus, WaitingEndReason reason, String detail,
+                                  Long actorId, OffsetDateTime now) {
+        WaitingEndHistory history = WaitingEndHistory.record(this, nextStatus, reason, detail, actorId, now);
+        // 이미 종료된 건은 최초 종료 시각을 유지하고 사유만 정정한다.
+        if (WaitingStatus.ACTIVE.contains(status)) {
+            endedAt = now;
+        }
+        status = nextStatus;
+        endReason = reason;
+        endDetail = detail;
+        return history;
+    }
+
+    private static String validateDetail(String detail) {
+        if (detail == null || detail.isBlank() || detail.length() > 300) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT);
+        }
+        return detail.strip();
     }
 }

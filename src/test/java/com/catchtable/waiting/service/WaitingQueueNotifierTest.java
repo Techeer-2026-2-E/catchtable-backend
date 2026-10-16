@@ -131,10 +131,10 @@ class WaitingQueueNotifierTest {
     }
 
     @Test
-    @DisplayName("종료된 웨이팅(취소·만료·착석)에는 보내지 않는다")
+    @DisplayName("종료된 웨이팅(취소·노쇼·착석)에는 보내지 않는다")
     void skipEndedWaitings() {
         insertWaiting(storeId, TODAY, 1, WaitingStatus.CANCELED);
-        insertWaiting(storeId, TODAY, 2, WaitingStatus.EXPIRED);
+        insertWaiting(storeId, TODAY, 2, WaitingStatus.NO_SHOW);
         insertWaiting(storeId, TODAY, 3, WaitingStatus.SEATED);
         Long active = insertWaiting(storeId, TODAY, 4, WaitingStatus.WAITING);
 

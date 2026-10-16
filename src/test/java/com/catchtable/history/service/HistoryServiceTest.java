@@ -99,7 +99,7 @@ class HistoryServiceTest {
                         ReservationStatus.COMPLETED, ReservationStatus.CANCELLED, ReservationStatus.NO_SHOW))));
         verify(waitingRepository).findAllByMemberIdAndStatusIn(eq(MEMBER_ID),
                 argThat(statuses -> sameElements(statuses, Set.of(
-                        WaitingStatus.SEATED, WaitingStatus.CANCELED, WaitingStatus.EXPIRED))));
+                        WaitingStatus.SEATED, WaitingStatus.CANCELED, WaitingStatus.NO_SHOW))));
     }
 
     private static boolean sameElements(Collection<?> actual, Set<?> expected) {
