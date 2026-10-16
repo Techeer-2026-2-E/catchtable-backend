@@ -4,6 +4,7 @@ import com.catchtable.global.auth.LoginMember;
 import com.catchtable.waiting.dto.OwnerWaitingCancelRequest;
 import com.catchtable.waiting.dto.OwnerWaitingNoShowRequest;
 import com.catchtable.waiting.dto.OwnerWaitingResponse;
+import com.catchtable.waiting.dto.StoreWaitingStatusResponse;
 import com.catchtable.waiting.dto.WaitingTerminationResponse;
 import com.catchtable.waiting.service.OwnerWaitingService;
 import jakarta.validation.Valid;
@@ -51,5 +52,15 @@ public class OwnerWaitingController {
     public WaitingTerminationResponse markNoShow(@LoginMember Long memberId, @PathVariable Long waitingId,
                                                  @Valid @RequestBody OwnerWaitingNoShowRequest request) {
         return ownerWaitingService.markNoShow(memberId, waitingId, request.reason(), request.detail());
+    }
+
+    @PostMapping("/stores/{storeId}/waiting/open")
+    public StoreWaitingStatusResponse openWaiting(@LoginMember Long memberId, @PathVariable Long storeId) {
+        return ownerWaitingService.openWaiting(memberId, storeId);
+    }
+
+    @PostMapping("/stores/{storeId}/waiting/close")
+    public StoreWaitingStatusResponse closeWaiting(@LoginMember Long memberId, @PathVariable Long storeId) {
+        return ownerWaitingService.closeWaiting(memberId, storeId);
     }
 }

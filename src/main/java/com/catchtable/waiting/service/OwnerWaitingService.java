@@ -13,6 +13,7 @@ import com.catchtable.store.entity.StoreTable;
 import com.catchtable.store.repository.StoreRepository;
 import com.catchtable.store.repository.StoreTableRepository;
 import com.catchtable.waiting.dto.OwnerWaitingResponse;
+import com.catchtable.waiting.dto.StoreWaitingStatusResponse;
 import com.catchtable.waiting.dto.WaitingTerminationResponse;
 import com.catchtable.waiting.entity.Waiting;
 import com.catchtable.waiting.entity.WaitingEndHistory;
@@ -87,6 +88,21 @@ public class OwnerWaitingService {
         return WaitingTerminationResponse.from(waiting);
     }
 
+    // 접수를 열고 닫아도 이미 대기 중인 팀은 그대로 둔다.
+    @Transactional
+    public StoreWaitingStatusResponse openWaiting(Long memberId, Long storeId) {
+        Store store = findOwnerStoreForUpdate(memberId, storeId);
+        store.openWaiting();
+        return StoreWaitingStatusResponse.from(store);
+    }
+
+    @Transactional
+    public StoreWaitingStatusResponse closeWaiting(Long memberId, Long storeId) {
+        Store store = findOwnerStoreForUpdate(memberId, storeId);
+        store.closeWaiting();
+        return StoreWaitingStatusResponse.from(store);
+    }
+
     private void publishTermination(Waiting waiting, NotificationType type, String message) {
         eventPublisher.publishEvent(new CustomerNotificationEvent(
                 waiting.getMember().getId(), type, waiting.getId(), message));
@@ -99,6 +115,17 @@ public class OwnerWaitingService {
         requireOwner(memberId);
         return waitingRepository.findByIdAndOwnerIdForUpdate(waitingId, memberId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.WAITING_NOT_FOUND));
+    }
+
+    // 신청과 같은 매장 행 락을 잡아, 종료가 커밋된 뒤의 신청은 WAITING_CLOSED로 거절되게 한다.
+    private Store findOwnerStoreForUpdate(Long memberId, Long storeId) {
+        requireOwner(memberId);
+        Store store = storeRepository.findByIdForUpdate(storeId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.STORE_NOT_FOUND));
+        if (!store.getOwner().getId().equals(memberId)) {
+            throw new BusinessException(ErrorCode.STORE_NOT_FOUND);
+        }
+        return store;
     }
 
     private Store requireOwnerStore(Long memberId, Long storeId) {
