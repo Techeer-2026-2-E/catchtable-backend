@@ -14,6 +14,20 @@ import java.util.Optional;
 
 public interface WaitingRepository extends JpaRepository<Waiting, Long> {
 
+    // 매장 행을 함께 잠그지 않아 신청의 매장 락과 교착되지 않게 한다.
+    @Query(value = """
+            select w.* from waiting w
+            join store s on s.id = w.store_id
+            where w.id = :waitingId and s.owner_id = :ownerId
+            for update of w
+            """, nativeQuery = true)
+    Optional<Waiting> findByIdAndOwnerIdForUpdate(@Param("waitingId") Long waitingId,
+                                                @Param("ownerId") Long ownerId);
+
+    @EntityGraph(attributePaths = {"member"})
+    List<Waiting> findAllByStoreIdAndWaitingDateAndStatusInOrderByWaitNumberAsc(
+            Long storeId, LocalDate waitingDate, Collection<WaitingStatus> statuses);
+
     // 고객의 진행 중 웨이팅 조회 (같은 매장·같은 날)
     Optional<Waiting> findFirstByMemberIdAndStoreIdAndWaitingDateAndStatusIn(
             Long memberId, Long storeId, LocalDate waitingDate, Collection<WaitingStatus> statuses);
@@ -36,8 +50,4 @@ public interface WaitingRepository extends JpaRepository<Waiting, Long> {
 
     @EntityGraph(attributePaths = {"store"})
     Optional<Waiting> findByIdAndMemberId(Long id, Long memberId);
-
-
-    List<Waiting> findAllByStoreIdAndWaitingDateAndStatusInOrderByWaitNumberAsc(
-            Long storeId, LocalDate waitingDate, Collection<WaitingStatus> statuses);
 }

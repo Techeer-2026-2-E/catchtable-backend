@@ -49,4 +49,29 @@ public class Review extends BaseTimeEntity {
     {
         return new Review(reservation,rating,content,imageUrl);
     }
+
+    // 보낸 값만 바꾼다. imageUrl은 null이면 유지, 빈 문자열이면 사진 삭제
+    public void update(Integer rating, String content, String imageUrl) {
+        if (rating != null) {
+            this.rating = rating;
+        }
+        if (content != null) {
+            this.content = content;
+        }
+        if (imageUrl != null) {
+            this.imageUrl = StringUtils.hasText(imageUrl) ? imageUrl : null;
+        }
+    }
+
+    // 이미 삭제된 리뷰는 처음 삭제 시각을 유지한다
+    public void delete(OffsetDateTime now) {
+        if (isDeleted()) {
+            return;
+        }
+        this.deletedAt = now;
+    }
+
+    public boolean isDeleted() {
+        return deletedAt != null;
+    }
 }
