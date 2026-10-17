@@ -31,7 +31,7 @@ docker compose exec -T postgres psql -U catchtable -d catchtable < scripts/local
 - 선점은 `PENDING_PAYMENT` 예약 자체다. `holdId`와 `reservationId`가 같고, 생성 시각부터 5분인 `expiresAt`과 `serverTime`, `remainingSeconds`를 반환한다. 조회·재접속으로 기한이 연장되지 않는다. 시간 만료는 `EXPIRED`다. 반환된 테이블은 다시 예약할 수 있고 무료 예약은 즉시 확정된다.
 
 
-신규 마이그레이션은 `V12`(웨이팅 종료·이력), `V13`(예약 선점)이다. 현재 dev에 머지된 리뷰 기능의 `V11` 다음으로 적용한다.
+마이그레이션은 `V12`(웨이팅 종료 이력), `V13`(호출 도착 제한시간), `V14`(웨이팅 호출), `V15`(예약 선점) 순서다. 예약 선점은 새로 반영된 호출 기능과 번호가 겹치지 않도록 기존 V13에서 V15로 옮겼다.
 
 ## 점주 예약 취소 알림
 
