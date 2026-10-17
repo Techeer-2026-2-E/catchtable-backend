@@ -1,5 +1,6 @@
 package com.catchtable.waiting.controller;
 
+import com.catchtable.global.auth.LoginMember;
 import com.catchtable.waiting.dto.WaitingCreateRequest;
 import com.catchtable.waiting.dto.WaitingCreateResult;
 import com.catchtable.waiting.dto.WaitingResponse;
@@ -12,22 +13,18 @@ import org.springframework.web.bind.annotation.*;
 
 @RestController
 @RequiredArgsConstructor
-@RequestMapping("/api/stores/{storeId}/waitings")
+@RequestMapping("/api/user/waitings")
 public class WaitingController {
 
     private final WaitingService waitingService;
 
-    // 원격 웨이팅 신청
-    // TODO: 인증 적용 후 X-Member-Id → 로그인 사용자로 교체
     @PostMapping
     public ResponseEntity<WaitingResponse> createWaiting(
-            @RequestHeader("X-Member-Id") Long memberId,     // 임시 회원 식별
-            @PathVariable Long storeId,                      // 매장 ID
-            @Valid @RequestBody WaitingCreateRequest request // 인원수
+            @LoginMember Long memberId,
+            @Valid @RequestBody WaitingCreateRequest request
     ) {
-        WaitingCreateResult result = waitingService.createWaiting(memberId, storeId, request.partyCount());
+        WaitingCreateResult result = waitingService.createWaiting(memberId, request.storeId(), request.partyCount());
 
-        // 신규 201 / 재시도 200
         HttpStatus status = result.created() ? HttpStatus.CREATED : HttpStatus.OK;
         return ResponseEntity.status(status).body(result.response());
     }
