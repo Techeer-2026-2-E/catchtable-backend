@@ -21,10 +21,12 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
 
 import java.time.LocalDate;
+import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.List;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -150,6 +152,52 @@ class UserWaitingControllerTest {
 
         mockMvc.perform(get("/api/user/waitings/{waitingId}", mine.getId()))
                 .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    @DisplayName("호출된 내 웨이팅에 응답하면 CALLED 그대로 방문 의사를 기록한다")
+    void respondToCallRecordsArrivalIntent() throws Exception {
+        Waiting mine = saveCalledWaiting(me, 1);
+
+        respond(me, mine.getId())
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.waitingId").value(mine.getId()))
+                .andExpect(jsonPath("$.status").value("CALLED"))
+                .andExpect(jsonPath("$.arrivalIntent").value("COMING"))
+                .andExpect(jsonPath("$.respondedAt").isNotEmpty())
+                .andExpect(jsonPath("$.expiresAt").isNotEmpty());
+        respond(me, mine.getId())
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.arrivalIntent").value("COMING"));
+    }
+
+    @Test
+    @DisplayName("다른 회원의 웨이팅·없는 웨이팅 응답은 404, 헤더가 없으면 401")
+    void respondRequiresOwnWaiting() throws Exception {
+        Waiting others = saveCalledWaiting(saveMember("남"), 1);
+
+        respond(me, others.getId())
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("WAITING_NOT_FOUND"));
+        respond(me, -1L)
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("WAITING_NOT_FOUND"));
+        mockMvc.perform(post("/api/user/waitings/{waitingId}/respond", others.getId()))
+                .andExpect(status().isUnauthorized());
+    }
+
+    private ResultActions respond(Member member, Long waitingId) throws Exception {
+        return mockMvc.perform(post("/api/user/waitings/{waitingId}/respond", waitingId)
+                .header("X-Member-Id", member.getId()));
+    }
+
+    // 호출된 웨이팅
+    private Waiting saveCalledWaiting(Member member, int number) {
+        Waiting waiting = saveWaiting(member, store, TODAY, number, WaitingStatus.CALLED);
+        jdbcTemplate.update("update waiting set called_at = ?, call_expires_at = ?, call_count = 1 where id = ?",
+                OffsetDateTime.parse("2030-01-10T12:00:00+09:00"),
+                OffsetDateTime.parse("2030-01-10T12:10:00+09:00"), waiting.getId());
+        return waiting;
     }
 
     private ResultActions getWaiting(Member member, Long waitingId) throws Exception {
