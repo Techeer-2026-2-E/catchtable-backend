@@ -97,6 +97,10 @@ public class Waiting extends BaseTimeEntity {
     @Column(name = "arrival_intent", length = 20)
     private ArrivalIntent arrivalIntent;
 
+    // 입장 시각
+    @Column(name = "entered_at")
+    private OffsetDateTime enteredAt;
+
     private Waiting(Member member, Store store, LocalDate waitingDate, int partyCount, int waitNumber) {
         this.member = member;
         this.store = store;
@@ -163,6 +167,20 @@ public class Waiting extends BaseTimeEntity {
         }
         respondedAt = now;
         arrivalIntent = ArrivalIntent.COMING;
+        return true;
+    }
+
+    // 입장 처리
+    public boolean enter(OffsetDateTime now) {
+        if (status == WaitingStatus.SEATED) {
+            return false;
+        }
+        if (status != WaitingStatus.CALLED && status != WaitingStatus.CONFIRMED) {
+            throw new BusinessException(ErrorCode.WAITING_NOT_ENTERABLE);
+        }
+        // 늦은 도착 허용
+        status = WaitingStatus.SEATED;
+        enteredAt = now;
         return true;
     }
 

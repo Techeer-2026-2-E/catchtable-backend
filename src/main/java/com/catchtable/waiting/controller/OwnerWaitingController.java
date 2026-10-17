@@ -4,10 +4,10 @@ import com.catchtable.global.auth.LoginMember;
 import com.catchtable.waiting.dto.OwnerWaitingCancelRequest;
 import com.catchtable.waiting.dto.OwnerWaitingNoShowRequest;
 import com.catchtable.waiting.dto.OwnerWaitingResponse;
-import com.catchtable.waiting.dto.StoreWaitingStatusResponse;
 import com.catchtable.waiting.dto.WaitingCallResponse;
 import com.catchtable.waiting.dto.WaitingPolicyRequest;
 import com.catchtable.waiting.dto.WaitingPolicyResponse;
+import com.catchtable.waiting.dto.WaitingEnterResponse;
 import com.catchtable.waiting.dto.WaitingTerminationResponse;
 import com.catchtable.waiting.service.OwnerWaitingService;
 import jakarta.validation.Valid;
@@ -58,29 +58,34 @@ public class OwnerWaitingController {
         return ownerWaitingService.markNoShow(memberId, waitingId, request.reason(), request.detail());
     }
 
-    @PostMapping("/stores/{storeId}/waiting/open")
-    public StoreWaitingStatusResponse openWaiting(@LoginMember Long memberId, @PathVariable Long storeId) {
+    @PostMapping("/stores/{storeId}/waitings/open")
+    public WaitingPolicyResponse openWaiting(@LoginMember Long memberId, @PathVariable Long storeId) {
         return ownerWaitingService.openWaiting(memberId, storeId);
     }
 
-    @PostMapping("/stores/{storeId}/waiting/close")
-    public StoreWaitingStatusResponse closeWaiting(@LoginMember Long memberId, @PathVariable Long storeId) {
+    @PostMapping("/stores/{storeId}/waitings/close")
+    public WaitingPolicyResponse closeWaiting(@LoginMember Long memberId, @PathVariable Long storeId) {
         return ownerWaitingService.closeWaiting(memberId, storeId);
     }
 
-    @GetMapping("/stores/{storeId}/waiting-policy")
+    @GetMapping("/stores/{storeId}/waitings/settings")
     public WaitingPolicyResponse getWaitingPolicy(@LoginMember Long memberId, @PathVariable Long storeId) {
         return ownerWaitingService.getWaitingPolicy(memberId, storeId);
     }
 
-    @PutMapping("/stores/{storeId}/waiting-policy")
+    @PutMapping("/stores/{storeId}/waitings/settings")
     public WaitingPolicyResponse updateWaitingPolicy(@LoginMember Long memberId, @PathVariable Long storeId,
                                                      @Valid @RequestBody WaitingPolicyRequest request) {
-        return ownerWaitingService.updateWaitingPolicy(memberId, storeId, request.callLimitMinutes());
+        return ownerWaitingService.updateWaitingPolicy(memberId, storeId, request.arrivalLimitMinutes());
     }
 
     @PostMapping("/waitings/{waitingId}/call")
     public WaitingCallResponse callWaiting(@LoginMember Long memberId, @PathVariable Long waitingId) {
         return ownerWaitingService.callWaiting(memberId, waitingId);
+    }
+
+    @PostMapping("/waitings/{waitingId}/enter")
+    public WaitingEnterResponse enterWaiting(@LoginMember Long memberId, @PathVariable Long waitingId) {
+        return ownerWaitingService.enterWaiting(memberId, waitingId);
     }
 }
