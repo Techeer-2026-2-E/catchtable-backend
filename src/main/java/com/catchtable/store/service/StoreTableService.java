@@ -16,6 +16,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Clock;
 import java.time.OffsetDateTime;
 import java.util.List;
 
@@ -27,6 +28,7 @@ public class StoreTableService {
     private final StoreRepository storeRepository;
     private final StoreTableRepository storeTableRepository;
     private final ReservationRepository reservationRepository;
+    private final Clock clock;
 
     // TODO: 점주 본인 매장인지 확인 (로그인 기능 만든 후 작업)
 
@@ -79,7 +81,7 @@ public class StoreTableService {
         // 이용 중인 예약도 포함한다. 새 범위 안에 들어가는 예약은 설정 변경을 막지 않는다.
         if ((request.minCapacity() != null || request.capacity() != null || request.status() != null)
                 && reservationRepository.existsConflictingTableReservation(
-                        tableId, OffsetDateTime.now(), storeTable.getStatus() == TableStatus.INACTIVE,
+                        tableId, OffsetDateTime.now(clock), storeTable.getStatus() == TableStatus.INACTIVE,
                         storeTable.getMinCapacity(), storeTable.getCapacity())) {
             throw new BusinessException(ErrorCode.TABLE_HAS_RESERVATIONS);
         }

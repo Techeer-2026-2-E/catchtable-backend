@@ -329,7 +329,8 @@ class ReservationSettingsTest {
     }
 
     @ParameterizedTest
-    @CsvSource({"hours,true,false", "hours,false,false", "table,true,false", "table,false,false"})
+    @CsvSource({"hours,true,false", "hours,false,false", "table,true,false", "table,false,false",
+            "hours,true,true", "hours,false,true", "table,true,true", "table,false,true"})
     @Timeout(20)
     void reservationAndSettingsCannotCommitAConflict(String setting, boolean settingsFirst, boolean hold) throws Exception {
         Runnable change = setting.equals("hours")
