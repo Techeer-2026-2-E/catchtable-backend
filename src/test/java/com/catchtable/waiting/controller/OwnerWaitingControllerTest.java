@@ -369,11 +369,11 @@ class OwnerWaitingControllerTest {
         jdbc.update("update waiting set call_expires_at = ? where id = ?",
                 OffsetDateTime.parse("2030-01-11T00:05:00+09:00"), onTime.getId());
 
-        mockMvc.perform(post("/api/user/waitings/{waitingId}/respond", late.getId())
+        mockMvc.perform(post("/api/user/waitings/{waitingId}/accept", late.getId())
                         .header("X-Member-Id", customer.getId()))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("WAITING_NOT_RESPONDABLE"));
-        mockMvc.perform(post("/api/user/waitings/{waitingId}/respond", onTime.getId())
+        mockMvc.perform(post("/api/user/waitings/{waitingId}/accept", onTime.getId())
                         .header("X-Member-Id", customer.getId()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.waitingId").value(onTime.getId()))
