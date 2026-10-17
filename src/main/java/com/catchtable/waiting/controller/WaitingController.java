@@ -21,7 +21,7 @@ public class WaitingController {
     // 원격 웨이팅 신청
     @PostMapping
     public ResponseEntity<WaitingResponse> createWaiting(
-            @LoginMember Long memberId,
+            @LoginMember Long memberId,                      // 임시 회원 식별
             @Valid @RequestBody WaitingCreateRequest request // 매장 ID·인원수
     ) {
         WaitingCreateResult result = waitingService.createWaiting(memberId, request.storeId(), request.partyCount());
