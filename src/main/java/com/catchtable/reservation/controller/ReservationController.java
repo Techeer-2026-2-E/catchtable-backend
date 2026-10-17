@@ -43,6 +43,11 @@ public class ReservationController {
         return reservationService.createHold(memberId, request);
     }
 
+    /** 새로고침해도 최초 만료시간을 유지하며, 본인 선점만 조회한다. */
+    @GetMapping("/holds/{holdId}")
+    public ReservationHoldResponse getHold(@LoginMember Long memberId, @PathVariable Long holdId) {
+        return reservationService.getHold(memberId, holdId);
+    }
 
 
     /** 예약 시작 전의 본인 확정 예약만 취소할 수 있다. 이미 취소된 예약은 그대로 반환한다. */

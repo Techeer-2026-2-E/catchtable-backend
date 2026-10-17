@@ -56,8 +56,20 @@ public class ReservationService {
         return ReservationHoldResponse.from(allocate(memberId, request, true), OffsetDateTime.now(clock));
     }
 
+    @Transactional
+    public ReservationHoldResponse getHold(Long memberId, Long holdId) {
+        Reservation reservation = findHoldForUpdate(memberId, holdId);
+        OffsetDateTime now = OffsetDateTime.now(clock);
+        reservation.expireHold(now);
+        return ReservationHoldResponse.from(reservation, now);
+    }
 
 
+    private Reservation findHoldForUpdate(Long memberId, Long holdId) {
+        return reservationRepository.findByIdAndMemberIdForUpdate(holdId, memberId)
+                .filter(found -> found.getHoldExpiresAt() != null)
+                .orElseThrow(() -> new BusinessException(ErrorCode.RESERVATION_NOT_FOUND));
+    }
 
     private Reservation allocate(Long memberId, CreateReservationRequest request, boolean hold) {
         if (request.partySize() <= 0) {
