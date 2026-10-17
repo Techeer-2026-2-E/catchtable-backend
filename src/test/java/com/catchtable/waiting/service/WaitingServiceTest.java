@@ -11,7 +11,9 @@ import com.catchtable.store.repository.StoreRepository;
 import com.catchtable.waiting.dto.WaitingCreateResult;
 import com.catchtable.waiting.entity.ArrivalIntent;
 import com.catchtable.waiting.entity.Waiting;
+import com.catchtable.waiting.entity.WaitingEndReason;
 import com.catchtable.waiting.entity.WaitingStatus;
+import com.catchtable.waiting.repository.WaitingEndHistoryRepository;
 import com.catchtable.waiting.repository.WaitingRepository;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -19,6 +21,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -44,6 +47,7 @@ class WaitingServiceTest {
 
     @Autowired WaitingService waitingService;
     @Autowired WaitingRepository waitingRepository;
+    @Autowired WaitingEndHistoryRepository historyRepository;
     @Autowired StoreRepository storeRepository;
     @Autowired MemberRepository memberRepository;
     @Autowired JdbcTemplate jdbc;
@@ -72,6 +76,7 @@ class WaitingServiceTest {
     // 데이터 정리 (웨이팅 → 매장 → 회원 순, FK 때문)
     @AfterEach
     void tearDown() {
+        historyRepository.deleteAllInBatch();
         waitingRepository.deleteAllInBatch();
         storeRepository.delete(store);
         memberRepository.deleteAll(createdMembers);
@@ -270,6 +275,125 @@ class WaitingServiceTest {
                 .isInstanceOf(BusinessException.class)
                 .extracting("errorCode").isEqualTo(ErrorCode.WAITING_NOT_FOUND);
         assertThat(waitingRepository.findById(waiting.getId()).orElseThrow().getRespondedAt()).isNull();
+    }
+
+    // 고객 취소: CANCELED, 종료 이력 저장
+    @Test
+    @DisplayName("대기 중인 웨이팅을 취소하면 CANCELED가 되고 고객 취소 이력이 남는다")
+    void cancel_waiting_recordsCustomerHistory() {
+        Member member = saveMember("고객");
+        Long waitingId = waitingService.createWaiting(member.getId(), store.getId(), 2).response().waitingId();
+
+        var response = waitingService.cancelWaiting(member.getId(), waitingId);
+
+        assertThat(response.waitingId()).isEqualTo(waitingId);
+        assertThat(response.status()).isEqualTo(WaitingStatus.CANCELED);
+        assertThat(response.reason()).isEqualTo(WaitingEndReason.CUSTOMER_CANCELED);
+        assertThat(response.detail()).isEqualTo("고객 취소");
+        assertThat(response.endedAt()).isNotNull();
+        assertThat(historyRepository.findAllByWaitingIdOrderByIdAsc(waitingId)).singleElement().satisfies(history -> {
+            assertThat(history.getPreviousStatus()).isEqualTo(WaitingStatus.WAITING);
+            assertThat(history.getReason()).isEqualTo(WaitingEndReason.CUSTOMER_CANCELED);
+            assertThat(history.getDetail()).isEqualTo("고객 취소");
+            assertThat(history.getActorId()).isEqualTo(member.getId());
+        });
+    }
+
+    // 호출 중·응답 후 취소
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    @DisplayName("호출된 웨이팅은 방문 의사 응답 여부와 상관없이 취소할 수 있다")
+    void cancel_calledWaiting_succeeds(boolean responded) {
+        Member member = saveMember("고객");
+        Waiting waiting = saveCalledWaiting(member, WaitingStatus.CALLED, OffsetDateTime.now(clock).plusMinutes(10));
+        if (responded) {
+            waitingService.respondToCall(member.getId(), waiting.getId());
+        }
+
+        assertThat(waitingService.cancelWaiting(member.getId(), waiting.getId()).status()).isEqualTo(WaitingStatus.CANCELED);
+        assertThat(historyRepository.findAllByWaitingIdOrderByIdAsc(waiting.getId())).singleElement()
+                .satisfies(history -> assertThat(history.getPreviousStatus()).isEqualTo(WaitingStatus.CALLED));
+    }
+
+    // 이미 취소면 그대로
+    @Test
+    @DisplayName("같은 취소를 반복하면 성공하고 이력은 한 번만 남는다")
+    void cancel_retry_keepsSingleHistory() {
+        Member member = saveMember("고객");
+        Long waitingId = waitingService.createWaiting(member.getId(), store.getId(), 2).response().waitingId();
+        waitingService.cancelWaiting(member.getId(), waitingId);
+        OffsetDateTime endedAt = waitingRepository.findById(waitingId).orElseThrow().getEndedAt();
+
+        var retried = waitingService.cancelWaiting(member.getId(), waitingId);
+
+        assertThat(retried.status()).isEqualTo(WaitingStatus.CANCELED);
+        assertThat(retried.endedAt().toInstant()).isEqualTo(endedAt.toInstant());
+        assertThat(historyRepository.findAllByWaitingIdOrderByIdAsc(waitingId)).hasSize(1);
+    }
+
+    // 점주 취소 건은 현재 상태만
+    @Test
+    @DisplayName("점주가 이미 취소한 웨이팅은 현재 상태를 그대로 돌려준다")
+    void cancel_ownerCanceled_returnsCurrentState() {
+        Member member = saveMember("고객");
+        Waiting waiting = waitingRepository.save(Waiting.create(member, store, LocalDate.now(clock), 2, 1));
+        jdbc.update("update waiting set status = 'CANCELED', end_reason = 'OWNER_CANCELED', end_detail = '매장 사정', "
+                + "ended_at = now() where id = ?", waiting.getId());
+
+        var response = waitingService.cancelWaiting(member.getId(), waiting.getId());
+
+        assertThat(response.status()).isEqualTo(WaitingStatus.CANCELED);
+        assertThat(response.reason()).isEqualTo(WaitingEndReason.OWNER_CANCELED);
+        assertThat(response.detail()).isEqualTo("매장 사정");
+        assertThat(historyRepository.findAllByWaitingIdOrderByIdAsc(waiting.getId())).isEmpty();
+    }
+
+    // 입장·노쇼 409
+    @ParameterizedTest
+    @EnumSource(value = WaitingStatus.class, names = {"SEATED", "NO_SHOW"})
+    @DisplayName("입장했거나 노쇼 처리된 웨이팅은 취소할 수 없다")
+    void cancel_endedWaiting_fails(WaitingStatus status) {
+        Member member = saveMember("고객");
+        Waiting waiting = waitingRepository.save(Waiting.create(member, store, LocalDate.now(clock), 2, 1));
+        jdbc.update("update waiting set status = ? where id = ?", status.name(), waiting.getId());
+
+        assertThatThrownBy(() -> waitingService.cancelWaiting(member.getId(), waiting.getId()))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode").isEqualTo(ErrorCode.WAITING_NOT_CANCELLABLE);
+        assertThat(waitingRepository.findById(waiting.getId()).orElseThrow().getStatus()).isEqualTo(status);
+        assertThat(historyRepository.findAllByWaitingIdOrderByIdAsc(waiting.getId())).isEmpty();
+    }
+
+    // 취소 후 재신청
+    @Test
+    @DisplayName("취소한 뒤 같은 매장에 다시 신청하면 새 번호로 등록된다")
+    void cancel_thenApplyAgain_createsNewWaiting() {
+        Member member = saveMember("고객");
+        Long canceledId = waitingService.createWaiting(member.getId(), store.getId(), 2).response().waitingId();
+        waitingService.cancelWaiting(member.getId(), canceledId);
+
+        WaitingCreateResult again = waitingService.createWaiting(member.getId(), store.getId(), 2);
+
+        assertThat(again.created()).isTrue();
+        assertThat(again.response().waitingId()).isNotEqualTo(canceledId);
+        assertThat(again.response().waitNumber()).isEqualTo(2);
+    }
+
+    // 남의·없는 웨이팅 404
+    @Test
+    @DisplayName("다른 고객의 웨이팅이나 없는 웨이팅 취소는 404")
+    void cancel_othersOrUnknown_notFound() {
+        Member owner = saveMember("주인");
+        Member other = saveMember("남");
+        Long waitingId = waitingService.createWaiting(owner.getId(), store.getId(), 2).response().waitingId();
+
+        assertThatThrownBy(() -> waitingService.cancelWaiting(other.getId(), waitingId))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode").isEqualTo(ErrorCode.WAITING_NOT_FOUND);
+        assertThatThrownBy(() -> waitingService.cancelWaiting(owner.getId(), -1L))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode").isEqualTo(ErrorCode.WAITING_NOT_FOUND);
+        assertThat(waitingRepository.findById(waitingId).orElseThrow().getStatus()).isEqualTo(WaitingStatus.WAITING);
     }
 
     // 호출된 웨이팅 저장
