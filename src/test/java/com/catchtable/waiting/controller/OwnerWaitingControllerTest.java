@@ -396,6 +396,58 @@ class OwnerWaitingControllerTest {
                 .andExpect(jsonPath("$[1].arrivalIntent").value("COMING"));
     }
 
+    @Test
+    void seatAfterCallExpiryReturnsSeatedAndNotifies() throws Exception {
+        Waiting waiting = waiting(store, TODAY, 1, WaitingStatus.CALLED);
+        waiting(store, TODAY, 2, WaitingStatus.WAITING);
+        jdbc.update("update waiting set call_expires_at = ? where id = ?",
+                OffsetDateTime.parse("2030-01-11T00:04:59+09:00"), waiting.getId());
+        MvcResult ownerStream = subscribe();
+        MvcResult customerStream = mockMvc.perform(get("/api/user/notifications/subscribe")
+                        .param("memberId", customer.getId().toString()))
+                .andExpect(request().asyncStarted())
+                .andReturn();
+        String path = "/api/owner/waitings/{waitingId}/seat";
+
+        mockMvc.perform(post(path, waiting.getId()).header("X-Member-Id", owner.getId()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.waitingId").value(waiting.getId()))
+                .andExpect(jsonPath("$.status").value("SEATED"))
+                .andExpect(jsonPath("$.seatedAt").value("2030-01-11T00:05:00+09:00"));
+        mockMvc.perform(post(path, waiting.getId()).header("X-Member-Id", owner.getId()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("SEATED"))
+                .andExpect(jsonPath("$.seatedAt").isNotEmpty());
+
+        assertThat(streamContent(ownerStream)).containsOnlyOnce("event:WAITING_CHANGED");
+        assertThat(streamContent(customerStream)).containsOnlyOnce("event:WAITING_POSITION_CHANGED");
+        mockMvc.perform(get("/api/owner/stores/{storeId}/waitings", store.getId())
+                        .header("X-Member-Id", owner.getId()))
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].waitingNumber").value(2));
+    }
+
+    @Test
+    void seatRejectsUncalledTeamAndChecksOwnership() throws Exception {
+        Waiting uncalled = waiting(store, TODAY, 1, WaitingStatus.WAITING);
+        Waiting called = waiting(store, TODAY, 2, WaitingStatus.CALLED);
+        Long otherOwner = member("다른 점주", UserType.OWNER).getId();
+        String path = "/api/owner/waitings/{waitingId}/seat";
+
+        mockMvc.perform(post(path, uncalled.getId()).header("X-Member-Id", owner.getId()))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("WAITING_NOT_SEATABLE"));
+        mockMvc.perform(post(path, called.getId())).andExpect(status().isUnauthorized());
+        mockMvc.perform(post(path, called.getId()).header("X-Member-Id", customer.getId()))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("FORBIDDEN_MEMBER_TYPE"));
+        mockMvc.perform(post(path, called.getId()).header("X-Member-Id", otherOwner))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("WAITING_NOT_FOUND"));
+        mockMvc.perform(post(path, -1L).header("X-Member-Id", owner.getId()))
+                .andExpect(status().isNotFound());
+    }
+
     private MvcResult subscribe() throws Exception {
         return mockMvc.perform(get("/api/owner/stores/{storeId}/waitings/subscribe", store.getId())
                         .param("memberId", owner.getId().toString()))
