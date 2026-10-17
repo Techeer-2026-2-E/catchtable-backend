@@ -223,6 +223,33 @@ class OwnerWaitingControllerTest {
                 .andExpect(jsonPath("$.endedAt").value("2030-01-11T00:05:00+09:00"));
     }
 
+    @Test
+    void openAndCloseReturnTheStoreWaitingStatus() throws Exception {
+        String base = "/api/owner/stores/" + store.getId() + "/waiting/";
+        for (String action : List.of("close", "close", "open", "open")) {
+            mockMvc.perform(post(base + action).header("X-Member-Id", owner.getId()))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.storeId").value(store.getId()))
+                    .andExpect(jsonPath("$.waitingAvailable").value(action.equals("open")));
+        }
+    }
+
+    @Test
+    void openAndCloseRequireTheActualStoreOwner() throws Exception {
+        Long otherOwner = member("다른 점주", UserType.OWNER).getId();
+        for (String action : List.of("open", "close")) {
+            String path = "/api/owner/stores/" + store.getId() + "/waiting/" + action;
+            mockMvc.perform(post(path)).andExpect(status().isUnauthorized());
+            mockMvc.perform(post(path).header("X-Member-Id", customer.getId()))
+                    .andExpect(status().isForbidden());
+            mockMvc.perform(post(path).header("X-Member-Id", otherOwner))
+                    .andExpect(status().isNotFound());
+            mockMvc.perform(post("/api/owner/stores/-1/waiting/" + action).header("X-Member-Id", owner.getId()))
+                    .andExpect(status().isNotFound());
+        }
+        assertThat(storeRepository.findById(store.getId()).orElseThrow().isWaitingAvailable()).isTrue();
+    }
+
     private MvcResult subscribe() throws Exception {
         return mockMvc.perform(get("/api/owner/stores/{storeId}/waitings/subscribe", store.getId())
                         .param("memberId", owner.getId().toString()))
