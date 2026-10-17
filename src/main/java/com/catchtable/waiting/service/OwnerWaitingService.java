@@ -13,7 +13,6 @@ import com.catchtable.store.entity.StoreTable;
 import com.catchtable.store.repository.StoreRepository;
 import com.catchtable.store.repository.StoreTableRepository;
 import com.catchtable.waiting.dto.OwnerWaitingResponse;
-import com.catchtable.waiting.dto.StoreWaitingStatusResponse;
 import com.catchtable.waiting.dto.WaitingCallNotification;
 import com.catchtable.waiting.dto.WaitingCallResponse;
 import com.catchtable.waiting.dto.WaitingQueueChangedEvent;
@@ -92,19 +91,18 @@ public class OwnerWaitingService {
         return WaitingTerminationResponse.from(waiting);
     }
 
-    // 접수를 열고 닫아도 이미 대기 중인 팀은 그대로 둔다.
     @Transactional
-    public StoreWaitingStatusResponse openWaiting(Long memberId, Long storeId) {
+    public WaitingPolicyResponse openWaiting(Long memberId, Long storeId) {
         Store store = findOwnerStoreForUpdate(memberId, storeId);
         store.openWaiting();
-        return StoreWaitingStatusResponse.from(store);
+        return WaitingPolicyResponse.from(store);
     }
 
     @Transactional
-    public StoreWaitingStatusResponse closeWaiting(Long memberId, Long storeId) {
+    public WaitingPolicyResponse closeWaiting(Long memberId, Long storeId) {
         Store store = findOwnerStoreForUpdate(memberId, storeId);
         store.closeWaiting();
-        return StoreWaitingStatusResponse.from(store);
+        return WaitingPolicyResponse.from(store);
     }
 
     public WaitingPolicyResponse getWaitingPolicy(Long memberId, Long storeId) {
