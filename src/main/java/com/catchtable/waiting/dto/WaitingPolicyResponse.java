@@ -4,9 +4,10 @@ import com.catchtable.store.entity.Store;
 
 public record WaitingPolicyResponse(
         Long storeId,
-        int callLimitMinutes
+        boolean open,
+        int arrivalLimitMinutes
 ) {
     public static WaitingPolicyResponse from(Store store) {
-        return new WaitingPolicyResponse(store.getId(), store.getWaitingCallLimitMinutes());
+        return new WaitingPolicyResponse(store.getId(), store.isWaitingAvailable(), store.getWaitingCallLimitMinutes());
     }
 }

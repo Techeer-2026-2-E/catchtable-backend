@@ -317,14 +317,14 @@ class OwnerWaitingServiceTest {
 
     @Test
     void openAndCloseToggleWaitingAndRepeatedRequestsSucceed() {
-        assertThat(service.openWaiting(owner.getId(), store.getId()).waitingAvailable()).isTrue();
-        assertThat(service.openWaiting(owner.getId(), store.getId()).waitingAvailable()).isTrue();
+        assertThat(service.openWaiting(owner.getId(), store.getId()).open()).isTrue();
+        assertThat(service.openWaiting(owner.getId(), store.getId()).open()).isTrue();
         assertThat(storeRepository.findById(store.getId()).orElseThrow().isWaitingAvailable()).isTrue();
 
         var closed = service.closeWaiting(owner.getId(), store.getId());
         assertThat(closed.storeId()).isEqualTo(store.getId());
-        assertThat(closed.waitingAvailable()).isFalse();
-        assertThat(service.closeWaiting(owner.getId(), store.getId()).waitingAvailable()).isFalse();
+        assertThat(closed.open()).isFalse();
+        assertThat(service.closeWaiting(owner.getId(), store.getId()).open()).isFalse();
         assertThat(storeRepository.findById(store.getId()).orElseThrow().isWaitingAvailable()).isFalse();
     }
 
@@ -356,13 +356,13 @@ class OwnerWaitingServiceTest {
 
     @Test
     void waitingPolicyDefaultsToTenMinutesAndCanBeChanged() {
-        assertThat(service.getWaitingPolicy(owner.getId(), store.getId()).callLimitMinutes()).isEqualTo(10);
+        assertThat(service.getWaitingPolicy(owner.getId(), store.getId()).arrivalLimitMinutes()).isEqualTo(10);
 
         var updated = service.updateWaitingPolicy(owner.getId(), store.getId(), 15);
         assertThat(updated.storeId()).isEqualTo(store.getId());
-        assertThat(updated.callLimitMinutes()).isEqualTo(15);
-        assertThat(service.updateWaitingPolicy(owner.getId(), store.getId(), 15).callLimitMinutes()).isEqualTo(15);
-        assertThat(service.getWaitingPolicy(owner.getId(), store.getId()).callLimitMinutes()).isEqualTo(15);
+        assertThat(updated.arrivalLimitMinutes()).isEqualTo(15);
+        assertThat(service.updateWaitingPolicy(owner.getId(), store.getId(), 15).arrivalLimitMinutes()).isEqualTo(15);
+        assertThat(service.getWaitingPolicy(owner.getId(), store.getId()).arrivalLimitMinutes()).isEqualTo(15);
     }
 
     @Test
