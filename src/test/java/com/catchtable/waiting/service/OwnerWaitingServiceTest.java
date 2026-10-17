@@ -9,6 +9,7 @@ import com.catchtable.notification.repository.SseEmitterRepository;
 import com.catchtable.store.entity.Store;
 import com.catchtable.store.entity.StoreCategory;
 import com.catchtable.store.repository.StoreRepository;
+import com.catchtable.waiting.entity.ArrivalIntent;
 import com.catchtable.waiting.entity.Waiting;
 import com.catchtable.waiting.entity.WaitingEndReason;
 import com.catchtable.waiting.entity.WaitingStatus;
@@ -448,6 +449,54 @@ class OwnerWaitingServiceTest {
         assertBusinessFailure(() -> service.callWaiting(other.getId(), waiting.getId()), ErrorCode.WAITING_NOT_FOUND);
         assertBusinessFailure(() -> service.callWaiting(owner.getId(), -1L), ErrorCode.WAITING_NOT_FOUND);
         assertThat(waitingRepository.findById(waiting.getId()).orElseThrow().getStatus()).isEqualTo(WaitingStatus.WAITING);
+    }
+
+    // 응답 알림 1회
+    @Test
+    void respondNotifiesOwnerOnceAndRetryDoesNotSendAgain() throws Exception {
+        Waiting waiting = waiting(1, WaitingStatus.WAITING);
+        service.callWaiting(owner.getId(), waiting.getId());
+
+        waitingService.respondToCall(customer.getId(), waiting.getId());
+        waitingService.respondToCall(customer.getId(), waiting.getId());
+
+        verify(ownerEmitter, times(2)).send(any(SseEmitter.SseEventBuilder.class));
+        verify(customerEmitter, times(2)).send(any(SseEmitter.SseEventBuilder.class));
+    }
+
+    // 재호출 시 응답 초기화
+    @Test
+    void recallResetsResponseAndAllowsRespondingAgain() {
+        Waiting waiting = waiting(1, WaitingStatus.WAITING);
+        service.callWaiting(owner.getId(), waiting.getId());
+        waitingService.respondToCall(customer.getId(), waiting.getId());
+        assertThat(waitingRepository.findById(waiting.getId()).orElseThrow().getRespondedAt()).isNotNull();
+
+        service.callWaiting(owner.getId(), waiting.getId());
+
+        Waiting recalled = waitingRepository.findById(waiting.getId()).orElseThrow();
+        assertThat(recalled.getCallCount()).isEqualTo(2);
+        assertThat(recalled.getRespondedAt()).isNull();
+        assertThat(recalled.getArrivalIntent()).isNull();
+        var again = waitingService.respondToCall(customer.getId(), waiting.getId());
+        assertThat(again.arrivalIntent()).isEqualTo(ArrivalIntent.COMING);
+        assertThat(again.respondedAt()).isNotNull();
+    }
+
+    // 점주 목록 응답 정보
+    @Test
+    void ownerListShowsCallAndResponseInfo() {
+        Waiting waiting = waiting(1, WaitingStatus.WAITING);
+        service.callWaiting(owner.getId(), waiting.getId());
+        waitingService.respondToCall(customer.getId(), waiting.getId());
+
+        assertThat(service.getWaitings(owner.getId(), store.getId())).singleElement().satisfies(row -> {
+            assertThat(row.status()).isEqualTo(WaitingStatus.CALLED);
+            assertThat(row.calledAt()).isNotNull();
+            assertThat(row.callExpiresAt()).isNotNull();
+            assertThat(row.respondedAt()).isNotNull();
+            assertThat(row.arrivalIntent()).isEqualTo(ArrivalIntent.COMING);
+        });
     }
 
     private boolean outcome(Runnable action) {

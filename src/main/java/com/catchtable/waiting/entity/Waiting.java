@@ -88,6 +88,15 @@ public class Waiting extends BaseTimeEntity {
     @Column(name = "call_count", nullable = false)
     private int callCount;
 
+    // 응답 시각
+    @Column(name = "responded_at")
+    private OffsetDateTime respondedAt;
+
+    // 방문 의사
+    @Enumerated(EnumType.STRING)
+    @Column(name = "arrival_intent", length = 20)
+    private ArrivalIntent arrivalIntent;
+
     private Waiting(Member member, Store store, LocalDate waitingDate, int partyCount, int waitNumber) {
         this.member = member;
         this.store = store;
@@ -135,6 +144,26 @@ public class Waiting extends BaseTimeEntity {
         callCount++;
         calledAt = now;
         callExpiresAt = now.plusMinutes(limitMinutes);
+        // 재호출 시 응답 초기화
+        respondedAt = null;
+        arrivalIntent = null;
+    }
+
+    // 방문 의사 응답
+    public boolean respond(OffsetDateTime now) {
+        if (status != WaitingStatus.CALLED) {
+            throw new BusinessException(ErrorCode.WAITING_NOT_RESPONDABLE);
+        }
+        if (respondedAt != null) {
+            return false;
+        }
+        // 만료 후 거절
+        if (callExpiresAt != null && now.isAfter(callExpiresAt)) {
+            throw new BusinessException(ErrorCode.WAITING_NOT_RESPONDABLE);
+        }
+        respondedAt = now;
+        arrivalIntent = ArrivalIntent.COMING;
+        return true;
     }
 
     private WaitingEndHistory end(WaitingStatus nextStatus, WaitingEndReason reason, String detail,
