@@ -5,6 +5,7 @@ import com.catchtable.waiting.dto.OwnerWaitingCancelRequest;
 import com.catchtable.waiting.dto.OwnerWaitingNoShowRequest;
 import com.catchtable.waiting.dto.OwnerWaitingResponse;
 import com.catchtable.waiting.dto.StoreWaitingStatusResponse;
+import com.catchtable.waiting.dto.WaitingCallResponse;
 import com.catchtable.waiting.dto.WaitingPolicyRequest;
 import com.catchtable.waiting.dto.WaitingPolicyResponse;
 import com.catchtable.waiting.dto.WaitingTerminationResponse;
@@ -76,5 +77,10 @@ public class OwnerWaitingController {
     public WaitingPolicyResponse updateWaitingPolicy(@LoginMember Long memberId, @PathVariable Long storeId,
                                                      @Valid @RequestBody WaitingPolicyRequest request) {
         return ownerWaitingService.updateWaitingPolicy(memberId, storeId, request.callLimitMinutes());
+    }
+
+    @PostMapping("/waitings/{waitingId}/call")
+    public WaitingCallResponse callWaiting(@LoginMember Long memberId, @PathVariable Long waitingId) {
+        return ownerWaitingService.callWaiting(memberId, waitingId);
     }
 }
