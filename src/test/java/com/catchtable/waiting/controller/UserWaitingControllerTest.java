@@ -8,6 +8,7 @@ import com.catchtable.store.entity.StoreCategory;
 import com.catchtable.store.repository.StoreRepository;
 import com.catchtable.waiting.entity.Waiting;
 import com.catchtable.waiting.entity.WaitingStatus;
+import com.catchtable.waiting.repository.WaitingEndHistoryRepository;
 import com.catchtable.waiting.repository.WaitingRepository;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -26,6 +27,7 @@ import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.List;
 
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -40,6 +42,7 @@ class UserWaitingControllerTest {
 
     @Autowired MockMvc mockMvc;
     @Autowired WaitingRepository waitingRepository;
+    @Autowired WaitingEndHistoryRepository historyRepository;
     @Autowired StoreRepository storeRepository;
     @Autowired MemberRepository memberRepository;
     @Autowired JdbcTemplate jdbcTemplate;
@@ -58,6 +61,7 @@ class UserWaitingControllerTest {
     // 데이터 정리 (웨이팅 → 매장 → 회원 순, FK 때문)
     @AfterEach
     void tearDown() {
+        historyRepository.deleteAllInBatch();
         waitingRepository.deleteAllInBatch();
         storeRepository.deleteAll(createdStores);
         memberRepository.deleteAll(createdMembers);
@@ -204,6 +208,37 @@ class UserWaitingControllerTest {
         mockMvc.perform(post("/api/stores/{storeId}/waitings", store.getId()).header("X-Member-Id", me.getId())
                         .contentType(MediaType.APPLICATION_JSON).content("{\"partyCount\":2}"))
                 .andExpect(status().isNotFound());
+    }
+
+    @Test
+    @DisplayName("내 웨이팅을 취소하면 200과 최신 종료 상태를 돌려주고, 반복해도 200")
+    void cancelWaitingReturnsLatestState() throws Exception {
+        Waiting mine = saveCalledWaiting(me, 1);
+
+        mockMvc.perform(delete("/api/user/waitings/{waitingId}", mine.getId()).header("X-Member-Id", me.getId()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.waitingId").value(mine.getId()))
+                .andExpect(jsonPath("$.status").value("CANCELED"))
+                .andExpect(jsonPath("$.reason").value("CUSTOMER_CANCELED"))
+                .andExpect(jsonPath("$.detail").value("고객 취소"))
+                .andExpect(jsonPath("$.endedAt").isNotEmpty());
+        mockMvc.perform(delete("/api/user/waitings/{waitingId}", mine.getId()).header("X-Member-Id", me.getId()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("CANCELED"));
+    }
+
+    @Test
+    @DisplayName("다른 회원의 웨이팅·없는 웨이팅 취소는 404, 헤더가 없으면 401")
+    void cancelRequiresOwnWaiting() throws Exception {
+        Waiting others = saveWaiting(saveMember("남"), store, TODAY, 1, WaitingStatus.WAITING);
+
+        mockMvc.perform(delete("/api/user/waitings/{waitingId}", others.getId()).header("X-Member-Id", me.getId()))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("WAITING_NOT_FOUND"));
+        mockMvc.perform(delete("/api/user/waitings/{waitingId}", -1L).header("X-Member-Id", me.getId()))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(delete("/api/user/waitings/{waitingId}", others.getId()))
+                .andExpect(status().isUnauthorized());
     }
 
     private ResultActions respond(Member member, Long waitingId) throws Exception {
