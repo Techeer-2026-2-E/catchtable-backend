@@ -27,7 +27,7 @@ public class UserWaitingController {
     }
 
     // 호출 응답
-    @PostMapping("/{waitingId}/respond")
+    @PostMapping("/{waitingId}/accept")
     public WaitingRespondResponse respondToCall(@LoginMember Long memberId, @PathVariable Long waitingId) {
         return waitingService.respondToCall(memberId, waitingId);
     }
