@@ -21,6 +21,9 @@ public class Store extends BaseTimeEntity {
 
     private static final int DEFAULT_BOOKING_OPEN_DAYS = 30;
     private static final int DEFAULT_BOOKING_DEADLINE_MINUTES = 0;
+    private static final int DEFAULT_WAITING_CALL_LIMIT_MINUTES = 10;
+    private static final int MIN_WAITING_CALL_LIMIT_MINUTES = 1;
+    private static final int MAX_WAITING_CALL_LIMIT_MINUTES = 60;
 
 
     @Id
@@ -59,6 +62,9 @@ public class Store extends BaseTimeEntity {
     @Column(name = "booking_deadline_minutes", nullable = false)
     private int bookingDeadlineMinutes;
 
+    @Column(name = "waiting_call_limit_minutes", nullable = false)
+    private int waitingCallLimitMinutes;
+
     @Column(name="description",length = 1000)
     private String description;
 
@@ -83,6 +89,7 @@ public class Store extends BaseTimeEntity {
         this.arrivalGraceMinutes = arrivalGraceMinutes;
         this.bookingOpenDays = DEFAULT_BOOKING_OPEN_DAYS;
         this.bookingDeadlineMinutes = DEFAULT_BOOKING_DEADLINE_MINUTES;
+        this.waitingCallLimitMinutes = DEFAULT_WAITING_CALL_LIMIT_MINUTES;
     }
 
     public void changeReservationPolicy(
@@ -116,6 +123,13 @@ public class Store extends BaseTimeEntity {
     // 웨이팅 접수 종료
     public void closeWaiting() {
         this.waitingAvailable = false;
+    }
+
+    public void changeWaitingCallLimit(int minutes) {
+        if (minutes < MIN_WAITING_CALL_LIMIT_MINUTES || minutes > MAX_WAITING_CALL_LIMIT_MINUTES) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT);
+        }
+        this.waitingCallLimitMinutes = minutes;
     }
 
     // 접수 중 여부 검증 (마감 시 WAITING_CLOSED)

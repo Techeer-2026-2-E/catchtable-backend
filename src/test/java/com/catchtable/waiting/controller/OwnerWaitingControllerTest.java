@@ -43,6 +43,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.request;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -248,6 +249,48 @@ class OwnerWaitingControllerTest {
                     .andExpect(status().isNotFound());
         }
         assertThat(storeRepository.findById(store.getId()).orElseThrow().isWaitingAvailable()).isTrue();
+    }
+
+    @Test
+    void waitingPolicyCanBeReadAndReplaced() throws Exception {
+        String path = "/api/owner/stores/" + store.getId() + "/waiting-policy";
+        mockMvc.perform(get(path).header("X-Member-Id", owner.getId()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.storeId").value(store.getId()))
+                .andExpect(jsonPath("$.callLimitMinutes").value(10));
+        for (String body : List.of("{\"callLimitMinutes\":0}", "{\"callLimitMinutes\":61}", "{}")) {
+            mockMvc.perform(put(path).header("X-Member-Id", owner.getId())
+                            .contentType(MediaType.APPLICATION_JSON).content(body))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.code").value("INVALID_INPUT"));
+        }
+        for (int i = 0; i < 2; i++) {
+            mockMvc.perform(put(path).header("X-Member-Id", owner.getId())
+                            .contentType(MediaType.APPLICATION_JSON).content("{\"callLimitMinutes\":15}"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.storeId").value(store.getId()))
+                    .andExpect(jsonPath("$.callLimitMinutes").value(15));
+        }
+        mockMvc.perform(get(path).header("X-Member-Id", owner.getId()))
+                .andExpect(jsonPath("$.callLimitMinutes").value(15));
+    }
+
+    @Test
+    void waitingPolicyRequiresTheActualStoreOwner() throws Exception {
+        Long otherOwner = member("다른 점주", UserType.OWNER).getId();
+        String path = "/api/owner/stores/" + store.getId() + "/waiting-policy";
+        String body = "{\"callLimitMinutes\":15}";
+        mockMvc.perform(get(path).header("X-Member-Id", customer.getId())).andExpect(status().isForbidden());
+        mockMvc.perform(put(path).header("X-Member-Id", customer.getId())
+                .contentType(MediaType.APPLICATION_JSON).content(body)).andExpect(status().isForbidden());
+        mockMvc.perform(get(path).header("X-Member-Id", otherOwner)).andExpect(status().isNotFound());
+        mockMvc.perform(put(path).header("X-Member-Id", otherOwner)
+                .contentType(MediaType.APPLICATION_JSON).content(body)).andExpect(status().isNotFound());
+        mockMvc.perform(get("/api/owner/stores/-1/waiting-policy").header("X-Member-Id", owner.getId()))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(put("/api/owner/stores/-1/waiting-policy").header("X-Member-Id", owner.getId())
+                .contentType(MediaType.APPLICATION_JSON).content(body)).andExpect(status().isNotFound());
+        assertThat(storeRepository.findById(store.getId()).orElseThrow().getWaitingCallLimitMinutes()).isEqualTo(10);
     }
 
     private MvcResult subscribe() throws Exception {

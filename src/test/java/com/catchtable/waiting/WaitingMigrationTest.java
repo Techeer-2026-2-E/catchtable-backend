@@ -65,6 +65,38 @@ class WaitingMigrationTest {
         }
     }
 
+    @Test
+    void callLimitMigrationSetsTenMinutesForExistingStores() throws Exception {
+        String schema = "waiting_migration_" + UUID.randomUUID().toString().replace("-", "");
+        try (var connection = dataSource.getConnection(); var sql = connection.createStatement()) {
+            sql.execute("CREATE SCHEMA " + schema);
+            try {
+                sql.execute("SET search_path TO " + schema + ", public");
+                try (var migrations = Files.list(Path.of("src/main/resources/db/migration"))) {
+                    var previous = migrations.filter(path -> path.toString().endsWith(".sql"))
+                            .filter(path -> version(path) < 13).sorted(Comparator.comparingInt(WaitingMigrationTest::version))
+                            .toList();
+                    for (Path migration : previous) {
+                        sql.execute(Files.readString(migration));
+                    }
+                }
+                String seed = Files.readAllLines(Path.of("scripts/local-seed.sql")).stream()
+                        .filter(line -> !line.startsWith("\\")).collect(Collectors.joining("\n"));
+                sql.execute(seed);
+                sql.execute(Files.readString(Path.of("src/main/resources/db/migration/V13__add_store_waiting_call_limit.sql")));
+                try (var rows = sql.executeQuery("select waiting_call_limit_minutes from store")) {
+                    assertThat(rows.next()).isTrue();
+                    assertThat(rows.getInt("waiting_call_limit_minutes")).isEqualTo(10);
+                    assertThat(rows.next()).isFalse();
+                }
+            } finally {
+                sql.execute("ROLLBACK");
+                sql.execute("RESET search_path");
+                sql.execute("DROP SCHEMA IF EXISTS " + schema + " CASCADE");
+            }
+        }
+    }
+
     private static int version(Path path) {
         String name = path.getFileName().toString();
         return Integer.parseInt(name.substring(1, name.indexOf("__")));

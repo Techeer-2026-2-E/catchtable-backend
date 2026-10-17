@@ -14,6 +14,7 @@ import com.catchtable.store.repository.StoreRepository;
 import com.catchtable.store.repository.StoreTableRepository;
 import com.catchtable.waiting.dto.OwnerWaitingResponse;
 import com.catchtable.waiting.dto.StoreWaitingStatusResponse;
+import com.catchtable.waiting.dto.WaitingPolicyResponse;
 import com.catchtable.waiting.dto.WaitingTerminationResponse;
 import com.catchtable.waiting.entity.Waiting;
 import com.catchtable.waiting.entity.WaitingEndHistory;
@@ -101,6 +102,17 @@ public class OwnerWaitingService {
         Store store = findOwnerStoreForUpdate(memberId, storeId);
         store.closeWaiting();
         return StoreWaitingStatusResponse.from(store);
+    }
+
+    public WaitingPolicyResponse getWaitingPolicy(Long memberId, Long storeId) {
+        return WaitingPolicyResponse.from(requireOwnerStore(memberId, storeId));
+    }
+
+    @Transactional
+    public WaitingPolicyResponse updateWaitingPolicy(Long memberId, Long storeId, int callLimitMinutes) {
+        Store store = findOwnerStoreForUpdate(memberId, storeId);
+        store.changeWaitingCallLimit(callLimitMinutes);
+        return WaitingPolicyResponse.from(store);
     }
 
     private void publishTermination(Waiting waiting, NotificationType type, String message) {
