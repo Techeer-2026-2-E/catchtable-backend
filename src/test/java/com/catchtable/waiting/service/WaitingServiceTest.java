@@ -9,14 +9,23 @@ import com.catchtable.store.entity.Store;
 import com.catchtable.store.entity.StoreCategory;
 import com.catchtable.store.repository.StoreRepository;
 import com.catchtable.waiting.dto.WaitingCreateResult;
+import com.catchtable.waiting.entity.ArrivalIntent;
+import com.catchtable.waiting.entity.Waiting;
+import com.catchtable.waiting.entity.WaitingStatus;
 import com.catchtable.waiting.repository.WaitingRepository;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.jdbc.core.JdbcTemplate;
 
+import java.time.Clock;
+import java.time.LocalDate;
+import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
@@ -37,6 +46,8 @@ class WaitingServiceTest {
     @Autowired WaitingRepository waitingRepository;
     @Autowired StoreRepository storeRepository;
     @Autowired MemberRepository memberRepository;
+    @Autowired JdbcTemplate jdbc;
+    @Autowired Clock clock;
 
     private final List<Member> createdMembers = new ArrayList<>(); // 정리 대상 회원
     private Store store;                                            // 테스트 매장
@@ -176,6 +187,97 @@ class WaitingServiceTest {
 
         Set<Integer> expected = IntStream.rangeClosed(1, count).boxed().collect(Collectors.toSet());
         assertThat(numbers).isEqualTo(expected);
+    }
+
+    // 응답: CALLED 유지, 만료 연장 없음
+    @Test
+    @DisplayName("호출된 웨이팅에 응답하면 상태는 CALLED 그대로 두고 응답 시각과 방문 의사를 기록한다")
+    void respond_calledWaiting_recordsIntentWithoutExtendingExpiry() {
+        Member customer = saveMember("고객");
+        OffsetDateTime expiresAt = OffsetDateTime.now(clock).plusMinutes(10).withNano(0);
+        Waiting waiting = saveCalledWaiting(customer, WaitingStatus.CALLED, expiresAt);
+
+        var response = waitingService.respondToCall(customer.getId(), waiting.getId());
+
+        assertThat(response.waitingId()).isEqualTo(waiting.getId());
+        assertThat(response.status()).isEqualTo(WaitingStatus.CALLED);
+        assertThat(response.arrivalIntent()).isEqualTo(ArrivalIntent.COMING);
+        assertThat(response.respondedAt()).isNotNull();
+        assertThat(response.expiresAt().toInstant()).isEqualTo(expiresAt.toInstant());
+        Waiting saved = waitingRepository.findById(waiting.getId()).orElseThrow();
+        assertThat(saved.getStatus()).isEqualTo(WaitingStatus.CALLED);
+        assertThat(saved.getArrivalIntent()).isEqualTo(ArrivalIntent.COMING);
+        assertThat(saved.getRespondedAt()).isNotNull();
+        assertThat(saved.getCallExpiresAt().toInstant()).isEqualTo(expiresAt.toInstant());
+    }
+
+    // 반복 응답 멱등
+    @Test
+    @DisplayName("같은 응답을 반복하면 성공하고 처음 응답 시각을 유지한다")
+    void respond_retry_keepsFirstRespondedAt() {
+        Member customer = saveMember("고객");
+        Waiting waiting = saveCalledWaiting(customer, WaitingStatus.CALLED, OffsetDateTime.now(clock).plusMinutes(10));
+        waitingService.respondToCall(customer.getId(), waiting.getId());
+        OffsetDateTime first = waitingRepository.findById(waiting.getId()).orElseThrow().getRespondedAt();
+
+        var retried = waitingService.respondToCall(customer.getId(), waiting.getId());
+
+        assertThat(retried.arrivalIntent()).isEqualTo(ArrivalIntent.COMING);
+        assertThat(retried.respondedAt().toInstant()).isEqualTo(first.toInstant());
+        assertThat(waitingRepository.findById(waiting.getId()).orElseThrow().getRespondedAt().toInstant())
+                .isEqualTo(first.toInstant());
+    }
+
+    // 호출 상태가 아니면 409
+    @ParameterizedTest
+    @EnumSource(value = WaitingStatus.class, names = {"WAITING", "SEATED", "CANCELED", "NO_SHOW"})
+    @DisplayName("호출 상태가 아닌 웨이팅은 응답할 수 없다")
+    void respond_notCalled_fails(WaitingStatus status) {
+        Member customer = saveMember("고객");
+        Waiting waiting = saveCalledWaiting(customer, status, OffsetDateTime.now(clock).plusMinutes(10));
+
+        assertThatThrownBy(() -> waitingService.respondToCall(customer.getId(), waiting.getId()))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode").isEqualTo(ErrorCode.WAITING_NOT_RESPONDABLE);
+        assertThat(waitingRepository.findById(waiting.getId()).orElseThrow().getRespondedAt()).isNull();
+    }
+
+    // 만료 후 409
+    @Test
+    @DisplayName("호출 만료 시각이 지나면 응답할 수 없다")
+    void respond_afterExpiry_fails() {
+        Member customer = saveMember("고객");
+        Waiting waiting = saveCalledWaiting(customer, WaitingStatus.CALLED, OffsetDateTime.now(clock).minusMinutes(1));
+
+        assertThatThrownBy(() -> waitingService.respondToCall(customer.getId(), waiting.getId()))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode").isEqualTo(ErrorCode.WAITING_NOT_RESPONDABLE);
+        assertThat(waitingRepository.findById(waiting.getId()).orElseThrow().getRespondedAt()).isNull();
+    }
+
+    // 남의·없는 웨이팅 404
+    @Test
+    @DisplayName("다른 고객의 웨이팅이나 없는 웨이팅은 404")
+    void respond_othersOrUnknown_notFound() {
+        Member customer = saveMember("고객");
+        Member other = saveMember("다른 고객");
+        Waiting waiting = saveCalledWaiting(customer, WaitingStatus.CALLED, OffsetDateTime.now(clock).plusMinutes(10));
+
+        assertThatThrownBy(() -> waitingService.respondToCall(other.getId(), waiting.getId()))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode").isEqualTo(ErrorCode.WAITING_NOT_FOUND);
+        assertThatThrownBy(() -> waitingService.respondToCall(customer.getId(), -1L))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode").isEqualTo(ErrorCode.WAITING_NOT_FOUND);
+        assertThat(waitingRepository.findById(waiting.getId()).orElseThrow().getRespondedAt()).isNull();
+    }
+
+    // 호출된 웨이팅 저장
+    private Waiting saveCalledWaiting(Member member, WaitingStatus status, OffsetDateTime expiresAt) {
+        Waiting waiting = waitingRepository.save(Waiting.create(member, store, LocalDate.now(clock), 2, 1));
+        jdbc.update("update waiting set status = ?, called_at = ?, call_expires_at = ?, call_count = 1 where id = ?",
+                status.name(), expiresAt.minusMinutes(10), expiresAt, waiting.getId());
+        return waiting;
     }
 
     // 회원 저장 헬퍼

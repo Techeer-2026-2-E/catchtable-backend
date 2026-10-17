@@ -24,6 +24,15 @@ public interface WaitingRepository extends JpaRepository<Waiting, Long> {
     Optional<Waiting> findByIdAndOwnerIdForUpdate(@Param("waitingId") Long waitingId,
                                                 @Param("ownerId") Long ownerId);
 
+    // 본인 웨이팅 행 잠금
+    @Query(value = """
+            select * from waiting
+            where id = :waitingId and member_id = :memberId
+            for update
+            """, nativeQuery = true)
+    Optional<Waiting> findByIdAndMemberIdForUpdate(@Param("waitingId") Long waitingId,
+                                                 @Param("memberId") Long memberId);
+
     @EntityGraph(attributePaths = {"member"})
     List<Waiting> findAllByStoreIdAndWaitingDateAndStatusInOrderByWaitNumberAsc(
             Long storeId, LocalDate waitingDate, Collection<WaitingStatus> statuses);
