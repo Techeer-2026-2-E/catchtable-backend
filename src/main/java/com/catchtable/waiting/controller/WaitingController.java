@@ -18,13 +18,15 @@ public class WaitingController {
 
     private final WaitingService waitingService;
 
+    // 원격 웨이팅 신청
     @PostMapping
     public ResponseEntity<WaitingResponse> createWaiting(
             @LoginMember Long memberId,
-            @Valid @RequestBody WaitingCreateRequest request
+            @Valid @RequestBody WaitingCreateRequest request // 매장 ID·인원수
     ) {
         WaitingCreateResult result = waitingService.createWaiting(memberId, request.storeId(), request.partyCount());
 
+        // 신규 201 / 재시도 200
         HttpStatus status = result.created() ? HttpStatus.CREATED : HttpStatus.OK;
         return ResponseEntity.status(status).body(result.response());
     }
