@@ -19,15 +19,19 @@ docker compose exec -T postgres psql -U catchtable -d catchtable < scripts/local
 
 목 매장은 `id=1`이고 매일 09:00~22:00에 운영한다. 2인·4인·6인 테이블이 하나씩 생성된다. 같은 목 데이터에는 재실행할 수 있다. 기존 계정·매장·테이블·영업시간이 목 데이터와 충돌하면 전체 삽입을 롤백하므로, 기존 데이터를 유지하고 별도의 빈 로컬 DB에서 실행한다.
 
-## 점주 웨이팅
+## 점주 웨이팅과 예약 선점·변경
 
-정책 선택과 프런트 연동 계약은 [개발 의사결정 기록](docs/development-decisions.md)에 모았다.
+정책 선택, 프런트 연동 계약, 팀 논의 대기 항목은 [개발 의사결정 기록](docs/development-decisions.md)에 모았다.
 
 - 점주 대기 목록: `GET /api/owner/stores/{storeId}/waitings`. `X-Member-Id`로 점주 유형·소유권을 확인한다. 당일 활성 팀과 인원이 맞는 테이블 목록을 반환한다.
 - 목록 SSE: `GET /api/owner/stores/{storeId}/waitings/subscribe?memberId={ownerId}`. `connect`와 `WAITING_CHANGED` 이벤트를 받으면 목록을 재조회한다.
 - 점주 취소: `DELETE /api/owner/waitings/{waitingId}`, 본문 `{"reason":"매장 사정"}`. 미응답·노쇼: `POST /api/owner/waitings/{waitingId}/no-show`, 본문 `{"reason":"NO_RESPONSE","detail":"호출 후 응답 없음"}`. 자세한 종료 계약은 의사결정 기록을 참고한다.
+- 점주 취소·미응답·노쇼 종료가 커밋되면 같은 매장·날짜의 남은 고객에게 `WAITING_POSITION_CHANGED` SSE를 보낸다. `payload`에 `waitingId`, `currentPosition`, `teamsAhead`, `status`를 담으며, 종료 재요청이나 사유만 정정한 경우에는 다시 보내지 않는다.
+- 선점 생성: `POST /api/user/reservations/holds`, 본문은 기존 예약 생성과 같은 `storeId`, `reservationStartAt`, `partySize`. `X-Member-Id`를 받는다.
+- 선점은 `PENDING_PAYMENT` 예약 자체다. `holdId`와 `reservationId`가 같고, 생성 시각부터 5분인 `expiresAt`과 `serverTime`, `remainingSeconds`를 반환한다. 조회·재접속으로 기한이 연장되지 않는다. 시간 만료는 `EXPIRED`다. 반환된 테이블은 다시 예약할 수 있고 무료 예약은 즉시 확정된다.
 
-신규 마이그레이션 `V12`는 웨이팅 종료 정보와 이력을 추가하고, 기존 `EXPIRED` 상태를 `NO_SHOW`로 변환한다.
+
+마이그레이션은 `V12`(웨이팅 종료 이력), `V13`(호출 도착 제한시간), `V14`(웨이팅 호출), `V15`(예약 선점) 순서다. 예약 선점은 새로 반영된 호출 기능과 번호가 겹치지 않도록 기존 V13에서 V15로 옮겼다.
 
 ## 점주 예약 취소 알림
 

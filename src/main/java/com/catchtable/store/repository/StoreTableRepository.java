@@ -37,7 +37,7 @@ public interface StoreTableRepository extends JpaRepository<StoreTable, Long> {
                   SELECT 1
                   FROM reservation r
                   WHERE r.table_id = st.id
-                    AND r.status <> 'CANCELLED'
+                    AND r.status NOT IN ('CANCELLED', 'EXPIRED')
                     AND tstzrange(r.reservation_start_at, r.reservation_end_at, '[)')
                         && tstzrange(CAST(:reservationStartAt AS TIMESTAMPTZ),
                                      CAST(:reservationEndAt AS TIMESTAMPTZ), '[)')
@@ -65,7 +65,8 @@ public interface StoreTableRepository extends JpaRepository<StoreTable, Long> {
                   SELECT 1
                   FROM reservation r
                   WHERE r.table_id = st.id
-                    AND r.status <> 'CANCELLED'
+                    AND r.status NOT IN ('CANCELLED', 'EXPIRED')
+                    AND (r.status <> 'PENDING_PAYMENT' OR r.hold_expires_at > :now)
                     AND tstzrange(r.reservation_start_at, r.reservation_end_at, '[)')
                         && tstzrange(CAST(:reservationStartAt AS TIMESTAMPTZ),
                                      CAST(:reservationEndAt AS TIMESTAMPTZ), '[)')
@@ -75,6 +76,7 @@ public interface StoreTableRepository extends JpaRepository<StoreTable, Long> {
             @Param("storeId") Long storeId,
             @Param("partySize") int partySize,
             @Param("reservationStartAt") OffsetDateTime reservationStartAt,
-            @Param("reservationEndAt") OffsetDateTime reservationEndAt
+            @Param("reservationEndAt") OffsetDateTime reservationEndAt,
+            @Param("now") OffsetDateTime now
     );
 }
