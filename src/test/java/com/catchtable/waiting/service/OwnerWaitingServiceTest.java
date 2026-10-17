@@ -27,6 +27,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.time.Clock;
+import java.time.Duration;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
@@ -342,6 +343,78 @@ class OwnerWaitingServiceTest {
         assertBusinessFailure(() -> service.getWaitingPolicy(owner.getId(), -1L), ErrorCode.STORE_NOT_FOUND);
         assertBusinessFailure(() -> service.updateWaitingPolicy(owner.getId(), -1L, 15), ErrorCode.STORE_NOT_FOUND);
         assertThat(storeRepository.findById(store.getId()).orElseThrow().getWaitingCallLimitMinutes()).isEqualTo(10);
+    }
+
+    @Test
+    void callMarksCalledAndStoresCallInfo() throws Exception {
+        Waiting waiting = waiting(1, WaitingStatus.WAITING);
+
+        var response = service.callWaiting(owner.getId(), waiting.getId());
+
+        assertThat(response.waitingId()).isEqualTo(waiting.getId());
+        assertThat(response.status()).isEqualTo(WaitingStatus.CALLED);
+        assertThat(response.waitNumber()).isEqualTo(1);
+        assertThat(response.callCount()).isEqualTo(1);
+        assertThat(response.expiresAt()).isEqualTo(response.calledAt().plusMinutes(10));
+        Waiting called = waitingRepository.findById(waiting.getId()).orElseThrow();
+        assertThat(called.getStatus()).isEqualTo(WaitingStatus.CALLED);
+        assertThat(called.getCallCount()).isEqualTo(1);
+        assertThat(Duration.between(called.getCalledAt(), called.getCallExpiresAt())).isEqualTo(Duration.ofMinutes(10));
+        verify(ownerEmitter, times(1)).send(any(SseEmitter.SseEventBuilder.class));
+        verify(customerEmitter, times(2)).send(any(SseEmitter.SseEventBuilder.class));
+    }
+
+    @Test
+    void callExpiryUsesLimitAtCallTimeAndIgnoresLaterPolicyChange() {
+        Waiting waiting = waiting(1, WaitingStatus.WAITING);
+        service.updateWaitingPolicy(owner.getId(), store.getId(), 15);
+
+        service.callWaiting(owner.getId(), waiting.getId());
+        Waiting called = waitingRepository.findById(waiting.getId()).orElseThrow();
+        assertThat(Duration.between(called.getCalledAt(), called.getCallExpiresAt())).isEqualTo(Duration.ofMinutes(15));
+
+        service.updateWaitingPolicy(owner.getId(), store.getId(), 30);
+        Waiting after = waitingRepository.findById(waiting.getId()).orElseThrow();
+        assertThat(after.getCallExpiresAt().toInstant()).isEqualTo(called.getCallExpiresAt().toInstant());
+    }
+
+    @Test
+    void recallIncreasesCountAndRecalculatesExpiry() {
+        Waiting waiting = waiting(1, WaitingStatus.WAITING);
+        service.callWaiting(owner.getId(), waiting.getId());
+        Waiting first = waitingRepository.findById(waiting.getId()).orElseThrow();
+        service.updateWaitingPolicy(owner.getId(), store.getId(), 20);
+
+        var response = service.callWaiting(owner.getId(), waiting.getId());
+
+        assertThat(response.callCount()).isEqualTo(2);
+        Waiting recalled = waitingRepository.findById(waiting.getId()).orElseThrow();
+        assertThat(recalled.getStatus()).isEqualTo(WaitingStatus.CALLED);
+        assertThat(recalled.getCallCount()).isEqualTo(2);
+        assertThat(recalled.getCalledAt()).isAfterOrEqualTo(first.getCalledAt());
+        assertThat(Duration.between(recalled.getCalledAt(), recalled.getCallExpiresAt())).isEqualTo(Duration.ofMinutes(20));
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = WaitingStatus.class, names = {"CONFIRMED", "SEATED", "CANCELED", "NO_SHOW"})
+    void cannotCallConfirmedOrEndedTeam(WaitingStatus status) throws Exception {
+        Waiting waiting = waiting(1, status);
+        assertBusinessFailure(() -> service.callWaiting(owner.getId(), waiting.getId()), ErrorCode.WAITING_NOT_CALLABLE);
+        Waiting unchanged = waitingRepository.findById(waiting.getId()).orElseThrow();
+        assertThat(unchanged.getStatus()).isEqualTo(status);
+        assertThat(unchanged.getCallCount()).isZero();
+        assertThat(unchanged.getCalledAt()).isNull();
+        verify(customerEmitter, never()).send(any(SseEmitter.SseEventBuilder.class));
+    }
+
+    @Test
+    void callChecksOwnerRoleAndStoreOwnership() {
+        Waiting waiting = waiting(1, WaitingStatus.WAITING);
+        Member other = member("다른 점주", UserType.OWNER);
+        assertBusinessFailure(() -> service.callWaiting(customer.getId(), waiting.getId()), ErrorCode.FORBIDDEN_MEMBER_TYPE);
+        assertBusinessFailure(() -> service.callWaiting(other.getId(), waiting.getId()), ErrorCode.WAITING_NOT_FOUND);
+        assertBusinessFailure(() -> service.callWaiting(owner.getId(), -1L), ErrorCode.WAITING_NOT_FOUND);
+        assertThat(waitingRepository.findById(waiting.getId()).orElseThrow().getStatus()).isEqualTo(WaitingStatus.WAITING);
     }
 
     private boolean outcome(Runnable action) {
