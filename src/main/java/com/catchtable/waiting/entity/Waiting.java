@@ -126,6 +126,18 @@ public class Waiting extends BaseTimeEntity {
         return end(WaitingStatus.CANCELED, WaitingEndReason.OWNER_CANCELED, detail, actorId, now);
     }
 
+    // 고객 취소
+    public WaitingEndHistory cancelByCustomer(Long actorId, OffsetDateTime now) {
+        // 이미 취소면 그대로
+        if (status == WaitingStatus.CANCELED) {
+            return null;
+        }
+        if (!WaitingStatus.ACTIVE.contains(status)) {
+            throw new BusinessException(ErrorCode.WAITING_NOT_CANCELLABLE);
+        }
+        return end(WaitingStatus.CANCELED, WaitingEndReason.CUSTOMER_CANCELED, "고객 취소", actorId, now);
+    }
+
     public WaitingEndHistory markNoShow(WaitingEndReason reason, String detail, Long actorId, OffsetDateTime now) {
         if (reason != WaitingEndReason.NO_RESPONSE && reason != WaitingEndReason.NO_SHOW) {
             throw new BusinessException(ErrorCode.INVALID_INPUT);
