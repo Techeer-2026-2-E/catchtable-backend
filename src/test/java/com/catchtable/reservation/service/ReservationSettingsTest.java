@@ -437,7 +437,48 @@ class ReservationSettingsTest {
         }
     }
 
+    @Test
+    void explicitHoldReleaseIsOwnedIdempotentAndNeverCancelsAConfirmedReservation() throws Exception {
+        var mvc = MockMvcBuilders.standaloneSetup(new ReservationController(reservations))
+                .setCustomArgumentResolvers(new LoginMemberArgumentResolver())
+                .setControllerAdvice(new GlobalExceptionHandler()).build();
+        var hold = reservations.createHold(customerId, new CreateReservationRequest(storeId, start, 4));
+        mvc.perform(delete("/api/user/reservations/holds/{id}", hold.holdId()))
+                .andExpect(status().isUnauthorized());
+        mvc.perform(delete("/api/user/reservations/holds/{id}", hold.holdId()).header("X-Member-Id", ownerId))
+                .andExpect(status().isNotFound());
+        for (int attempt = 0; attempt < 2; attempt++) {
+            mvc.perform(delete("/api/user/reservations/holds/{id}", hold.holdId()).header("X-Member-Id", customerId))
+                    .andExpect(status().isNoContent());
+        }
+        assertThat(reservations.getHold(customerId, hold.holdId()).status()).isEqualTo(ReservationStatus.CANCELLED);
+        assertThat(availability.getAvailableTableCount(storeId, start, 4).availableTableCount()).isEqualTo(1);
+        var next = reservations.createHold(customerId, new CreateReservationRequest(storeId, start, 4));
+        assertThat(next.holdId()).isNotEqualTo(hold.holdId());
+        jdbc.update("UPDATE reservation SET status = 'CONFIRMED', confirmed_at = requested_at WHERE id = ?", next.holdId());
+        mvc.perform(delete("/api/user/reservations/holds/{id}", next.holdId()).header("X-Member-Id", customerId))
+                .andExpect(status().isConflict());
+        assertThat(reservations.getHold(customerId, next.holdId()).status()).isEqualTo(ReservationStatus.CONFIRMED);
+        assertThat(availability.getAvailableTableCount(storeId, start, 4).availableTableCount()).isZero();
+    }
 
+    @Test
+    void releasingAnExpiredHoldKeepsTheExpiryAndRollbackKeepsAnActiveHold() {
+        var held = reservations.createHold(customerId, new CreateReservationRequest(storeId, start, 4));
+        new TransactionTemplate(transactionManager).executeWithoutResult(transaction -> {
+            reservations.releaseHold(customerId, held.holdId());
+            transaction.setRollbackOnly();
+        });
+        assertThat(reservations.getHold(customerId, held.holdId()).status()).isEqualTo(ReservationStatus.PENDING_PAYMENT);
+        jdbc.update("""
+                UPDATE reservation SET requested_at = requested_at - INTERVAL '10 minutes',
+                    hold_expires_at = hold_expires_at - INTERVAL '10 minutes' WHERE id = ?
+                """, held.holdId());
+        reservations.releaseHold(customerId, held.holdId());
+        reservations.releaseHold(customerId, held.holdId());
+        assertThat(reservations.getHold(customerId, held.holdId()).status()).isEqualTo(ReservationStatus.EXPIRED);
+        assertThat(reserve()).isNotNull();
+    }
 
 
 
