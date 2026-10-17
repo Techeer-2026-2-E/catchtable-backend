@@ -13,6 +13,7 @@ import com.catchtable.waiting.repository.WaitingRepository;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import java.time.Clock;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.util.Collection;
@@ -37,7 +38,8 @@ class HistoryServiceTest {
 
     private final ReservationRepository reservationRepository = mock(ReservationRepository.class);
     private final WaitingRepository waitingRepository = mock(WaitingRepository.class);
-    private final HistoryService historyService = new HistoryService(reservationRepository, waitingRepository);
+    private final HistoryService historyService = new HistoryService(reservationRepository, waitingRepository,
+            Clock.fixed(NOW.toInstant(), NOW.getOffset()));
 
     private final Store store = store();
 
@@ -84,11 +86,26 @@ class HistoryServiceTest {
     }
 
     @Test
+    @DisplayName("결제 전 선점은 진행 중이고, 만료된 선점은 종료 내역으로 내려준다")
+    void holdsAreActiveUntilExpired() {
+        Reservation pending = reservation(1L, ReservationStatus.PENDING_PAYMENT, NOW.plusDays(2));
+        Reservation expired = reservation(2L, ReservationStatus.EXPIRED, NOW.plusDays(1));
+        when(reservationRepository.findAllByMember_IdAndStatusIn(eq(MEMBER_ID), anyCollection()))
+                .thenReturn(List.of(expired, pending));
+
+        List<HistoryItemResponse> result = historyService.getHistories(MEMBER_ID, HistoryType.RESERVATION, null);
+
+        assertThat(result).extracting(HistoryItemResponse::id, HistoryItemResponse::status, HistoryItemResponse::active)
+                .containsExactly(tuple(1L, "PENDING_PAYMENT", true), tuple(2L, "EXPIRED", false));
+    }
+
+    @Test
     @DisplayName("상태 필터는 진행 중/종료 상태 묶음으로 바꿔 조회한다")
     void mapsStatusFilterToStatuses() {
         historyService.getHistories(MEMBER_ID, null, HistoryStatus.ACTIVE);
         verify(reservationRepository).findAllByMember_IdAndStatusIn(eq(MEMBER_ID),
-                argThat(statuses -> sameElements(statuses, Set.of(ReservationStatus.CONFIRMED))));
+                argThat(statuses -> sameElements(statuses,
+                        Set.of(ReservationStatus.PENDING_PAYMENT, ReservationStatus.CONFIRMED))));
         verify(waitingRepository).findAllByMemberIdAndStatusIn(eq(MEMBER_ID),
                 argThat(statuses -> sameElements(statuses,
                         Set.of(WaitingStatus.WAITING, WaitingStatus.CALLED, WaitingStatus.CONFIRMED))));
@@ -96,7 +113,8 @@ class HistoryServiceTest {
         historyService.getHistories(MEMBER_ID, null, HistoryStatus.ENDED);
         verify(reservationRepository).findAllByMember_IdAndStatusIn(eq(MEMBER_ID),
                 argThat(statuses -> sameElements(statuses, Set.of(
-                        ReservationStatus.COMPLETED, ReservationStatus.CANCELLED, ReservationStatus.NO_SHOW))));
+                        ReservationStatus.COMPLETED, ReservationStatus.CANCELLED,
+                        ReservationStatus.NO_SHOW, ReservationStatus.EXPIRED, ReservationStatus.PENDING_PAYMENT))));
         verify(waitingRepository).findAllByMemberIdAndStatusIn(eq(MEMBER_ID),
                 argThat(statuses -> sameElements(statuses, Set.of(
                         WaitingStatus.SEATED, WaitingStatus.CANCELED, WaitingStatus.NO_SHOW))));
@@ -110,7 +128,7 @@ class HistoryServiceTest {
         Reservation reservation = mock(Reservation.class);
         when(reservation.getId()).thenReturn(id);
         when(reservation.getStore()).thenReturn(store);
-        when(reservation.getStatus()).thenReturn(status);
+        when(reservation.getStatusAt(NOW)).thenReturn(status);
         when(reservation.getPartySize()).thenReturn(2);
         when(reservation.getReservationStartAt()).thenReturn(startAt);
         when(reservation.getReservationEndAt()).thenReturn(startAt.plusHours(2));

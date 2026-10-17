@@ -8,6 +8,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import java.time.Clock;
 import java.time.DayOfWeek;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
@@ -26,7 +27,8 @@ class BusinessHourServiceTest {
 
     private final BusinessHourRepository businessHourRepository = mock(BusinessHourRepository.class);
     private final BusinessHourService service =
-            new BusinessHourService(mock(StoreRepository.class), businessHourRepository, mock(ReservationRepository.class));
+            new BusinessHourService(mock(StoreRepository.class), businessHourRepository,
+                    mock(ReservationRepository.class), Clock.systemUTC());
 
     // 금 18:00~02:00 (브레이크 23:00~23:30), 토 휴무, 일 11:00~21:00 (브레이크 15:00~16:00)
     @BeforeEach
