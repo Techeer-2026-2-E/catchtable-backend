@@ -182,12 +182,12 @@ class UserWaitingControllerTest {
         respond(me, -1L)
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value("WAITING_NOT_FOUND"));
-        mockMvc.perform(post("/api/user/waitings/{waitingId}/respond", others.getId()))
+        mockMvc.perform(post("/api/user/waitings/{waitingId}/accept", others.getId()))
                 .andExpect(status().isUnauthorized());
     }
 
     private ResultActions respond(Member member, Long waitingId) throws Exception {
-        return mockMvc.perform(post("/api/user/waitings/{waitingId}/respond", waitingId)
+        return mockMvc.perform(post("/api/user/waitings/{waitingId}/accept", waitingId)
                 .header("X-Member-Id", member.getId()));
     }
 
