@@ -34,6 +34,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.OffsetDateTime;
 import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.List;
@@ -351,6 +352,48 @@ class OwnerWaitingControllerTest {
                 .andExpect(jsonPath("$.code").value("WAITING_NOT_FOUND"));
         mockMvc.perform(post(path, -1L).header("X-Member-Id", owner.getId()))
                 .andExpect(status().isNotFound());
+    }
+
+    // 응답 만료 경계
+    @Test
+    void customerRespondsUntilCallExpiryAndOwnerListShowsIt() throws Exception {
+        Waiting late = waiting(store, TODAY, 1, WaitingStatus.WAITING);
+        Waiting onTime = waiting(store, TODAY, 2, WaitingStatus.WAITING);
+        for (Waiting target : List.of(late, onTime)) {
+            mockMvc.perform(post("/api/owner/waitings/{waitingId}/call", target.getId())
+                            .header("X-Member-Id", owner.getId()))
+                    .andExpect(status().isOk());
+        }
+        jdbc.update("update waiting set call_expires_at = ? where id = ?",
+                OffsetDateTime.parse("2030-01-11T00:04:59+09:00"), late.getId());
+        jdbc.update("update waiting set call_expires_at = ? where id = ?",
+                OffsetDateTime.parse("2030-01-11T00:05:00+09:00"), onTime.getId());
+
+        mockMvc.perform(post("/api/user/waitings/{waitingId}/respond", late.getId())
+                        .header("X-Member-Id", customer.getId()))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("WAITING_NOT_RESPONDABLE"));
+        mockMvc.perform(post("/api/user/waitings/{waitingId}/respond", onTime.getId())
+                        .header("X-Member-Id", customer.getId()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.waitingId").value(onTime.getId()))
+                .andExpect(jsonPath("$.status").value("CALLED"))
+                .andExpect(jsonPath("$.arrivalIntent").value("COMING"))
+                .andExpect(jsonPath("$.respondedAt").value("2030-01-11T00:05:00+09:00"))
+                .andExpect(jsonPath("$.expiresAt").isNotEmpty());
+
+        mockMvc.perform(get("/api/owner/stores/{storeId}/waitings", store.getId())
+                        .header("X-Member-Id", owner.getId()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].id").value(late.getId()))
+                .andExpect(jsonPath("$[0].calledAt").isNotEmpty())
+                .andExpect(jsonPath("$[0].respondedAt").doesNotExist())
+                .andExpect(jsonPath("$[0].arrivalIntent").doesNotExist())
+                .andExpect(jsonPath("$[1].id").value(onTime.getId()))
+                .andExpect(jsonPath("$[1].status").value("CALLED"))
+                .andExpect(jsonPath("$[1].callExpiresAt").isNotEmpty())
+                .andExpect(jsonPath("$[1].respondedAt").isNotEmpty())
+                .andExpect(jsonPath("$[1].arrivalIntent").value("COMING"));
     }
 
     private MvcResult subscribe() throws Exception {
