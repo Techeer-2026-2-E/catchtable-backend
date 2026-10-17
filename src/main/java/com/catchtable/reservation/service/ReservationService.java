@@ -155,5 +155,10 @@ public class ReservationService {
         return reservationRepository.completeVisitedReservations(OffsetDateTime.now(clock));
     }
 
+    @Scheduled(fixedDelayString = "${reservation.hold-expiry-interval-ms:60000}")
+    @Transactional
+    public int expireHolds() {
+        return reservationRepository.expireHolds(null, OffsetDateTime.now(clock));
+    }
 
 }
