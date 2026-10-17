@@ -14,6 +14,9 @@ import com.catchtable.store.repository.StoreRepository;
 import com.catchtable.store.repository.StoreTableRepository;
 import com.catchtable.waiting.dto.OwnerWaitingResponse;
 import com.catchtable.waiting.dto.StoreWaitingStatusResponse;
+import com.catchtable.waiting.dto.WaitingCallNotification;
+import com.catchtable.waiting.dto.WaitingCallResponse;
+import com.catchtable.waiting.dto.WaitingQueueChangedEvent;
 import com.catchtable.waiting.dto.WaitingPolicyResponse;
 import com.catchtable.waiting.dto.WaitingTerminationResponse;
 import com.catchtable.waiting.entity.Waiting;
@@ -113,6 +116,21 @@ public class OwnerWaitingService {
         Store store = findOwnerStoreForUpdate(memberId, storeId);
         store.changeWaitingCallLimit(callLimitMinutes);
         return WaitingPolicyResponse.from(store);
+    }
+
+    @Transactional
+    public WaitingCallResponse callWaiting(Long memberId, Long waitingId) {
+        Waiting waiting = findOwnerWaitingForUpdate(memberId, waitingId);
+        Store store = waiting.getStore();
+        waiting.call(OffsetDateTime.now(clock), store.getWaitingCallLimitMinutes());
+
+        eventPublisher.publishEvent(WaitingCallNotification.of(waiting.getMember().getId(), waiting.getId(),
+                waiting.getWaitNumber(), store.getName(), waiting.getCalledAt(), waiting.getCallExpiresAt()));
+        eventPublisher.publishEvent(new CustomerNotificationEvent(
+                store.getOwner().getId(), NotificationType.WAITING_CHANGED, store.getId(),
+                "대기 목록이 변경되었습니다."));
+        eventPublisher.publishEvent(new WaitingQueueChangedEvent(store.getId(), waiting.getWaitingDate()));
+        return WaitingCallResponse.from(waiting);
     }
 
     private void publishTermination(Waiting waiting, NotificationType type, String message) {

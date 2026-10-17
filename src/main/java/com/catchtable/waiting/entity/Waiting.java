@@ -79,6 +79,15 @@ public class Waiting extends BaseTimeEntity {
     @Column(name = "ended_at")
     private OffsetDateTime endedAt;
 
+    @Column(name = "called_at")
+    private OffsetDateTime calledAt;
+
+    @Column(name = "call_expires_at")
+    private OffsetDateTime callExpiresAt;
+
+    @Column(name = "call_count", nullable = false)
+    private int callCount;
+
     private Waiting(Member member, Store store, LocalDate waitingDate, int partyCount, int waitNumber) {
         this.member = member;
         this.store = store;
@@ -116,6 +125,16 @@ public class Waiting extends BaseTimeEntity {
             return null;
         }
         return end(WaitingStatus.NO_SHOW, reason, detail, actorId, now);
+    }
+
+    public void call(OffsetDateTime now, int limitMinutes) {
+        if (status != WaitingStatus.WAITING && status != WaitingStatus.CALLED) {
+            throw new BusinessException(ErrorCode.WAITING_NOT_CALLABLE);
+        }
+        status = WaitingStatus.CALLED;
+        callCount++;
+        calledAt = now;
+        callExpiresAt = now.plusMinutes(limitMinutes);
     }
 
     private WaitingEndHistory end(WaitingStatus nextStatus, WaitingEndReason reason, String detail,
