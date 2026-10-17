@@ -587,6 +587,34 @@ class OwnerWaitingServiceTest {
         assertThat(waitingRepository.findById(waiting.getId()).orElseThrow().getStatus()).isEqualTo(WaitingStatus.CALLED);
     }
 
+    @Test
+    void customerCancelLeavesOwnerListAndNotifiesOnce() throws Exception {
+        Waiting first = waiting(1, WaitingStatus.WAITING);
+        Waiting next = waiting(2, WaitingStatus.WAITING);
+        assertThat(queryService.getMyWaiting(customer.getId(), next.getId()).teamsAhead()).isEqualTo(1);
+
+        waitingService.cancelWaiting(customer.getId(), first.getId());
+        waitingService.cancelWaiting(customer.getId(), first.getId());
+
+        assertThat(service.getWaitings(owner.getId(), store.getId())).singleElement()
+                .satisfies(row -> assertThat(row.id()).isEqualTo(next.getId()));
+        assertThat(queryService.getMyWaiting(customer.getId(), next.getId()).teamsAhead()).isZero();
+        verify(ownerEmitter, times(1)).send(any(SseEmitter.SseEventBuilder.class));
+        verify(customerEmitter, times(1)).send(any(SseEmitter.SseEventBuilder.class));
+    }
+
+    @Test
+    void customerCanceledWaitingCannotBeCalledAcceptedOrEntered() {
+        Waiting waiting = waiting(1, WaitingStatus.WAITING);
+        service.callWaiting(owner.getId(), waiting.getId());
+        waitingService.cancelWaiting(customer.getId(), waiting.getId());
+
+        assertBusinessFailure(() -> service.callWaiting(owner.getId(), waiting.getId()), ErrorCode.WAITING_NOT_CALLABLE);
+        assertBusinessFailure(() -> waitingService.respondToCall(customer.getId(), waiting.getId()), ErrorCode.WAITING_NOT_RESPONDABLE);
+        assertBusinessFailure(() -> service.enterWaiting(owner.getId(), waiting.getId()), ErrorCode.WAITING_NOT_ENTERABLE);
+        assertThat(waitingRepository.findById(waiting.getId()).orElseThrow().getStatus()).isEqualTo(WaitingStatus.CANCELED);
+    }
+
     private boolean outcome(Runnable action) {
         try {
             action.run();
