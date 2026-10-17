@@ -319,6 +319,31 @@ class OwnerWaitingServiceTest {
         assertThat(queryService.getMyWaiting(customer.getId(), firstId).currentPosition()).isEqualTo(1);
     }
 
+    @Test
+    void waitingPolicyDefaultsToTenMinutesAndCanBeChanged() {
+        assertThat(service.getWaitingPolicy(owner.getId(), store.getId()).callLimitMinutes()).isEqualTo(10);
+
+        var updated = service.updateWaitingPolicy(owner.getId(), store.getId(), 15);
+        assertThat(updated.storeId()).isEqualTo(store.getId());
+        assertThat(updated.callLimitMinutes()).isEqualTo(15);
+        assertThat(service.updateWaitingPolicy(owner.getId(), store.getId(), 15).callLimitMinutes()).isEqualTo(15);
+        assertThat(service.getWaitingPolicy(owner.getId(), store.getId()).callLimitMinutes()).isEqualTo(15);
+    }
+
+    @Test
+    void waitingPolicyRejectsOutOfRangeAndChecksOwnership() {
+        Member other = member("다른 점주", UserType.OWNER);
+        assertBusinessFailure(() -> service.updateWaitingPolicy(owner.getId(), store.getId(), 0), ErrorCode.INVALID_INPUT);
+        assertBusinessFailure(() -> service.updateWaitingPolicy(owner.getId(), store.getId(), 61), ErrorCode.INVALID_INPUT);
+        assertBusinessFailure(() -> service.getWaitingPolicy(customer.getId(), store.getId()), ErrorCode.FORBIDDEN_MEMBER_TYPE);
+        assertBusinessFailure(() -> service.updateWaitingPolicy(customer.getId(), store.getId(), 15), ErrorCode.FORBIDDEN_MEMBER_TYPE);
+        assertBusinessFailure(() -> service.getWaitingPolicy(other.getId(), store.getId()), ErrorCode.STORE_NOT_FOUND);
+        assertBusinessFailure(() -> service.updateWaitingPolicy(other.getId(), store.getId(), 15), ErrorCode.STORE_NOT_FOUND);
+        assertBusinessFailure(() -> service.getWaitingPolicy(owner.getId(), -1L), ErrorCode.STORE_NOT_FOUND);
+        assertBusinessFailure(() -> service.updateWaitingPolicy(owner.getId(), -1L, 15), ErrorCode.STORE_NOT_FOUND);
+        assertThat(storeRepository.findById(store.getId()).orElseThrow().getWaitingCallLimitMinutes()).isEqualTo(10);
+    }
+
     private boolean outcome(Runnable action) {
         try {
             action.run();
