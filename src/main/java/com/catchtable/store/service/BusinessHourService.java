@@ -3,7 +3,6 @@ package com.catchtable.store.service;
 import com.catchtable.global.exception.BusinessException;
 import com.catchtable.global.exception.ErrorCode;
 import com.catchtable.reservation.entity.Reservation;
-import com.catchtable.reservation.entity.ReservationStatus;
 import com.catchtable.reservation.repository.ReservationRepository;
 import com.catchtable.store.dto.BusinessHourRequest;
 import com.catchtable.store.dto.BusinessHourResponse;
@@ -17,6 +16,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Clock;
 import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -39,6 +39,7 @@ public class BusinessHourService {
     private final StoreRepository storeRepository;
     private final BusinessHourRepository businessHourRepository;
     private final ReservationRepository reservationRepository;
+    private final Clock clock;
 
     // TODO: 점주 본인 매장인지 확인 (로그인 기능 만든 후 작업)
 
@@ -90,8 +91,7 @@ public class BusinessHourService {
 
         List<BusinessHour> updatedHours = businessHourRepository.findAllByStoreIdOrderByDayOfWeekAsc(storeId);
         // 저장은 아직 같은 트랜잭션 안이다. 충돌이 있으면 추가·변경·휴무 처리를 모두 롤백한다.
-        for (Reservation reservation : reservationRepository.findAllByStore_IdAndStatusAndReservationEndAtAfter(
-                storeId, ReservationStatus.CONFIRMED, OffsetDateTime.now())) {
+        for (Reservation reservation : reservationRepository.findActiveForStore(storeId, OffsetDateTime.now(clock))) {
             LocalDateTime start = reservation.getReservationStartAt().atZoneSameInstant(STORE_ZONE).toLocalDateTime();
             LocalDateTime end = reservation.getReservationEndAt().atZoneSameInstant(STORE_ZONE).toLocalDateTime();
             boolean covered = Stream.of(start.toLocalDate().minusDays(1), start.toLocalDate())

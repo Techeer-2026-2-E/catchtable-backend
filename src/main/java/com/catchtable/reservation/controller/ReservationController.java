@@ -2,11 +2,13 @@ package com.catchtable.reservation.controller;
 
 import com.catchtable.global.auth.LoginMember;
 import com.catchtable.reservation.dto.CreateReservationRequest;
+import com.catchtable.reservation.dto.ReservationHoldResponse;
 import com.catchtable.reservation.dto.ReservationResponse;
 import com.catchtable.reservation.service.ReservationService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
@@ -31,6 +33,29 @@ public class ReservationController {
     public ReservationResponse createReservation(@Valid @RequestBody CreateReservationRequest request) {
         return reservationService.createReservation(MOCK_CUSTOMER_ID, request);
     }
+
+    /** 결제 대기 예약과 5분 선점을 함께 만든다. */
+    @PostMapping("/holds")
+    @ResponseStatus(HttpStatus.CREATED)
+    public ReservationHoldResponse createHold(
+            @LoginMember Long memberId,
+            @Valid @RequestBody CreateReservationRequest request
+    ) {
+        return reservationService.createHold(memberId, request);
+    }
+
+    /** 새로고침해도 최초 만료시간을 유지하며, 본인 선점만 조회한다. */
+    @GetMapping("/holds/{holdId}")
+    public ReservationHoldResponse getHold(@LoginMember Long memberId, @PathVariable Long holdId) {
+        return reservationService.getHold(memberId, holdId);
+    }
+
+    @DeleteMapping("/holds/{holdId}")
+    public ResponseEntity<Void> releaseHold(@LoginMember Long memberId, @PathVariable Long holdId) {
+        reservationService.releaseHold(memberId, holdId);
+        return ResponseEntity.noContent().build();
+    }
+
     /** 예약 시작 전의 본인 확정 예약만 취소할 수 있다. 이미 취소된 예약은 그대로 반환한다. */
     @PostMapping("/{reservationId}/cancel")
     public ReservationResponse cancelReservation(

@@ -13,6 +13,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.time.Clock;
 import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -32,11 +33,13 @@ public class ReservationAvailabilityService {
     private final StoreRepository storeRepository;
     private final StoreTableRepository storeTableRepository;
     private final BusinessHourService businessHourService;
+    private final Clock clock;
 
     public AvailabilityResponse getAvailability(Long storeId, LocalDate date, int partySize) {
         validatePartySize(partySize);
         Store store = findStore(storeId);
-        LocalDateTime now = LocalDateTime.now(STORE_ZONE);
+        OffsetDateTime nowAt = OffsetDateTime.now(clock);
+        LocalDateTime now = nowAt.atZoneSameInstant(STORE_ZONE).toLocalDateTime();
         // 오늘부터 bookingOpenDays일 뒤까지 포함한다. 범위 밖은 빈 목록이 아니라 잘못된 요청이다.
         if (date.isBefore(now.toLocalDate()) || date.isAfter(now.toLocalDate().plusDays(store.getBookingOpenDays()))) {
             throw badRequest("예약 가능한 날짜 범위를 벗어났습니다.");
@@ -61,7 +64,7 @@ public class ReservationAvailabilityService {
                 }
                 OffsetDateTime startAt = start.atZone(STORE_ZONE).toOffsetDateTime();
                 long count = storeTableRepository.countAvailable(storeId, partySize, startAt,
-                        startAt.plusMinutes(store.getReservationDurationMinutes()));
+                        startAt.plusMinutes(store.getReservationDurationMinutes()), nowAt);
                 slots.add(new AvailabilityResponse.Slot(startAt, count, count > 0));
             }
         }
@@ -74,9 +77,10 @@ public class ReservationAvailabilityService {
     public AvailableTableCountResponse getAvailableTableCount(Long storeId, OffsetDateTime startAt, int partySize) {
         validatePartySize(partySize);
         Store store = findStore(storeId);
-        validateBookable(store, startAt, OffsetDateTime.now());
+        OffsetDateTime now = OffsetDateTime.now(clock);
+        validateBookable(store, startAt, now);
         long count = storeTableRepository.countAvailable(storeId, partySize, startAt,
-                startAt.plusMinutes(store.getReservationDurationMinutes()));
+                startAt.plusMinutes(store.getReservationDurationMinutes()), now);
         return new AvailableTableCountResponse(storeId, startAt, partySize, count);
     }
 

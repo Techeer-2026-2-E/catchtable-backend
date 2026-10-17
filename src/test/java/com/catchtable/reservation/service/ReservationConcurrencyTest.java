@@ -1,8 +1,9 @@
 package com.catchtable.reservation.service;
 
 import com.catchtable.reservation.dto.CreateReservationRequest;
-import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.HttpStatus;
@@ -30,9 +31,10 @@ class ReservationConcurrencyTest {
     @Autowired
     private ReservationService reservationService;
 
-    @Test
+    @ParameterizedTest
+    @CsvSource({"false,false", "true,true", "true,false"})
     @Timeout(15)
-    void onlyOneConcurrentRequestCanReserveTheLastTable() throws Exception {
+    void onlyOneConcurrentRequestCanReserveTheLastTable(boolean firstHold, boolean secondHold) throws Exception {
         String suffix = UUID.randomUUID().toString();
         Long ownerId = insertMember("owner-" + suffix + "@example.com", "OWNER");
         Long customerId = insertMember("customer-" + suffix + "@example.com", "CUSTOMER");
@@ -64,13 +66,17 @@ class ReservationConcurrencyTest {
         CountDownLatch start = new CountDownLatch(1);
         ExecutorService executor = Executors.newFixedThreadPool(2);
 
-        Callable<Boolean> attempt = () -> {
+        java.util.function.Function<Boolean, Callable<Boolean>> attempt = hold -> () -> {
             ready.countDown();
             if (!start.await(5, TimeUnit.SECONDS)) {
                 throw new IllegalStateException("Concurrent reservation did not start");
             }
             try {
-                reservationService.createReservation(customerId, request);
+                if (hold) {
+                    reservationService.createHold(customerId, request);
+                } else {
+                    reservationService.createReservation(customerId, request);
+                }
                 return true;
             } catch (ResponseStatusException exception) {
                 if (exception.getStatusCode() == HttpStatus.CONFLICT) {
@@ -81,8 +87,8 @@ class ReservationConcurrencyTest {
         };
 
         try {
-            Future<Boolean> first = executor.submit(attempt);
-            Future<Boolean> second = executor.submit(attempt);
+            Future<Boolean> first = executor.submit(attempt.apply(firstHold));
+            Future<Boolean> second = executor.submit(attempt.apply(secondHold));
             assertThat(ready.await(5, TimeUnit.SECONDS)).isTrue();
             start.countDown();
 
