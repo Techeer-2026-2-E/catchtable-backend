@@ -113,7 +113,8 @@ class OwnerReservationFeatureServiceTest {
         Reservation reservation = reservationRepository.saveAndFlush(Reservation.confirmed(
                 customer, store, tableId, startAt, startAt.plusHours(1), 2, startAt.minusDays(1)));
 
-        assertThat(storeTableRepository.countAvailable(store.getId(), 2, startAt, startAt.plusHours(1))).isZero();
+        assertThat(storeTableRepository.countAvailable(store.getId(), 2, startAt, startAt.plusHours(1),
+                OffsetDateTime.now())).isZero();
         assertThatThrownBy(() -> ownerReservationService.cancelReservation(
                 owner.getId() + 999, reservation.getId(), "매장 사정"))
                 .isInstanceOfSatisfying(ResponseStatusException.class,
@@ -129,7 +130,8 @@ class OwnerReservationFeatureServiceTest {
         assertThat(cancelled.cancellationActor()).isEqualTo(CancellationActor.OWNER);
         assertThat(repeated.cancelledAt()).isEqualTo(cancelled.cancelledAt());
         assertThat(repeated.cancellationReason()).isEqualTo("매장 사정");
-        assertThat(storeTableRepository.countAvailable(store.getId(), 2, startAt, startAt.plusHours(1))).isEqualTo(1);
+        assertThat(storeTableRepository.countAvailable(store.getId(), 2, startAt, startAt.plusHours(1),
+                OffsetDateTime.now())).isEqualTo(1);
         assertThatThrownBy(() -> ownerReservationService.confirmVisit(owner.getId(), reservation.getId()))
                 .isInstanceOfSatisfying(ResponseStatusException.class,
                         exception -> assertThat(exception.getStatusCode()).isEqualTo(HttpStatus.CONFLICT));

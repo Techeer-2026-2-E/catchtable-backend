@@ -140,7 +140,7 @@ class WaitingMigrationTest {
         }
     }
 
-    // V15: 기존 웨이팅 응답 null
+    // V16: 기존 웨이팅 응답 null
     @Test
     void responseMigrationKeepsExistingTicketsUnanswered() throws Exception {
         String schema = "waiting_migration_" + UUID.randomUUID().toString().replace("-", "");
@@ -150,7 +150,7 @@ class WaitingMigrationTest {
                 sql.execute("SET search_path TO " + schema + ", public");
                 try (var migrations = Files.list(Path.of("src/main/resources/db/migration"))) {
                     var previous = migrations.filter(path -> path.toString().endsWith(".sql"))
-                            .filter(path -> version(path) < 15).sorted(Comparator.comparingInt(WaitingMigrationTest::version))
+                            .filter(path -> version(path) < 16).sorted(Comparator.comparingInt(WaitingMigrationTest::version))
                             .toList();
                     for (Path migration : previous) {
                         sql.execute(Files.readString(migration));
@@ -165,7 +165,7 @@ class WaitingMigrationTest {
                         values (1, 1, '2026-10-11', 2, 1, 'WAITING', null, null, 0, now(), now()),
                                (1, 1, '2026-10-12', 2, 1, 'CALLED', now(), now() + interval '10 minutes', 1, now(), now())
                         """);
-                sql.execute(Files.readString(Path.of("src/main/resources/db/migration/V15__add_waiting_response.sql")));
+                sql.execute(Files.readString(Path.of("src/main/resources/db/migration/V16__add_waiting_response.sql")));
                 try (var rows = sql.executeQuery("select * from waiting order by waiting_date")) {
                     for (String status : new String[]{"WAITING", "CALLED"}) {
                         assertThat(rows.next()).isTrue();
