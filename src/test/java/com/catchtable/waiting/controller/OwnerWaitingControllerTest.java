@@ -293,6 +293,66 @@ class OwnerWaitingControllerTest {
         assertThat(storeRepository.findById(store.getId()).orElseThrow().getWaitingCallLimitMinutes()).isEqualTo(10);
     }
 
+    @Test
+    void callReturnsCallInfoAndNotifiesCustomerAndOwner() throws Exception {
+        Waiting waiting = waiting(store, TODAY, 1, WaitingStatus.WAITING);
+        mockMvc.perform(put("/api/owner/stores/{storeId}/waiting-policy", store.getId())
+                        .header("X-Member-Id", owner.getId())
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"callLimitMinutes\":15}"))
+                .andExpect(status().isOk());
+        MvcResult ownerStream = subscribe();
+        MvcResult customerStream = mockMvc.perform(get("/api/user/notifications/subscribe")
+                        .param("memberId", customer.getId().toString()))
+                .andExpect(request().asyncStarted())
+                .andReturn();
+
+        mockMvc.perform(post("/api/owner/waitings/{waitingId}/call", waiting.getId())
+                        .header("X-Member-Id", owner.getId()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.waitingId").value(waiting.getId()))
+                .andExpect(jsonPath("$.status").value("CALLED"))
+                .andExpect(jsonPath("$.waitNumber").value(1))
+                .andExpect(jsonPath("$.callCount").value(1))
+                .andExpect(jsonPath("$.calledAt").value("2030-01-11T00:05:00+09:00"))
+                .andExpect(jsonPath("$.expiresAt").value("2030-01-11T00:20:00+09:00"));
+
+        assertThat(streamContent(customerStream)).contains(
+                "event:WAITING_CALLED",
+                "\"targetId\":" + waiting.getId(),
+                "\"message\":\"1번 고객님, 00:20까지 테스트 매장에 입장해 주세요.\"",
+                "\"waitNumber\":1",
+                "\"storeName\":\"테스트 매장\"",
+                "\"expiresAt\":\"2030-01-11T00:20:00+09:00\"",
+                "event:WAITING_POSITION_CHANGED");
+        assertThat(streamContent(ownerStream))
+                .contains("event:WAITING_CHANGED", "\"targetId\":" + store.getId());
+
+        mockMvc.perform(post("/api/owner/waitings/{waitingId}/call", waiting.getId())
+                        .header("X-Member-Id", owner.getId()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.callCount").value(2));
+    }
+
+    @Test
+    void callRejectsUncallableStatusAndChecksOwnership() throws Exception {
+        Waiting confirmed = waiting(store, TODAY, 1, WaitingStatus.CONFIRMED);
+        Waiting waiting = waiting(store, TODAY, 2, WaitingStatus.WAITING);
+        Long otherOwner = member("다른 점주", UserType.OWNER).getId();
+        String path = "/api/owner/waitings/{waitingId}/call";
+
+        mockMvc.perform(post(path, confirmed.getId()).header("X-Member-Id", owner.getId()))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("WAITING_NOT_CALLABLE"));
+        mockMvc.perform(post(path, waiting.getId())).andExpect(status().isUnauthorized());
+        mockMvc.perform(post(path, waiting.getId()).header("X-Member-Id", customer.getId()))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(post(path, waiting.getId()).header("X-Member-Id", otherOwner))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("WAITING_NOT_FOUND"));
+        mockMvc.perform(post(path, -1L).header("X-Member-Id", owner.getId()))
+                .andExpect(status().isNotFound());
+    }
+
     private MvcResult subscribe() throws Exception {
         return mockMvc.perform(get("/api/owner/stores/{storeId}/waitings/subscribe", store.getId())
                         .param("memberId", owner.getId().toString()))
