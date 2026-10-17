@@ -16,6 +16,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
@@ -182,12 +183,31 @@ class UserWaitingControllerTest {
         respond(me, -1L)
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value("WAITING_NOT_FOUND"));
-        mockMvc.perform(post("/api/user/waitings/{waitingId}/respond", others.getId()))
+        mockMvc.perform(post("/api/user/waitings/{waitingId}/accept", others.getId()))
                 .andExpect(status().isUnauthorized());
     }
 
+    @Test
+    @DisplayName("명세 경로로 신청하면 201, 재시도는 200, 예전 경로는 404")
+    void createWaitingWithStoreIdInBody() throws Exception {
+        Store saved = storeRepository.findById(store.getId()).orElseThrow();
+        saved.openWaiting();
+        storeRepository.save(saved);
+        String body = "{\"storeId\":" + store.getId() + ",\"partyCount\":2}";
+
+        mockMvc.perform(post("/api/user/waitings").header("X-Member-Id", me.getId())
+                        .contentType(MediaType.APPLICATION_JSON).content(body))
+                .andExpect(status().isCreated());
+        mockMvc.perform(post("/api/user/waitings").header("X-Member-Id", me.getId())
+                        .contentType(MediaType.APPLICATION_JSON).content(body))
+                .andExpect(status().isOk());
+        mockMvc.perform(post("/api/stores/{storeId}/waitings", store.getId()).header("X-Member-Id", me.getId())
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"partyCount\":2}"))
+                .andExpect(status().isNotFound());
+    }
+
     private ResultActions respond(Member member, Long waitingId) throws Exception {
-        return mockMvc.perform(post("/api/user/waitings/{waitingId}/respond", waitingId)
+        return mockMvc.perform(post("/api/user/waitings/{waitingId}/accept", waitingId)
                 .header("X-Member-Id", member.getId()));
     }
 
