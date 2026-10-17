@@ -27,14 +27,15 @@ public record HistoryItemResponse(
         Integer waitNumber,
         OffsetDateTime requestedAt
 ) {
-    public static HistoryItemResponse from(Reservation reservation) {
+    public static HistoryItemResponse from(Reservation reservation, OffsetDateTime now) {
+        ReservationStatus status = reservation.getStatusAt(now);
         return new HistoryItemResponse(
                 HistoryType.RESERVATION,
                 reservation.getId(),
                 reservation.getStore().getId(),
                 reservation.getStore().getName(),
-                reservation.getStatus().name(),
-                ReservationStatus.ACTIVE.contains(reservation.getStatus()),
+                status.name(),
+                ReservationStatus.ACTIVE.contains(status),
                 reservation.getPartySize(),
                 reservation.getReservationStartAt(),
                 reservation.getReservationEndAt(),

@@ -7,6 +7,7 @@ import com.catchtable.store.service.BusinessHourService;
 import org.junit.jupiter.api.Test;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.time.Clock;
 import java.time.OffsetDateTime;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
@@ -19,7 +20,7 @@ class ReservationTimeValidationTest {
 
     private final BusinessHourService businessHourService = mock(BusinessHourService.class);
     private final ReservationAvailabilityService service = new ReservationAvailabilityService(
-            mock(StoreRepository.class), mock(StoreTableRepository.class), businessHourService);
+            mock(StoreRepository.class), mock(StoreTableRepository.class), businessHourService, Clock.systemUTC());
     private final Store store = Store.builder()
             .reservationDurationMinutes(120)
             .reservationSlotMinutes(30)
