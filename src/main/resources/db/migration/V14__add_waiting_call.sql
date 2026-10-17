@@ -1,0 +1,4 @@
+ALTER TABLE waiting
+    ADD COLUMN called_at       TIMESTAMP WITH TIME ZONE,
+    ADD COLUMN call_expires_at TIMESTAMP WITH TIME ZONE,
+    ADD COLUMN call_count      INT NOT NULL DEFAULT 0;

@@ -27,6 +27,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.time.Clock;
+import java.time.Duration;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
@@ -49,6 +50,7 @@ class OwnerWaitingServiceTest {
 
     @Autowired OwnerWaitingService service;
     @Autowired WaitingQueryService queryService;
+    @Autowired WaitingService waitingService;
     @Autowired WaitingRepository waitingRepository;
     @Autowired WaitingEndHistoryRepository historyRepository;
     @Autowired MemberRepository memberRepository;
@@ -310,6 +312,142 @@ class OwnerWaitingServiceTest {
         }
         assertThat(waitingRepository.findById(waiting.getId()).orElseThrow().getStatus()).isEqualTo(WaitingStatus.CANCELED);
         verifyOneTerminationNotification();
+    }
+
+    @Test
+    void openAndCloseToggleWaitingAndRepeatedRequestsSucceed() {
+        assertThat(service.openWaiting(owner.getId(), store.getId()).waitingAvailable()).isTrue();
+        assertThat(service.openWaiting(owner.getId(), store.getId()).waitingAvailable()).isTrue();
+        assertThat(storeRepository.findById(store.getId()).orElseThrow().isWaitingAvailable()).isTrue();
+
+        var closed = service.closeWaiting(owner.getId(), store.getId());
+        assertThat(closed.storeId()).isEqualTo(store.getId());
+        assertThat(closed.waitingAvailable()).isFalse();
+        assertThat(service.closeWaiting(owner.getId(), store.getId()).waitingAvailable()).isFalse();
+        assertThat(storeRepository.findById(store.getId()).orElseThrow().isWaitingAvailable()).isFalse();
+    }
+
+    @Test
+    void openAndCloseCheckOwnerRoleAndStoreOwnership() {
+        Member other = member("다른 점주", UserType.OWNER);
+        assertBusinessFailure(() -> service.openWaiting(customer.getId(), store.getId()), ErrorCode.FORBIDDEN_MEMBER_TYPE);
+        assertBusinessFailure(() -> service.closeWaiting(customer.getId(), store.getId()), ErrorCode.FORBIDDEN_MEMBER_TYPE);
+        assertBusinessFailure(() -> service.openWaiting(other.getId(), store.getId()), ErrorCode.STORE_NOT_FOUND);
+        assertBusinessFailure(() -> service.closeWaiting(other.getId(), store.getId()), ErrorCode.STORE_NOT_FOUND);
+        assertBusinessFailure(() -> service.openWaiting(owner.getId(), -1L), ErrorCode.STORE_NOT_FOUND);
+        assertThat(storeRepository.findById(store.getId()).orElseThrow().isWaitingAvailable()).isFalse();
+    }
+
+    @Test
+    void closingRejectsNewApplicationsButKeepsWaitingTeams() {
+        service.openWaiting(owner.getId(), store.getId());
+        Long firstId = waitingService.createWaiting(customer.getId(), store.getId(), 2).response().waitingId();
+        Waiting called = waiting(2, WaitingStatus.CALLED);
+        Member late = member("늦은 고객", UserType.CUSTOMER);
+
+        service.closeWaiting(owner.getId(), store.getId());
+
+        assertBusinessFailure(() -> waitingService.createWaiting(late.getId(), store.getId(), 2), ErrorCode.WAITING_CLOSED);
+        assertThat(waitingRepository.findById(firstId).orElseThrow().getStatus()).isEqualTo(WaitingStatus.WAITING);
+        assertThat(waitingRepository.findById(called.getId()).orElseThrow().getStatus()).isEqualTo(WaitingStatus.CALLED);
+        assertThat(queryService.getMyWaiting(customer.getId(), firstId).currentPosition()).isEqualTo(1);
+    }
+
+    @Test
+    void waitingPolicyDefaultsToTenMinutesAndCanBeChanged() {
+        assertThat(service.getWaitingPolicy(owner.getId(), store.getId()).callLimitMinutes()).isEqualTo(10);
+
+        var updated = service.updateWaitingPolicy(owner.getId(), store.getId(), 15);
+        assertThat(updated.storeId()).isEqualTo(store.getId());
+        assertThat(updated.callLimitMinutes()).isEqualTo(15);
+        assertThat(service.updateWaitingPolicy(owner.getId(), store.getId(), 15).callLimitMinutes()).isEqualTo(15);
+        assertThat(service.getWaitingPolicy(owner.getId(), store.getId()).callLimitMinutes()).isEqualTo(15);
+    }
+
+    @Test
+    void waitingPolicyRejectsOutOfRangeAndChecksOwnership() {
+        Member other = member("다른 점주", UserType.OWNER);
+        assertBusinessFailure(() -> service.updateWaitingPolicy(owner.getId(), store.getId(), 0), ErrorCode.INVALID_INPUT);
+        assertBusinessFailure(() -> service.updateWaitingPolicy(owner.getId(), store.getId(), 61), ErrorCode.INVALID_INPUT);
+        assertBusinessFailure(() -> service.getWaitingPolicy(customer.getId(), store.getId()), ErrorCode.FORBIDDEN_MEMBER_TYPE);
+        assertBusinessFailure(() -> service.updateWaitingPolicy(customer.getId(), store.getId(), 15), ErrorCode.FORBIDDEN_MEMBER_TYPE);
+        assertBusinessFailure(() -> service.getWaitingPolicy(other.getId(), store.getId()), ErrorCode.STORE_NOT_FOUND);
+        assertBusinessFailure(() -> service.updateWaitingPolicy(other.getId(), store.getId(), 15), ErrorCode.STORE_NOT_FOUND);
+        assertBusinessFailure(() -> service.getWaitingPolicy(owner.getId(), -1L), ErrorCode.STORE_NOT_FOUND);
+        assertBusinessFailure(() -> service.updateWaitingPolicy(owner.getId(), -1L, 15), ErrorCode.STORE_NOT_FOUND);
+        assertThat(storeRepository.findById(store.getId()).orElseThrow().getWaitingCallLimitMinutes()).isEqualTo(10);
+    }
+
+    @Test
+    void callMarksCalledAndStoresCallInfo() throws Exception {
+        Waiting waiting = waiting(1, WaitingStatus.WAITING);
+
+        var response = service.callWaiting(owner.getId(), waiting.getId());
+
+        assertThat(response.waitingId()).isEqualTo(waiting.getId());
+        assertThat(response.status()).isEqualTo(WaitingStatus.CALLED);
+        assertThat(response.waitNumber()).isEqualTo(1);
+        assertThat(response.callCount()).isEqualTo(1);
+        assertThat(response.expiresAt()).isEqualTo(response.calledAt().plusMinutes(10));
+        Waiting called = waitingRepository.findById(waiting.getId()).orElseThrow();
+        assertThat(called.getStatus()).isEqualTo(WaitingStatus.CALLED);
+        assertThat(called.getCallCount()).isEqualTo(1);
+        assertThat(Duration.between(called.getCalledAt(), called.getCallExpiresAt())).isEqualTo(Duration.ofMinutes(10));
+        verify(ownerEmitter, times(1)).send(any(SseEmitter.SseEventBuilder.class));
+        verify(customerEmitter, times(2)).send(any(SseEmitter.SseEventBuilder.class));
+    }
+
+    @Test
+    void callExpiryUsesLimitAtCallTimeAndIgnoresLaterPolicyChange() {
+        Waiting waiting = waiting(1, WaitingStatus.WAITING);
+        service.updateWaitingPolicy(owner.getId(), store.getId(), 15);
+
+        service.callWaiting(owner.getId(), waiting.getId());
+        Waiting called = waitingRepository.findById(waiting.getId()).orElseThrow();
+        assertThat(Duration.between(called.getCalledAt(), called.getCallExpiresAt())).isEqualTo(Duration.ofMinutes(15));
+
+        service.updateWaitingPolicy(owner.getId(), store.getId(), 30);
+        Waiting after = waitingRepository.findById(waiting.getId()).orElseThrow();
+        assertThat(after.getCallExpiresAt().toInstant()).isEqualTo(called.getCallExpiresAt().toInstant());
+    }
+
+    @Test
+    void recallIncreasesCountAndRecalculatesExpiry() {
+        Waiting waiting = waiting(1, WaitingStatus.WAITING);
+        service.callWaiting(owner.getId(), waiting.getId());
+        Waiting first = waitingRepository.findById(waiting.getId()).orElseThrow();
+        service.updateWaitingPolicy(owner.getId(), store.getId(), 20);
+
+        var response = service.callWaiting(owner.getId(), waiting.getId());
+
+        assertThat(response.callCount()).isEqualTo(2);
+        Waiting recalled = waitingRepository.findById(waiting.getId()).orElseThrow();
+        assertThat(recalled.getStatus()).isEqualTo(WaitingStatus.CALLED);
+        assertThat(recalled.getCallCount()).isEqualTo(2);
+        assertThat(recalled.getCalledAt()).isAfterOrEqualTo(first.getCalledAt());
+        assertThat(Duration.between(recalled.getCalledAt(), recalled.getCallExpiresAt())).isEqualTo(Duration.ofMinutes(20));
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = WaitingStatus.class, names = {"CONFIRMED", "SEATED", "CANCELED", "NO_SHOW"})
+    void cannotCallConfirmedOrEndedTeam(WaitingStatus status) throws Exception {
+        Waiting waiting = waiting(1, status);
+        assertBusinessFailure(() -> service.callWaiting(owner.getId(), waiting.getId()), ErrorCode.WAITING_NOT_CALLABLE);
+        Waiting unchanged = waitingRepository.findById(waiting.getId()).orElseThrow();
+        assertThat(unchanged.getStatus()).isEqualTo(status);
+        assertThat(unchanged.getCallCount()).isZero();
+        assertThat(unchanged.getCalledAt()).isNull();
+        verify(customerEmitter, never()).send(any(SseEmitter.SseEventBuilder.class));
+    }
+
+    @Test
+    void callChecksOwnerRoleAndStoreOwnership() {
+        Waiting waiting = waiting(1, WaitingStatus.WAITING);
+        Member other = member("다른 점주", UserType.OWNER);
+        assertBusinessFailure(() -> service.callWaiting(customer.getId(), waiting.getId()), ErrorCode.FORBIDDEN_MEMBER_TYPE);
+        assertBusinessFailure(() -> service.callWaiting(other.getId(), waiting.getId()), ErrorCode.WAITING_NOT_FOUND);
+        assertBusinessFailure(() -> service.callWaiting(owner.getId(), -1L), ErrorCode.WAITING_NOT_FOUND);
+        assertThat(waitingRepository.findById(waiting.getId()).orElseThrow().getStatus()).isEqualTo(WaitingStatus.WAITING);
     }
 
     private boolean outcome(Runnable action) {
