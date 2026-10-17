@@ -9,6 +9,7 @@ import com.catchtable.notification.dto.NotificationType;
 import com.catchtable.store.entity.Store;
 import com.catchtable.store.repository.StoreRepository;
 import com.catchtable.waiting.dto.WaitingCreateResult;
+import com.catchtable.waiting.dto.WaitingRespondResponse;
 import com.catchtable.waiting.dto.WaitingResponse;
 import com.catchtable.waiting.entity.Waiting;
 import com.catchtable.waiting.entity.WaitingStatus;
@@ -20,6 +21,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Clock;
 import java.time.LocalDate;
+import java.time.OffsetDateTime;
 import java.util.Optional;
 
 @Service
@@ -77,6 +79,22 @@ public class WaitingService {
                 "대기 목록이 변경되었습니다."));
 
         return new WaitingCreateResult(toResponse(saved, storeId), true);
+    }
+
+    // 호출 응답
+    @Transactional
+    public WaitingRespondResponse respondToCall(Long memberId, Long waitingId) {
+        Waiting waiting = waitingRepository.findByIdAndMemberIdForUpdate(waitingId, memberId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.WAITING_NOT_FOUND));
+
+        // 첫 응답만 점주 알림
+        if (waiting.respond(OffsetDateTime.now(clock))) {
+            Store store = waiting.getStore();
+            eventPublisher.publishEvent(new CustomerNotificationEvent(
+                    store.getOwner().getId(), NotificationType.WAITING_CHANGED, store.getId(),
+                    "대기 목록이 변경되었습니다."));
+        }
+        return WaitingRespondResponse.from(waiting);
     }
 
     // 응답 변환 (앞 팀 수 계산 포함)
