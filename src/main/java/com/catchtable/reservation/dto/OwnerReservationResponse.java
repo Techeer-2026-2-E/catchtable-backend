@@ -27,7 +27,7 @@ public record OwnerReservationResponse(
         Long noShowByMemberId,
         String noShowReason
 ) {
-    public static OwnerReservationResponse from(Reservation reservation) {
+    public static OwnerReservationResponse from(Reservation reservation, OffsetDateTime now) {
         return new OwnerReservationResponse(
                 reservation.getId(),
                 reservation.getStore().getId(),
@@ -38,7 +38,7 @@ public record OwnerReservationResponse(
                 reservation.getReservationStartAt(),
                 reservation.getReservationEndAt(),
                 reservation.getPartySize(),
-                reservation.getStatus(),
+                reservation.getStatusAt(now),
                 reservation.getCheckedInAt(),
                 reservation.getCheckedInByMemberId(),
                 reservation.getCancelledAt(),

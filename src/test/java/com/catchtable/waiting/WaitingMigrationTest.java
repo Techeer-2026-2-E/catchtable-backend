@@ -140,52 +140,9 @@ class WaitingMigrationTest {
         }
     }
 
-    // V15: 기존 웨이팅 응답 null
+    // V16: 기존 웨이팅 응답 null
     @Test
     void responseMigrationKeepsExistingTicketsUnanswered() throws Exception {
-        String schema = "waiting_migration_" + UUID.randomUUID().toString().replace("-", "");
-        try (var connection = dataSource.getConnection(); var sql = connection.createStatement()) {
-            sql.execute("CREATE SCHEMA " + schema);
-            try {
-                sql.execute("SET search_path TO " + schema + ", public");
-                try (var migrations = Files.list(Path.of("src/main/resources/db/migration"))) {
-                    var previous = migrations.filter(path -> path.toString().endsWith(".sql"))
-                            .filter(path -> version(path) < 15).sorted(Comparator.comparingInt(WaitingMigrationTest::version))
-                            .toList();
-                    for (Path migration : previous) {
-                        sql.execute(Files.readString(migration));
-                    }
-                }
-                String seed = Files.readAllLines(Path.of("scripts/local-seed.sql")).stream()
-                        .filter(line -> !line.startsWith("\\")).collect(Collectors.joining("\n"));
-                sql.execute(seed);
-                sql.execute("""
-                        insert into waiting (member_id, store_id, waiting_date, party_count, wait_number,
-                                             status, called_at, call_expires_at, call_count, created_at, updated_at)
-                        values (1, 1, '2026-10-11', 2, 1, 'WAITING', null, null, 0, now(), now()),
-                               (1, 1, '2026-10-12', 2, 1, 'CALLED', now(), now() + interval '10 minutes', 1, now(), now())
-                        """);
-                sql.execute(Files.readString(Path.of("src/main/resources/db/migration/V15__add_waiting_response.sql")));
-                try (var rows = sql.executeQuery("select * from waiting order by waiting_date")) {
-                    for (String status : new String[]{"WAITING", "CALLED"}) {
-                        assertThat(rows.next()).isTrue();
-                        assertThat(rows.getString("status")).isEqualTo(status);
-                        assertThat(rows.getObject("responded_at")).isNull();
-                        assertThat(rows.getObject("arrival_intent")).isNull();
-                    }
-                    assertThat(rows.next()).isFalse();
-                }
-            } finally {
-                sql.execute("ROLLBACK");
-                sql.execute("RESET search_path");
-                sql.execute("DROP SCHEMA IF EXISTS " + schema + " CASCADE");
-            }
-        }
-    }
-
-    // V16: 기존 웨이팅 착석 시각 null
-    @Test
-    void seatMigrationKeepsExistingTicketsUnseated() throws Exception {
         String schema = "waiting_migration_" + UUID.randomUUID().toString().replace("-", "");
         try (var connection = dataSource.getConnection(); var sql = connection.createStatement()) {
             sql.execute("CREATE SCHEMA " + schema);
@@ -208,7 +165,50 @@ class WaitingMigrationTest {
                         values (1, 1, '2026-10-11', 2, 1, 'WAITING', null, null, 0, now(), now()),
                                (1, 1, '2026-10-12', 2, 1, 'CALLED', now(), now() + interval '10 minutes', 1, now(), now())
                         """);
-                sql.execute(Files.readString(Path.of("src/main/resources/db/migration/V16__add_waiting_seated_at.sql")));
+                sql.execute(Files.readString(Path.of("src/main/resources/db/migration/V16__add_waiting_response.sql")));
+                try (var rows = sql.executeQuery("select * from waiting order by waiting_date")) {
+                    for (String status : new String[]{"WAITING", "CALLED"}) {
+                        assertThat(rows.next()).isTrue();
+                        assertThat(rows.getString("status")).isEqualTo(status);
+                        assertThat(rows.getObject("responded_at")).isNull();
+                        assertThat(rows.getObject("arrival_intent")).isNull();
+                    }
+                    assertThat(rows.next()).isFalse();
+                }
+            } finally {
+                sql.execute("ROLLBACK");
+                sql.execute("RESET search_path");
+                sql.execute("DROP SCHEMA IF EXISTS " + schema + " CASCADE");
+            }
+        }
+    }
+
+    // V17: 기존 웨이팅 착석 시각 null
+    @Test
+    void seatMigrationKeepsExistingTicketsUnseated() throws Exception {
+        String schema = "waiting_migration_" + UUID.randomUUID().toString().replace("-", "");
+        try (var connection = dataSource.getConnection(); var sql = connection.createStatement()) {
+            sql.execute("CREATE SCHEMA " + schema);
+            try {
+                sql.execute("SET search_path TO " + schema + ", public");
+                try (var migrations = Files.list(Path.of("src/main/resources/db/migration"))) {
+                    var previous = migrations.filter(path -> path.toString().endsWith(".sql"))
+                            .filter(path -> version(path) < 17).sorted(Comparator.comparingInt(WaitingMigrationTest::version))
+                            .toList();
+                    for (Path migration : previous) {
+                        sql.execute(Files.readString(migration));
+                    }
+                }
+                String seed = Files.readAllLines(Path.of("scripts/local-seed.sql")).stream()
+                        .filter(line -> !line.startsWith("\\")).collect(Collectors.joining("\n"));
+                sql.execute(seed);
+                sql.execute("""
+                        insert into waiting (member_id, store_id, waiting_date, party_count, wait_number,
+                                             status, called_at, call_expires_at, call_count, created_at, updated_at)
+                        values (1, 1, '2026-10-11', 2, 1, 'WAITING', null, null, 0, now(), now()),
+                               (1, 1, '2026-10-12', 2, 1, 'CALLED', now(), now() + interval '10 minutes', 1, now(), now())
+                        """);
+                sql.execute(Files.readString(Path.of("src/main/resources/db/migration/V17__add_waiting_seated_at.sql")));
                 try (var rows = sql.executeQuery("select * from waiting order by waiting_date")) {
                     for (String status : new String[]{"WAITING", "CALLED"}) {
                         assertThat(rows.next()).isTrue();

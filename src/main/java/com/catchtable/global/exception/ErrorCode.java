@@ -30,6 +30,7 @@ public enum ErrorCode {
     UNAUTHORIZED(HttpStatus.UNAUTHORIZED, "회원 식별 정보가 없습니다."),
     MEMBER_NOT_FOUND(HttpStatus.NOT_FOUND, "회원을 찾을 수 없습니다."),
     RESERVATION_NOT_FOUND(HttpStatus.NOT_FOUND, "예약을 찾을 수 없습니다."),
+    RESERVATION_NOT_MODIFIABLE(HttpStatus.CONFLICT, "변경할 수 없는 예약입니다."),
     RESERVATION_NOT_CANCELLABLE(HttpStatus.CONFLICT, "취소할 수 없는 예약입니다."),
     FORBIDDEN_MEMBER_TYPE(HttpStatus.FORBIDDEN, "이 기능을 사용할 수 없는 회원 유형입니다."),
     WAITING_NOT_FOUND(HttpStatus.NOT_FOUND, "웨이팅을 찾을 수 없습니다."),
