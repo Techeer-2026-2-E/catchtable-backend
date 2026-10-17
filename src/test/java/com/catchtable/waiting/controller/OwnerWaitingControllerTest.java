@@ -399,7 +399,7 @@ class OwnerWaitingControllerTest {
     }
 
     @Test
-    void seatAfterCallExpiryReturnsSeatedAndNotifies() throws Exception {
+    void enterAfterCallExpiryReturnsSeatedAndNotifies() throws Exception {
         Waiting waiting = waiting(store, TODAY, 1, WaitingStatus.CALLED);
         waiting(store, TODAY, 2, WaitingStatus.WAITING);
         jdbc.update("update waiting set call_expires_at = ? where id = ?",
@@ -409,17 +409,17 @@ class OwnerWaitingControllerTest {
                         .param("memberId", customer.getId().toString()))
                 .andExpect(request().asyncStarted())
                 .andReturn();
-        String path = "/api/owner/waitings/{waitingId}/seat";
+        String path = "/api/owner/waitings/{waitingId}/enter";
 
         mockMvc.perform(post(path, waiting.getId()).header("X-Member-Id", owner.getId()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.waitingId").value(waiting.getId()))
                 .andExpect(jsonPath("$.status").value("SEATED"))
-                .andExpect(jsonPath("$.seatedAt").value("2030-01-11T00:05:00+09:00"));
+                .andExpect(jsonPath("$.enteredAt").value("2030-01-11T00:05:00+09:00"));
         mockMvc.perform(post(path, waiting.getId()).header("X-Member-Id", owner.getId()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("SEATED"))
-                .andExpect(jsonPath("$.seatedAt").isNotEmpty());
+                .andExpect(jsonPath("$.enteredAt").isNotEmpty());
 
         assertThat(streamContent(ownerStream)).containsOnlyOnce("event:WAITING_CHANGED");
         assertThat(streamContent(customerStream)).containsOnlyOnce("event:WAITING_POSITION_CHANGED");
@@ -430,15 +430,15 @@ class OwnerWaitingControllerTest {
     }
 
     @Test
-    void seatRejectsUncalledTeamAndChecksOwnership() throws Exception {
+    void enterRejectsUncalledTeamAndChecksOwnership() throws Exception {
         Waiting uncalled = waiting(store, TODAY, 1, WaitingStatus.WAITING);
         Waiting called = waiting(store, TODAY, 2, WaitingStatus.CALLED);
         Long otherOwner = member("다른 점주", UserType.OWNER).getId();
-        String path = "/api/owner/waitings/{waitingId}/seat";
+        String path = "/api/owner/waitings/{waitingId}/enter";
 
         mockMvc.perform(post(path, uncalled.getId()).header("X-Member-Id", owner.getId()))
                 .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.code").value("WAITING_NOT_SEATABLE"));
+                .andExpect(jsonPath("$.code").value("WAITING_NOT_ENTERABLE"));
         mockMvc.perform(post(path, called.getId())).andExpect(status().isUnauthorized());
         mockMvc.perform(post(path, called.getId()).header("X-Member-Id", customer.getId()))
                 .andExpect(status().isForbidden())

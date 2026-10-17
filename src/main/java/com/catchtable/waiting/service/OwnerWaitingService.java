@@ -17,7 +17,7 @@ import com.catchtable.waiting.dto.WaitingCallNotification;
 import com.catchtable.waiting.dto.WaitingCallResponse;
 import com.catchtable.waiting.dto.WaitingQueueChangedEvent;
 import com.catchtable.waiting.dto.WaitingPolicyResponse;
-import com.catchtable.waiting.dto.WaitingSeatResponse;
+import com.catchtable.waiting.dto.WaitingEnterResponse;
 import com.catchtable.waiting.dto.WaitingTerminationResponse;
 import com.catchtable.waiting.entity.Waiting;
 import com.catchtable.waiting.entity.WaitingEndHistory;
@@ -133,16 +133,16 @@ public class OwnerWaitingService {
     }
 
     @Transactional
-    public WaitingSeatResponse seatWaiting(Long memberId, Long waitingId) {
+    public WaitingEnterResponse enterWaiting(Long memberId, Long waitingId) {
         Waiting waiting = findOwnerWaitingForUpdate(memberId, waitingId);
-        if (waiting.seat(OffsetDateTime.now(clock))) {
+        if (waiting.enter(OffsetDateTime.now(clock))) {
             Store store = waiting.getStore();
             eventPublisher.publishEvent(new CustomerNotificationEvent(
                     store.getOwner().getId(), NotificationType.WAITING_CHANGED, store.getId(),
                     "대기 목록이 변경되었습니다."));
             eventPublisher.publishEvent(new WaitingQueueChangedEvent(store.getId(), waiting.getWaitingDate()));
         }
-        return WaitingSeatResponse.from(waiting);
+        return WaitingEnterResponse.from(waiting);
     }
 
     private void publishTermination(Waiting waiting, NotificationType type, String message) {
