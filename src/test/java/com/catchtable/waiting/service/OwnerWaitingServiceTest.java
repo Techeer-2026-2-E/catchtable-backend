@@ -500,75 +500,75 @@ class OwnerWaitingServiceTest {
     }
 
     @Test
-    void seatMarksCalledTeamSeatedWithoutEndHistory() {
+    void enterMarksCalledTeamSeatedWithoutEndHistory() {
         Waiting waiting = waiting(1, WaitingStatus.WAITING);
         service.callWaiting(owner.getId(), waiting.getId());
 
-        var response = service.seatWaiting(owner.getId(), waiting.getId());
+        var response = service.enterWaiting(owner.getId(), waiting.getId());
 
         assertThat(response.waitingId()).isEqualTo(waiting.getId());
         assertThat(response.status()).isEqualTo(WaitingStatus.SEATED);
-        assertThat(response.seatedAt()).isNotNull();
-        Waiting seated = waitingRepository.findById(waiting.getId()).orElseThrow();
-        assertThat(seated.getStatus()).isEqualTo(WaitingStatus.SEATED);
-        assertThat(seated.getSeatedAt()).isNotNull();
-        assertThat(seated.getEndedAt()).isNull();
-        assertThat(seated.getEndReason()).isNull();
+        assertThat(response.enteredAt()).isNotNull();
+        Waiting entered = waitingRepository.findById(waiting.getId()).orElseThrow();
+        assertThat(entered.getStatus()).isEqualTo(WaitingStatus.SEATED);
+        assertThat(entered.getEnteredAt()).isNotNull();
+        assertThat(entered.getEndedAt()).isNull();
+        assertThat(entered.getEndReason()).isNull();
         assertThat(historyRepository.findAllByWaitingIdOrderByIdAsc(waiting.getId())).isEmpty();
     }
 
     @Test
-    void seatAllowsRespondedTeam() {
+    void enterAllowsRespondedTeam() {
         Waiting waiting = waiting(1, WaitingStatus.WAITING);
         service.callWaiting(owner.getId(), waiting.getId());
         waitingService.respondToCall(customer.getId(), waiting.getId());
 
-        assertThat(service.seatWaiting(owner.getId(), waiting.getId()).status()).isEqualTo(WaitingStatus.SEATED);
+        assertThat(service.enterWaiting(owner.getId(), waiting.getId()).status()).isEqualTo(WaitingStatus.SEATED);
         assertThat(waitingRepository.findById(waiting.getId()).orElseThrow().getRespondedAt()).isNotNull();
     }
 
     @Test
-    void seatAllowsCalledTeamAfterCallExpiry() {
+    void enterAllowsCalledTeamAfterCallExpiry() {
         Waiting waiting = waiting(1, WaitingStatus.CALLED);
         jdbc.update("update waiting set called_at = ?, call_expires_at = ?, call_count = 1 where id = ?",
                 OffsetDateTime.now(clock).minusMinutes(30), OffsetDateTime.now(clock).minusMinutes(20), waiting.getId());
 
-        assertThat(service.seatWaiting(owner.getId(), waiting.getId()).status()).isEqualTo(WaitingStatus.SEATED);
+        assertThat(service.enterWaiting(owner.getId(), waiting.getId()).status()).isEqualTo(WaitingStatus.SEATED);
     }
 
     @Test
-    void seatRetryKeepsFirstSeatedAtAndNotifiesOnce() throws Exception {
+    void enterRetryKeepsFirstEnteredAtAndNotifiesOnce() throws Exception {
         Waiting first = waiting(1, WaitingStatus.CALLED);
         waiting(2, WaitingStatus.WAITING);
 
-        service.seatWaiting(owner.getId(), first.getId());
-        OffsetDateTime seatedAt = waitingRepository.findById(first.getId()).orElseThrow().getSeatedAt();
-        var retried = service.seatWaiting(owner.getId(), first.getId());
+        service.enterWaiting(owner.getId(), first.getId());
+        OffsetDateTime enteredAt = waitingRepository.findById(first.getId()).orElseThrow().getEnteredAt();
+        var retried = service.enterWaiting(owner.getId(), first.getId());
 
         assertThat(retried.status()).isEqualTo(WaitingStatus.SEATED);
-        assertThat(retried.seatedAt().toInstant()).isEqualTo(seatedAt.toInstant());
+        assertThat(retried.enteredAt().toInstant()).isEqualTo(enteredAt.toInstant());
         verify(ownerEmitter, times(1)).send(any(SseEmitter.SseEventBuilder.class));
         verify(customerEmitter, times(1)).send(any(SseEmitter.SseEventBuilder.class));
     }
 
     @ParameterizedTest
     @EnumSource(value = WaitingStatus.class, names = {"WAITING", "CANCELED", "NO_SHOW"})
-    void cannotSeatUncalledOrEndedTeam(WaitingStatus status) throws Exception {
+    void cannotEnterUncalledOrEndedTeam(WaitingStatus status) throws Exception {
         Waiting waiting = waiting(1, status);
-        assertBusinessFailure(() -> service.seatWaiting(owner.getId(), waiting.getId()), ErrorCode.WAITING_NOT_SEATABLE);
+        assertBusinessFailure(() -> service.enterWaiting(owner.getId(), waiting.getId()), ErrorCode.WAITING_NOT_ENTERABLE);
         Waiting unchanged = waitingRepository.findById(waiting.getId()).orElseThrow();
         assertThat(unchanged.getStatus()).isEqualTo(status);
-        assertThat(unchanged.getSeatedAt()).isNull();
+        assertThat(unchanged.getEnteredAt()).isNull();
         verify(ownerEmitter, never()).send(any(SseEmitter.SseEventBuilder.class));
     }
 
     @Test
-    void seatedTeamLeavesOwnerListAndNextTeamMovesUp() {
+    void enteredTeamLeavesOwnerListAndNextTeamMovesUp() {
         Waiting first = waiting(1, WaitingStatus.CALLED);
         Waiting next = waiting(2, WaitingStatus.WAITING);
         assertThat(queryService.getMyWaiting(customer.getId(), next.getId()).teamsAhead()).isEqualTo(1);
 
-        service.seatWaiting(owner.getId(), first.getId());
+        service.enterWaiting(owner.getId(), first.getId());
 
         assertThat(service.getWaitings(owner.getId(), store.getId())).singleElement()
                 .satisfies(row -> assertThat(row.id()).isEqualTo(next.getId()));
@@ -578,12 +578,12 @@ class OwnerWaitingServiceTest {
     }
 
     @Test
-    void seatChecksOwnerRoleAndStoreOwnership() {
+    void enterChecksOwnerRoleAndStoreOwnership() {
         Waiting waiting = waiting(1, WaitingStatus.CALLED);
         Member other = member("다른 점주", UserType.OWNER);
-        assertBusinessFailure(() -> service.seatWaiting(customer.getId(), waiting.getId()), ErrorCode.FORBIDDEN_MEMBER_TYPE);
-        assertBusinessFailure(() -> service.seatWaiting(other.getId(), waiting.getId()), ErrorCode.WAITING_NOT_FOUND);
-        assertBusinessFailure(() -> service.seatWaiting(owner.getId(), -1L), ErrorCode.WAITING_NOT_FOUND);
+        assertBusinessFailure(() -> service.enterWaiting(customer.getId(), waiting.getId()), ErrorCode.FORBIDDEN_MEMBER_TYPE);
+        assertBusinessFailure(() -> service.enterWaiting(other.getId(), waiting.getId()), ErrorCode.WAITING_NOT_FOUND);
+        assertBusinessFailure(() -> service.enterWaiting(owner.getId(), -1L), ErrorCode.WAITING_NOT_FOUND);
         assertThat(waitingRepository.findById(waiting.getId()).orElseThrow().getStatus()).isEqualTo(WaitingStatus.CALLED);
     }
 

@@ -183,9 +183,9 @@ class WaitingMigrationTest {
         }
     }
 
-    // V17: 기존 웨이팅 착석 시각 null
+    // V17: 기존 웨이팅 입장 시각 null
     @Test
-    void seatMigrationKeepsExistingTicketsUnseated() throws Exception {
+    void enterMigrationKeepsExistingTicketsNotEntered() throws Exception {
         String schema = "waiting_migration_" + UUID.randomUUID().toString().replace("-", "");
         try (var connection = dataSource.getConnection(); var sql = connection.createStatement()) {
             sql.execute("CREATE SCHEMA " + schema);
@@ -208,12 +208,12 @@ class WaitingMigrationTest {
                         values (1, 1, '2026-10-11', 2, 1, 'WAITING', null, null, 0, now(), now()),
                                (1, 1, '2026-10-12', 2, 1, 'CALLED', now(), now() + interval '10 minutes', 1, now(), now())
                         """);
-                sql.execute(Files.readString(Path.of("src/main/resources/db/migration/V17__add_waiting_seated_at.sql")));
+                sql.execute(Files.readString(Path.of("src/main/resources/db/migration/V17__add_waiting_entered_at.sql")));
                 try (var rows = sql.executeQuery("select * from waiting order by waiting_date")) {
                     for (String status : new String[]{"WAITING", "CALLED"}) {
                         assertThat(rows.next()).isTrue();
                         assertThat(rows.getString("status")).isEqualTo(status);
-                        assertThat(rows.getObject("seated_at")).isNull();
+                        assertThat(rows.getObject("entered_at")).isNull();
                     }
                     assertThat(rows.next()).isFalse();
                 }

@@ -7,7 +7,7 @@ import com.catchtable.waiting.dto.OwnerWaitingResponse;
 import com.catchtable.waiting.dto.WaitingCallResponse;
 import com.catchtable.waiting.dto.WaitingPolicyRequest;
 import com.catchtable.waiting.dto.WaitingPolicyResponse;
-import com.catchtable.waiting.dto.WaitingSeatResponse;
+import com.catchtable.waiting.dto.WaitingEnterResponse;
 import com.catchtable.waiting.dto.WaitingTerminationResponse;
 import com.catchtable.waiting.service.OwnerWaitingService;
 import jakarta.validation.Valid;
@@ -84,8 +84,8 @@ public class OwnerWaitingController {
         return ownerWaitingService.callWaiting(memberId, waitingId);
     }
 
-    @PostMapping("/waitings/{waitingId}/seat")
-    public WaitingSeatResponse seatWaiting(@LoginMember Long memberId, @PathVariable Long waitingId) {
-        return ownerWaitingService.seatWaiting(memberId, waitingId);
+    @PostMapping("/waitings/{waitingId}/enter")
+    public WaitingEnterResponse enterWaiting(@LoginMember Long memberId, @PathVariable Long waitingId) {
+        return ownerWaitingService.enterWaiting(memberId, waitingId);
     }
 }
