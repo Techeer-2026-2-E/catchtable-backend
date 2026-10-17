@@ -10,9 +10,13 @@ import com.catchtable.store.entity.Store;
 import com.catchtable.store.repository.StoreRepository;
 import com.catchtable.waiting.dto.WaitingCreateResult;
 import com.catchtable.waiting.dto.WaitingRespondResponse;
+import com.catchtable.waiting.dto.WaitingQueueChangedEvent;
 import com.catchtable.waiting.dto.WaitingResponse;
+import com.catchtable.waiting.dto.WaitingTerminationResponse;
 import com.catchtable.waiting.entity.Waiting;
+import com.catchtable.waiting.entity.WaitingEndHistory;
 import com.catchtable.waiting.entity.WaitingStatus;
+import com.catchtable.waiting.repository.WaitingEndHistoryRepository;
 import com.catchtable.waiting.repository.WaitingRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.ApplicationEventPublisher;
@@ -30,6 +34,7 @@ import java.util.Optional;
 public class WaitingService {
 
     private final WaitingRepository waitingRepository;
+    private final WaitingEndHistoryRepository historyRepository;
     private final StoreRepository storeRepository;
     private final MemberRepository memberRepository;
     private final ApplicationEventPublisher eventPublisher;
@@ -95,6 +100,25 @@ public class WaitingService {
                     "대기 목록이 변경되었습니다."));
         }
         return WaitingRespondResponse.from(waiting);
+    }
+
+    // 고객 취소
+    @Transactional
+    public WaitingTerminationResponse cancelWaiting(Long memberId, Long waitingId) {
+        Waiting waiting = waitingRepository.findByIdAndMemberIdForUpdate(waitingId, memberId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.WAITING_NOT_FOUND));
+
+        WaitingEndHistory history = waiting.cancelByCustomer(memberId, OffsetDateTime.now(clock));
+        // 처음 취소만 이력·알림
+        if (history != null) {
+            historyRepository.save(history);
+            Store store = waiting.getStore();
+            eventPublisher.publishEvent(new CustomerNotificationEvent(
+                    store.getOwner().getId(), NotificationType.WAITING_CHANGED, store.getId(),
+                    "대기 목록이 변경되었습니다."));
+            eventPublisher.publishEvent(new WaitingQueueChangedEvent(store.getId(), waiting.getWaitingDate()));
+        }
+        return WaitingTerminationResponse.from(waiting);
     }
 
     // 응답 변환 (앞 팀 수 계산 포함)
