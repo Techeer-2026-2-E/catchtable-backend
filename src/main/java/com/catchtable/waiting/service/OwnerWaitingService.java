@@ -87,6 +87,8 @@ public class OwnerWaitingService {
             if (WaitingStatus.ACTIVE.contains(history.getPreviousStatus())) {
                 publishTermination(waiting, NotificationType.WAITING_EXPIRED,
                         "미응답·미착석으로 웨이팅이 종료되었습니다. 사유: " + waiting.getEndDetail());
+                eventPublisher.publishEvent(new WaitingQueueChangedEvent(
+                        waiting.getStore().getId(), waiting.getWaitingDate()));
             }
         }
         return WaitingTerminationResponse.from(waiting);

@@ -94,7 +94,9 @@ class OwnerWaitingServiceTest {
     @EnumSource(value = WaitingStatus.class, names = {"WAITING", "CALLED", "CONFIRMED"})
     void cancelRemovesTeamAndKeepsNextTeamWaiting(WaitingStatus status) throws Exception {
         Waiting first = waiting(1, status);
-        Waiting next = waiting(2, WaitingStatus.WAITING);
+        Member nextCustomer = member("다음 고객", UserType.CUSTOMER);
+        Waiting next = waitingRepository.save(
+                Waiting.create(nextCustomer, store, LocalDate.now(clock), 2, 2));
 
         service.cancelWaiting(owner.getId(), first.getId(), "  매장 사정  ");
         service.cancelWaiting(owner.getId(), first.getId(), "다른 사유로 재시도");
@@ -104,7 +106,7 @@ class OwnerWaitingServiceTest {
         assertThat(canceled.getEndDetail()).isEqualTo("매장 사정");
         assertThat(canceled.getEndReason()).isEqualTo(WaitingEndReason.OWNER_CANCELED);
         assertThat(canceled.getEndedAt()).isNotNull();
-        assertThat(queryService.getMyWaiting(customer.getId(), next.getId()).currentPosition()).isEqualTo(1);
+        assertThat(queryService.getMyWaiting(nextCustomer.getId(), next.getId()).currentPosition()).isEqualTo(1);
         assertThat(waitingRepository.findById(next.getId()).orElseThrow().getStatus()).isEqualTo(WaitingStatus.WAITING);
         assertThat(historyRepository.findAllByWaitingIdOrderByIdAsc(first.getId())).singleElement()
                 .satisfies(history -> {
@@ -112,6 +114,37 @@ class OwnerWaitingServiceTest {
                     assertThat(history.getActorId()).isEqualTo(owner.getId());
                 });
         verifyOneTerminationNotification();
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = WaitingStatus.class, names = {"CALLED"})
+    void terminationNotifiesRemainingCustomerOnceOnRetry(WaitingStatus status) throws Exception {
+        Waiting first = waiting(1, status);
+        Member remainingCustomer = member("남은 고객", UserType.CUSTOMER);
+        Waiting next = waitingRepository.save(
+                Waiting.create(remainingCustomer, store, LocalDate.now(clock), 2, 2));
+        SseEmitter remainingEmitter = mock(SseEmitter.class);
+        emitterRepository.save(remainingCustomer.getId(), remainingEmitter);
+        try {
+            assertThat(queryService.getMyWaiting(remainingCustomer.getId(), next.getId()).currentPosition())
+                    .isEqualTo(2);
+
+            if (status == WaitingStatus.WAITING) {
+                service.cancelWaiting(owner.getId(), first.getId(), "매장 사정");
+                service.cancelWaiting(owner.getId(), first.getId(), "다른 사유로 재시도");
+            } else {
+                service.markNoShow(owner.getId(), first.getId(), WaitingEndReason.NO_RESPONSE, "응답 없음");
+                service.markNoShow(owner.getId(), first.getId(), WaitingEndReason.NO_RESPONSE, "응답 없음");
+                service.markNoShow(owner.getId(), first.getId(), WaitingEndReason.NO_SHOW, "미방문 확인");
+            }
+
+            assertThat(queryService.getMyWaiting(remainingCustomer.getId(), next.getId()).currentPosition())
+                    .isEqualTo(1);
+            verify(remainingEmitter, times(1)).send(any(SseEmitter.SseEventBuilder.class));
+            verifyOneTerminationNotification();
+        } finally {
+            emitterRepository.delete(remainingCustomer.getId(), remainingEmitter);
+        }
     }
 
     @ParameterizedTest
