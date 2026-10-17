@@ -117,7 +117,7 @@ class OwnerWaitingServiceTest {
     }
 
     @ParameterizedTest
-    @EnumSource(value = WaitingStatus.class, names = {"CALLED"})
+    @EnumSource(value = WaitingStatus.class, names = {"WAITING", "CALLED"})
     void terminationNotifiesRemainingCustomerOnceOnRetry(WaitingStatus status) throws Exception {
         Waiting first = waiting(1, status);
         Member remainingCustomer = member("남은 고객", UserType.CUSTOMER);
