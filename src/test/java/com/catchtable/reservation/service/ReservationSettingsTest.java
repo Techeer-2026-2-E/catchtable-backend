@@ -149,9 +149,41 @@ class ReservationSettingsTest {
         assertThat(Duration.between(requestedAt, hold.expiresAt())).isEqualTo(Duration.ofMinutes(5));
         assertThat(jdbc.queryForObject("SELECT confirmed_at FROM reservation WHERE id = ?",
                 OffsetDateTime.class, hold.holdId())).isNull();
+        var reloaded = objectMapper.readValue(mvc.perform(get("/api/user/reservations/holds/{id}", hold.holdId())
+                        .header("X-Member-Id", customerId)).andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString(), ReservationHoldResponse.class);
+        assertThat(reloaded.expiresAt().toInstant()).isEqualTo(hold.expiresAt().toInstant());
+        mvc.perform(get("/api/user/reservations/holds/{id}", hold.holdId()))
+                .andExpect(status().isUnauthorized());
+        mvc.perform(get("/api/user/reservations/holds/{id}", hold.holdId()).header("X-Member-Id", ownerId))
+                .andExpect(status().isNotFound());
+
         assertThat(availability.getAvailableTableCount(storeId, start, 4).availableTableCount()).isZero();
         assertThatThrownBy(this::reserve).isInstanceOfSatisfying(ResponseStatusException.class,
                 e -> assertThat(e.getStatusCode()).isEqualTo(HttpStatus.CONFLICT));
+        // 애플리케이션 배정 경로를 우회해도 DB가 선점·확정 예약 간 중복을 막는다.
+        assertThatThrownBy(() -> jdbc.update("""
+                INSERT INTO reservation (member_id, store_id, table_id, reservation_start_at,
+                    reservation_end_at, party_size, status, requested_at, confirmed_at)
+                SELECT member_id, store_id, table_id, reservation_start_at, reservation_end_at,
+                    party_size, 'CONFIRMED', requested_at, requested_at FROM reservation WHERE id = ?
+                """, hold.holdId())).isInstanceOf(DataIntegrityViolationException.class);
+
+        jdbc.update("""
+                UPDATE reservation SET requested_at = requested_at - INTERVAL '10 minutes',
+                    hold_expires_at = hold_expires_at - INTERVAL '10 minutes' WHERE id = ?
+                """, hold.holdId());
+        // 정리 작업 실행 전에도 가용 조회와 재예약이 만료를 반영한다.
+        assertThat(availability.getAvailableTableCount(storeId, start, 4).availableTableCount()).isEqualTo(1);
+        Long confirmedId = reserve();
+        mvc.perform(get("/api/user/reservations/holds/{id}", hold.holdId()).header("X-Member-Id", customerId))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.status").value("EXPIRED"))
+                .andExpect(jsonPath("$.remainingSeconds").value(0));
+        mvc.perform(get("/api/user/reservations/holds/{id}", confirmedId).header("X-Member-Id", customerId))
+                .andExpect(status().isNotFound());
+        assertThatThrownBy(() -> reservations.createHold(customerId, request))
+                .isInstanceOfSatisfying(ResponseStatusException.class,
+                        e -> assertThat(e.getStatusCode()).isEqualTo(HttpStatus.CONFLICT));
     }
 
 
