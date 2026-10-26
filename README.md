@@ -2,6 +2,26 @@
 
 Techeer 2026-2 E팀 
 
+레스토랑 예약·웨이팅 서비스를 만드는 Java 21 / Spring Boot 백엔드다.
+
+## 처음 읽을 문서
+
+| 목적 | 문서 |
+| --- | --- |
+| 구성·실행·검증·Notion 정본·브랜치 기준 | [프로젝트 기준](docs/PROJECT.md) |
+| Codex·Claude Code 공통 작업 규칙 | [AGENTS.md](AGENTS.md) |
+| 팀원의 도구 준비와 작업 순서 | [AI 협업 안내](docs/ai-workflow.md) |
+| 변경 이유와 검증 근거 | [작업 기록](work-log/README.md), [기존 개발 의사결정 기록](docs/development-decisions.md) |
+| 문서 차이와 결정·확인 경로 | [확인할 사항](docs/OPEN_ITEMS.md) |
+
+## 작업 흐름
+
+1. Notion 명세와 이슈에서 문제·범위·완료 조건을 확인한다. AI 요청에는 [작업 지시 양식](docs/templates/task-brief.md)을 사용할 수 있다.
+2. 관련 코드·테스트·기록을 읽고 변경한다. 앱 테스트는 [격리된 테스트 DB](docs/PROJECT.md#검증)에서 실행한다.
+3. [PR 양식](.github/pull_request_template.md)에 결과와 검증을 적는다. 중요한 변경은 [work-log](work-log/README.md)도 연결하고, 작은 수정은 PR 본문으로 마친다.
+
+요구사항은 Notion, 구현은 현재 코드, 진행 상태는 이슈·PR에서 확인한다. 선택 CI와 개인 메모 양식은 [선택 항목](docs/ai-workflow.md#선택-항목)에 있다.
+
 ## 로컬 예약 API 확인
 
 고정 목 계정은 고객 `id=1`, 점주 `id=2`를 사용한다. 운영·CI에는 목 데이터를 자동으로 넣지 않는다.
