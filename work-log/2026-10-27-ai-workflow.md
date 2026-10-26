@@ -1,0 +1,58 @@
+# Codex·Claude Code 공통 문서 운영 구성
+
+- 작업일: 2026-10-27
+- 요청: `project-workflow-template.zip`을 CatchTable 백엔드에 맞춰 구성. push 없이 로컬에서만 작업.
+- 이슈·PR: 미생성
+- 기준: `dev-2`, `e6c668bbb6be920cb2ff47042e82edfe832c0a18`. 시작 시 작업 트리 변경 없음.
+
+## 배경과 목표
+
+팀은 Codex와 Claude를 함께 쓴다. 현재 체크아웃에는 실행 안내와 개발 의사결정 기록은 있지만 공통 AI 지침·이슈/PR 양식이 없다. 도구가 달라도 같은 범위·정본·완료 기준과 검증 근거를 사용하도록 구성한다.
+
+## 판단과 근거
+
+- 공통 규칙은 `AGENTS.md` 한곳에 두고 `CLAUDE.md`는 `@AGENTS.md`로 가져온다. 양쪽에 본문을 복제하는 방식보다 수정 누락을 줄인다.
+- Notion 기능명세·PRD·Engineering Requirements Document·API·DB ERD를 원본 링크로 연결한다. 실제 코드·실행 설정·변경 검증은 저장소에서 확인한다.
+- 기존 `development-decisions.md`와 README의 API·목 데이터 안내를 보존한다. 과거 기록을 옮기거나 이번 시점의 최신 상태로 다시 쓰지 않는다.
+- 모든 PR에 8개 절과 수동 인덱스를 요구하는 대신 중요한 계약·상태·데이터·설계 변경에 work-log를 남긴다. 작은 변경은 PR 본문으로 설명한다.
+- 선택 CI는 `needs-work-log` 라벨이 있는 PR만 검사하는 비활성 예제로 둔다. 개인 SSoT도 저장소 밖에서 사용할 빈 양식만 제공한다.
+- Notion Git 규칙의 `dev`와 실제 Java 관례를 안내하고, 오래된 코드컨벤션의 `develop`·Python식 설명 차이를 `OPEN_ITEMS.md`에 남긴다. 외부 문서는 수정하지 않는다.
+
+근거: 로컬 README·Gradle·Compose·앱 설정·CI·회원 식별·예약/웨이팅 상태·배정 잠금·마이그레이션·커밋 후 SSE·관련 테스트를 읽었다. Notion 팀 페이지, 기능명세 DB와 PRD·설계·API·DB ERD·Git 규칙·코드컨벤션의 입구를 조회했다. 개별 기능 전체를 재감사한 것은 아니다.
+
+## 실제 변경
+
+- `AGENTS.md`, `CLAUDE.md`: 공통 지침과 Claude import.
+- README, `docs/PROJECT.md`, `docs/ai-workflow.md`: 읽는 순서·정본·실행·격리 테스트 DB·협업 절차.
+- 이슈·PR·작업 지시·work-log 양식과 `work-log/README.md`: 문제·판단·결과·검증 연결.
+- `docs/OPEN_ITEMS.md`: 확인한 문서 차이와 기존 논의 원본 안내.
+- 비활성 기록 검사 CI, 개인 SSoT 양식: 선택 적용 절차.
+- `.gitignore`: 개인 Claude 지침·로컬 권한 설정 제외.
+
+## 검증
+
+| 확인한 내용 | 실제 방법·환경 | 결과 |
+| --- | --- | --- |
+| 상대 링크·앵커·문서 형식 | Python 표준 라이브러리 검사. 대상 파일 존재, Markdown 제목 앵커, 코드 블록·개행·개인 절대 경로 확인 | 상대 링크·앵커 60곳 통과 |
+| 이슈 양식·선택 CI·기존 CI YAML | Ruby 2.6 / Psych 3.1의 `YAML.safe_load`. 이슈 메타데이터 형식, 이벤트·최소 권한·고정 SHA 확인 | 3개 YAML 문서 구문·관련 설정 통과 |
+| Claude 공통 지침 연결 | `CLAUDE.md`가 정확히 `@AGENTS.md` 한 줄인지와 대상 파일 존재 확인 | 통과. 실제 도구 세션 로딩 검증과 구분 |
+| 선택 CI의 파일 판정 | Node.js 26에서 YAML의 실제 JavaScript를 추출해 GitHub API·context·core 대역으로 실행 | 15개 사례 통과. 실제 GitHub API 호출 없음 |
+| 기존 내용 보존 | 작업 전 SHA-256과 대조, README 기존 API 안내 부분 비교 | README·`.gitignore` 이외 기존 추적 파일 240개 동일. README 기존 API·목 데이터 본문 보존 |
+| 변경 범위·Git 상태 | 변경·미추적 파일 목록, HEAD·인덱스 비교, 새 파일의 ignore 여부와 개인 설정 제외 확인 | 의도한 17개 파일만 변경/추가. commit·인덱스 변경 없음 |
+| 공백 오류 | `git diff --check`, 신규 파일의 `git diff --no-index --check /dev/null <파일>` | 오류 없음 |
+
+CI 판정 사례: 라벨 없음 2건, 필수 기록 누락, 기록 추가·수정·이름 변경, 삭제, README만 변경, 빈 양식만 변경, 폴더 밖·중첩 경로·다른 확장자, 폴더 밖으로 이동, 유효 기록과 다른 변경 혼합, API 오류 전파를 확인했다. 로컬 검증 스크립트는 저장소 밖 임시 폴더에서 실행했으며 공유 도구나 의존성을 추가하지 않았다.
+
+## 남은 점과 후속 작업
+
+현재 변경은 로컬 검토용이다. commit·push·PR 생성·Notion 수정·기존 CI 변경은 하지 않는다. 팀이 검토한 뒤 사용할 수 있으며 원격 브랜치 보호·GitHub Actions 실행·각 팀원의 실제 도구 로딩과 Notion 권한은 아직 확인하지 않았다.
+
+앱 소스·테스트·DB 설정 변경은 없으므로 앱 빌드·DB 테스트·프런트 연동·배포 확인은 이번 문서 구성의 검증 대상에 포함하지 않는다. 선택 CI는 파일 존재만 검사한다. 내용의 정확성은 PR 리뷰가 필요하다.
+
+## 2026-10-27 — main 반영 요청과 원격 확인
+
+- 사용자 후속 요청 `main에 올리자`에 따라 초기의 로컬 전용 범위에서 게시 준비로 전환했다.
+- 원격을 갱신해 확인한 `dev`는 기준 커밋 `e6c668b`와 같고, `main`은 초기 설정 `18f1ac8`이다. `main`에는 README와 `.gitignore`만 있으며 `dev`가 165커밋 앞선다.
+- 두 브랜치의 차이는 242개 파일이다. 이번 문서만 반영하는 작업과 기존 기능 전체를 `main`에 통합하는 작업은 범위가 다르므로 구분한다.
+- GitHub API에서 `main`과 `dev`의 `protected: false`를 확인했다. `main` 보호 설정 조회도 보호 미설정 응답을 반환했다. 팀 문서의 리뷰·CI 기준과 GitHub가 강제하는 설정은 별개다.
+- 게시 전 문서 검사와 선택 CI 판정 15개 사례를 다시 실행해 통과했다. 앱·기존 CI·외부 Notion 변경은 포함하지 않는다.

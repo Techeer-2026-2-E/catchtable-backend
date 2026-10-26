@@ -1,0 +1,43 @@
+# 선택 양식. 활성화하려면 .github/workflows/work-log-check.yml로 복사한다.
+# needs-work-log 라벨이 있는 PR만 파일 존재를 검사한다. 내용 검토는 PR에서 한다.
+name: work-log check
+
+on:
+  pull_request:
+    branches: [dev, main]
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+
+permissions:
+  pull-requests: read
+
+jobs:
+  work-log:
+    name: work-log 기록 확인
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check required work-log
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b
+        with:
+          script: |
+            const pr = context.payload.pull_request;
+            if (!pr.labels.some((label) => label.name === 'needs-work-log')) {
+              core.info('기록 대상 라벨이 없어 검사를 생략합니다. 변경 이유와 검증은 PR에서 확인하세요.');
+              return;
+            }
+
+            const files = await github.paginate(github.rest.pulls.listFiles, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: pr.number,
+              per_page: 100,
+            });
+            const logs = files.filter((file) =>
+              file.status !== 'removed' &&
+              /^work-log\/[^/]+\.md$/.test(file.filename) &&
+              file.filename !== 'work-log/README.md'
+            );
+            if (logs.length > 0) {
+              core.info(`작업 기록 확인: ${logs.map((file) => file.filename).join(', ')}`);
+              return;
+            }
+            core.setFailed('중요한 변경은 work-log/에 실제 기록을 추가하거나 수정하고 PR에서 연결하세요. 양식: docs/templates/work-log.md');
