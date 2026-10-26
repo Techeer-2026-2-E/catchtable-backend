@@ -1,0 +1,29 @@
+# 로컬 개발용 DB.
+#   docker compose up -d     실행
+#   docker compose down      종료
+#   docker compose down -v   종료 + 데이터 삭제
+#
+# 호스트 포트는 5433. 다른 프로젝트나 로컬 PostgreSQL이 쓰는 5432와 겹치지 않게 피했다.
+# 5433도 이미 쓰고 있다면 .env 에 DB_PORT=5434 처럼 적으면 된다 (.env 는 커밋되지 않는다).
+#
+# Redis / RabbitMQ 는 해당 기능 구현 시작할 때 추가할 것
+services:
+  postgres:
+    image: postgres:16
+    container_name: catchtable-postgres
+    ports:
+      - "${DB_PORT:-5433}:5432"
+    environment:
+      POSTGRES_DB: ${DB_NAME:-catchtable}
+      POSTGRES_USER: ${DB_USERNAME:-catchtable}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-catchtable}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USERNAME:-catchtable}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  postgres-data:
