@@ -12,7 +12,6 @@
 
 | 주제 | 원본·근거 | 다음 확인 |
 | --- | --- | --- |
-| 예약 시작 시각 이후 변경 정책 | [기존 의사결정 기록](development-decisions.md#예약-시각이-지난-뒤의-예약-변경--팀-논의-대기) | 현재 Notion 정책과 팀 결정을 확인. 과거 기록만으로 이번에 다시 미결정이라고 확정하지 않음 |
 | 결제 승인·결과 불명·환불과 선점 해제/만료 연결 | [선점 구현의 경계](development-decisions.md#선점-구현의-경계), [Notion API](https://app.notion.com/p/5cb48d76fa3283e7b711010662ec4e75) | 관련 작업에서 공통 결제 계약·코드·테스트 확인 |
 | 프런트 계약·화면 연동 | [기존 의사결정 기록](development-decisions.md), [API 정본](https://app.notion.com/p/5cb48d76fa3283e7b711010662ec4e75) | 변경한 API·이벤트의 실제 호출부와 화면 확인. 백엔드 테스트 통과와 구분 |
 | GitHub 보호 규칙·필수 CI | [프로젝트 협업 기준](PROJECT.md#협업-기준) | `main`·`dev` 보호 미설정 확인. 팀의 리뷰·CI 기준을 GitHub에서 강제할지는 후속 팀 결정 |
