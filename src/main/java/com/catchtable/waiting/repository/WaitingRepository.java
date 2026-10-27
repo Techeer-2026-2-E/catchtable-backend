@@ -8,6 +8,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.time.LocalDate;
+import java.time.OffsetDateTime;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
@@ -32,6 +33,18 @@ public interface WaitingRepository extends JpaRepository<Waiting, Long> {
             """, nativeQuery = true)
     Optional<Waiting> findByIdAndMemberIdForUpdate(@Param("waitingId") Long waitingId,
                                                  @Param("memberId") Long memberId);
+
+    // 호출 기한 지난 웨이팅
+    @Query(value = """
+            select id from waiting
+            where status in ('CALLED', 'CONFIRMED') and call_expires_at < :now
+            order by id
+            """, nativeQuery = true)
+    List<Long> findCallExpiredIds(@Param("now") OffsetDateTime now);
+
+    // 웨이팅 행만 잠금 (매장 락 없음)
+    @Query(value = "select * from waiting where id = :waitingId for update", nativeQuery = true)
+    Optional<Waiting> findByIdForUpdate(@Param("waitingId") Long waitingId);
 
     @EntityGraph(attributePaths = {"member"})
     List<Waiting> findAllByStoreIdAndWaitingDateAndStatusInOrderByWaitNumberAsc(
