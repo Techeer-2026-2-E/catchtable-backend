@@ -60,3 +60,7 @@ docker compose exec -T postgres psql -U catchtable -d catchtable < scripts/local
 점주가 예약을 취소하면 커밋 후 예약 고객에게 `RESERVATION_CANCELED` SSE 이벤트를 한 번 보낸다. `targetId`는 예약 ID이며 `message`에 취소 사유가 포함된다. 같은 취소를 재요청해도 알림을 다시 보내지 않는다.
 
 클라이언트는 알림 수신 또는 SSE의 `connect` 이벤트 수신 후 `GET /api/user/reservations/{reservationId}`를 호출해 최신 상태와 취소 사유를 갱신한다. 기존 P1 고객 API처럼 `X-Member-Id` 헤더를 사용하며 본인 예약만 조회할 수 있다.
+
+## 취소 시점별 환불금 계산
+
+기능61의 환불 계산기는 예약 당시 금액·정책과 변경 후 방문일을 기준으로 원 미만을 버린 뒤 기환불액을 차감한다. 점주 취소는 원결제액을 총 환불 한도로 사용한다. 현재는 계산 로직만 구현했으며, 환불 예상액 HTTP API와 실제 Toss 취소는 공통 결제 계약 후 연결한다. [기능61 작업 기록](work-log/67-refund-calculation.md)에 판단·검증·연동 조건을 남겼다.
