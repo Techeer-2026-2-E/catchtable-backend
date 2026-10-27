@@ -649,7 +649,7 @@ class ReservationSettingsTest {
     }
 
     @Test
-    void onlyAnUnenteredFutureConfirmedReservationCanBeChangedPendingTeamPolicy() {
+    void onlyAnUnenteredConfirmedReservationCanBeChanged() {
         Long checkedIn = reserve();
         ownerReservations.confirmVisit(ownerId, checkedIn);
         Long canceled = reservations.createReservation(customerId,
@@ -657,13 +657,7 @@ class ReservationSettingsTest {
         ownerReservations.cancelReservation(ownerId, canceled, "매장 사정");
         Long pending = reservations.createHold(customerId,
                 new CreateReservationRequest(storeId, start.plusHours(4), 4)).holdId();
-        Long past = reservations.createReservation(customerId,
-                new CreateReservationRequest(storeId, start.plusHours(6), 4)).reservationId();
-        jdbc.update("""
-                UPDATE reservation SET reservation_start_at = now() - INTERVAL '1 minute',
-                    reservation_end_at = now() + INTERVAL '119 minutes' WHERE id = ?
-                """, past);
-        for (Long id : List.of(checkedIn, canceled, pending, past)) {
+        for (Long id : List.of(checkedIn, canceled, pending)) {
             var original = reservations.getReservation(customerId, id);
             assertThatThrownBy(() -> ownerReservations.updateReservation(ownerId, id,
                     new OwnerReservationUpdateRequest(start.plusDays(1), 2)))
@@ -671,6 +665,87 @@ class ReservationSettingsTest {
                             failure -> assertThat(failure.getErrorCode()).isEqualTo(ErrorCode.RESERVATION_NOT_MODIFIABLE));
             assertThat(reservations.getReservation(customerId, id)).isEqualTo(original);
         }
+    }
+
+    @Test
+    void anUnenteredPastReservationCanMoveToAFutureSlot() {
+        Long id = reserve();
+        backdateReservation(id);
+
+        var changed = ownerReservations.updateReservation(ownerId, id,
+                new OwnerReservationUpdateRequest(start.plusDays(1), 2));
+
+        assertThat(changed.reservationId()).isEqualTo(id);
+        assertThat(changed.reservationStartAt().toInstant()).isEqualTo(start.plusDays(1).toInstant());
+        assertThat(changed.partySize()).isEqualTo(2);
+        assertThat(changed.status()).isEqualTo(ReservationStatus.CONFIRMED);
+        assertThat(reservations.getReservation(customerId, id).reservationStartAt())
+                .isEqualTo(changed.reservationStartAt());
+    }
+
+    @Test
+    void changingOnlyPartySizeKeepsAPastReservationsScheduleAndReassignsItsTable() {
+        Long id = reserve();
+        backdateReservation(id);
+        var original = reservations.getReservation(customerId, id);
+        Long largerTable = jdbc.queryForObject("""
+                INSERT INTO store_table (store_id, table_number, min_capacity, capacity, status)
+                VALUES (?, 2, 1, 8, 'ACTIVE') RETURNING id
+                """, Long.class, storeId);
+        jdbc.update("UPDATE store SET reservation_duration_minutes = 60 WHERE id = ?", storeId);
+
+        var changed = ownerReservations.updateReservation(ownerId, id,
+                new OwnerReservationUpdateRequest(null, 7));
+
+        assertThat(changed.partySize()).isEqualTo(7);
+        assertThat(changed.tableId()).isEqualTo(largerTable);
+        assertThat(changed.reservationStartAt()).isEqualTo(original.reservationStartAt());
+        assertThat(changed.reservationEndAt()).isEqualTo(original.reservationEndAt());
+        assertThat(ownerReservations.updateReservation(ownerId, id,
+                new OwnerReservationUpdateRequest(original.reservationStartAt(), 7))).isEqualTo(changed);
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {true, false})
+    void aPastReservationCannotMoveToAnOccupiedFutureSlot(boolean hold) {
+        Long id = reserve();
+        backdateReservation(id);
+        var original = reservations.getReservation(customerId, id);
+        var destination = new CreateReservationRequest(storeId, start, 4);
+        if (hold) reservations.createHold(customerId, destination);
+        else reservations.createReservation(customerId, destination);
+
+        assertThatThrownBy(() -> ownerReservations.updateReservation(ownerId, id,
+                new OwnerReservationUpdateRequest(start, 2)))
+                .isInstanceOfSatisfying(ResponseStatusException.class,
+                        failure -> assertThat(failure.getStatusCode()).isEqualTo(HttpStatus.CONFLICT));
+        assertThat(reservations.getReservation(customerId, id)).isEqualTo(original);
+    }
+
+    @Test
+    void aPastReservationCannotChangeItsStartToAnotherPastTime() {
+        Long id = reserve();
+        backdateReservation(id);
+        var original = reservations.getReservation(customerId, id);
+
+        assertThatThrownBy(() -> ownerReservations.updateReservation(ownerId, id,
+                new OwnerReservationUpdateRequest(original.reservationStartAt().minusMinutes(30), null)))
+                .isInstanceOfSatisfying(ResponseStatusException.class,
+                        failure -> assertThat(failure.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST));
+        assertThat(reservations.getReservation(customerId, id)).isEqualTo(original);
+    }
+
+    @Test
+    void aPastReservationKeepsItsPartySizeAndTableWhenNoLargerTableIsAvailable() {
+        Long id = reserve();
+        backdateReservation(id);
+        var original = reservations.getReservation(customerId, id);
+
+        assertThatThrownBy(() -> ownerReservations.updateReservation(ownerId, id,
+                new OwnerReservationUpdateRequest(null, 7)))
+                .isInstanceOfSatisfying(ResponseStatusException.class,
+                        failure -> assertThat(failure.getStatusCode()).isEqualTo(HttpStatus.CONFLICT));
+        assertThat(reservations.getReservation(customerId, id)).isEqualTo(original);
     }
 
     @ParameterizedTest
@@ -716,6 +791,13 @@ class ReservationSettingsTest {
     private Long reserve() {
         return reservations.createReservation(customerId, new CreateReservationRequest(storeId, start, 4))
                 .reservationId();
+    }
+
+    private void backdateReservation(Long id) {
+        jdbc.update("""
+                UPDATE reservation SET reservation_start_at = now() - INTERVAL '1 minute',
+                    reservation_end_at = now() + INTERVAL '119 minutes' WHERE id = ?
+                """, id);
     }
 
     private BusinessHourUpdateRequest businessHours(String open, String close, String breakStart, String breakEnd) {
