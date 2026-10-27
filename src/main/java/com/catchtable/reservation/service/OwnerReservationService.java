@@ -64,7 +64,7 @@ public class OwnerReservationService {
         Reservation reservation = findForUpdate(ownerId, reservationId);
         OffsetDateTime now = OffsetDateTime.now(clock);
         try {
-            reservation.validateModifiable(now);
+            reservation.validateModifiable();
         } catch (IllegalStateException exception) {
             throw new BusinessException(ErrorCode.RESERVATION_NOT_MODIFIABLE);
         }
@@ -74,8 +74,11 @@ public class OwnerReservationService {
         if (startAt.isEqual(reservation.getReservationStartAt()) && partySize == reservation.getPartySize()) {
             return OwnerReservationResponse.from(reservation, now);
         }
-        availabilityService.validateBookable(store, startAt, now);
-        OffsetDateTime endAt = startAt.plusMinutes(store.getReservationDurationMinutes());
+        OffsetDateTime endAt = reservation.getReservationEndAt();
+        if (!startAt.isEqual(reservation.getReservationStartAt())) {
+            availabilityService.validateBookable(store, startAt, now);
+            endAt = startAt.plusMinutes(store.getReservationDurationMinutes());
+        }
         reservationRepository.expireHolds(storeId, now);
         StoreTable table = tableRepository.findAvailableForUpdate(storeId, partySize, startAt, endAt, reservationId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.CONFLICT, "변경 가능한 테이블이 없습니다."));

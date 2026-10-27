@@ -190,17 +190,18 @@ public class Reservation extends BaseTimeEntity {
         cancellationReason = "결제 전 선점 취소";
     }
 
-    public void validateModifiable(OffsetDateTime now) {
-        // shortcut: 시작 시각 이후 미입장 예약의 변경은 팀 정책 확정 후 허용 여부를 바꾼다.
-        if (status != ReservationStatus.CONFIRMED || checkedInAt != null || !now.isBefore(reservationStartAt)) {
+    public void validateModifiable() {
+        if (status != ReservationStatus.CONFIRMED || checkedInAt != null) {
             throw new IllegalStateException("변경할 수 없는 예약입니다.");
         }
     }
 
     public void changeSchedule(Long tableId, OffsetDateTime startAt, OffsetDateTime endAt,
                                int partySize, OffsetDateTime now) {
-        validateModifiable(now);
-        if (tableId == null || tableId <= 0 || partySize <= 0 || !startAt.isAfter(now) || !startAt.isBefore(endAt)) {
+        validateModifiable();
+        boolean startChanged = !startAt.isEqual(reservationStartAt);
+        if (tableId == null || tableId <= 0 || partySize <= 0
+                || (startChanged && !startAt.isAfter(now)) || !startAt.isBefore(endAt)) {
             throw new IllegalArgumentException("예약 변경 값이 올바르지 않습니다.");
         }
         this.tableId = tableId;
