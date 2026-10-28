@@ -1,8 +1,9 @@
 package com.catchtable.reservation.entity;
 
 import com.catchtable.member.entity.Member;
-import com.catchtable.payment.PaymentTestData;
+import com.catchtable.member.entity.UserType;
 import com.catchtable.store.entity.Store;
+import com.catchtable.store.entity.StoreCategory;
 import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -16,6 +17,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.OffsetDateTime;
+import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -36,10 +38,24 @@ class ReservationDepositSnapshotTest {
 
     @BeforeEach
     void setUp() {
-        PaymentTestData data = new PaymentTestData(jdbc);
-        member = entityManager.getReference(Member.class, data.member("CUSTOMER"));
-        store = entityManager.getReference(Store.class, data.store(data.member("OWNER")));
-        tableId = jdbc.queryForObject("SELECT id FROM store_table WHERE store_id = ?", Long.class, store.getId());
+        Member owner = member(UserType.OWNER);
+        member = member(UserType.CUSTOMER);
+        store = Store.builder().owner(owner).name("snapshot store").category(StoreCategory.KOREAN)
+                .address("Seoul").reservationDurationMinutes(60).reservationSlotMinutes(30)
+                .arrivalGraceMinutes(10).build();
+        entityManager.persist(store);
+        entityManager.flush();
+        tableId = jdbc.queryForObject("""
+                INSERT INTO store_table (store_id, table_number, capacity, status)
+                VALUES (?, 1, 4, 'ACTIVE') RETURNING id
+                """, Long.class, store.getId());
+    }
+
+    private Member member(UserType type) {
+        Member result = Member.builder().email("snapshot-" + UUID.randomUUID() + "@example.com")
+                .password("password").name("test").phone("010-0000-0000").userType(type).build();
+        entityManager.persist(result);
+        return result;
     }
 
     @Test
