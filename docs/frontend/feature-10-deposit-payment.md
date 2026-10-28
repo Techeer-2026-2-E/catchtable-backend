@@ -41,3 +41,17 @@
 - [기능63 #142](https://github.com/Techeer-2026-2-E/catchtable-backend/issues/142)의 재확인·웹훅·자동 보정은 별도 담당 범위다. 이번 문서는 예약금 설정·실행 endpoint·프런트 코드·실제 Toss·배포를 구현하지 않는다.
 
 검증은 위 커밋의 코드·기존 계약·링크·Markdown·`git diff --check` 대조다. 문서 변경으로 앱 테스트나 화면 연동을 새로 확인한 것으로 보고하지 않는다.
+
+## 2026-10-29 실제 결정 반영 — 유효 선점에서 시작한 승인 확정
+
+앞선 “결정 대기·미구현”은 당시 기록으로 보존한다. 이 절은 dev `7d320491a6ed9107ac3149ed8cfaa1bb1dad45bb`와 기능10 [후속 소스 c3f9710](https://github.com/Techeer-2026-2-E/catchtable-backend/commit/c3f971013ae5cfbb7072bb3b3d8691ebe5d3b939)의 검토 계약이며, 기능 [Draft PR #145](https://github.com/Techeer-2026-2-E/catchtable-backend/pull/145)는 배포·upgrade 완료가 아니다.
+
+- 구현 경로는 `POST /api/user/payments/confirm`이다. `X-Member-Id`와 JSON `{"orderId":"준비된 주문","paymentKey":"동일 결제 키","amount":10000}`를 보낸다. 반환은 기존 `PaymentResponse`이며 클라이언트가 회원·정책·actor를 본문으로 정하지 않는다. [컨트롤러](https://github.com/Techeer-2026-2-E/catchtable-backend/blob/c3f971013ae5cfbb7072bb3b3d8691ebe5d3b939/src/main/java/com/catchtable/payment/controller/UserPaymentApprovalController.java), [요청 DTO](https://github.com/Techeer-2026-2-E/catchtable-backend/blob/c3f971013ae5cfbb7072bb3b3d8691ebe5d3b939/src/main/java/com/catchtable/payment/dto/PaymentConfirmRequest.java)
+- 기능33의 예약금 설정 원본·점주 계약이 없어 `/prepare`와 유료 생성 연결은 제공하지 않는다. 이미 저장된 올바른 주문·양수 금액·최초 정책 스냅샷만 승인 대상이다. 건당 금액을 인원수로 곱하거나 현재 매장 설정으로 보충하지 않는다. 테스트의 준비 원장 fixture를 유료 생성 전체 E2E로 보지 않는다.
+- 사용자5A: 최초5분 안에 시작 시각·paymentId·orderId·paymentKey를 커밋한 뒤 외부 승인을 호출한다. 이후 서버 원장이 같은 키 `DONE`이면 원래 만료시각 뒤에도 **같은 테이블·같은 시간**을 한 번 확정한다. 확정 시각과 `RESERVATION_CONFIRMED` 알림도 한 번이며 알림은 커밋 후 전달한다. [승인 연결 서비스](https://github.com/Techeer-2026-2-E/catchtable-backend/blob/c3f971013ae5cfbb7072bb3b3d8691ebe5d3b939/src/main/java/com/catchtable/reservation/service/ReservationPaymentService.java)
+- `200 DONE`만 확정 성공이다. 공통 계약의 확정 거절은 `200 FAILED`, 결제 유효시간 만료 확인은 `200 CANCELED`이며 예약을 확정하지 않고 기존 해제 경로로 즉시 반환한다. `READY`·`TIMEOUT`·진행/결과 불명은 `409 PAYMENT_RECONCILIATION_REQUIRED`로 자리를 보존한다. 입력400·회원 식별401·남의 주문404·주문/금액/키 불일치409도 성공으로 처리하지 않는다.
+- 같은 최초 요청만 재시도하며 키·주문·금액을 바꾸지 않는다. 최초 시작부터15일 이상 남은 READY/TIMEOUT은 외부 재승인 없이409로 보존한다. 이미 같은 키 DONE이 저장됐으면 외부 재호출 없이 확정할 수 있다. [Toss 멱등키 유효기간](https://docs.tosspayments.com/reference/using-api/authorization)과 공통 기능142의 재확인 경계를 따른다.
+- 승인 전 READY는 원래5분이며 준비·조회로 연장하지 않는다. 진행 중 `remainingSeconds=0`이어도 PENDING_PAYMENT는 실패·해제를 뜻하지 않는다. 과거 raw pending의 불명/승인 원장은 시각·키를 추정하지 않는 격리 표식으로 보존한다. 만료·수량·설정 충돌·명시적 해제 모두 같은 자리 보호를 적용한다. 세부 화면 처리는 [기능54](feature-54-hold-countdown.md)·[기능55](feature-55-hold-release.md)·[기능56](feature-56-hold-expiry-rebooking.md)을 따른다.
+- 실제 답변2A/3A/4B에 따라 돈만 환불하는 경로와 예약 취소를 구분하며 양수 취소 환불의 client Idempotency-Key는 미래 계약이다. 최초 요청시각/한도 저장·환불 중 변경 동결이 합의되기 전 양수 환불 endpoint·PG 기반 예약 취소는 보류한다. [기능60](feature-60-refund-execution.md)·[기능61](feature-61-refund-preview.md)의 기존 차단을 유지한다.
+
+V20은 공유 적용 이력이 미확인이므로 원본을 보존했고 V23은 적용 전략 자리로 남겼다. V24의 새 승인 보호를 빈 DB에서 검증해도 V20 없는 populated V22 DB의 upgrade 차단은 해결되지 않는다. 복구·웹훅·예약금 설정·실제 Toss·프런트/JWT·배포는 별도 범위다. 이 문서 변경 자체는 소스·링크·Markdown·diff만 검증하며 앱 테스트/실제 CI 완료 증거를 대신하지 않는다.
