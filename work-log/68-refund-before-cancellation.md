@@ -32,3 +32,12 @@
 이 변경은 실제 전액·부분 환불 실행 완료가 아니다. 양수 환불은 거절되므로 기능62의 요청 키·기준시각·요청 금액 보존과 기능63의 결과 재확인 계약 후 외부 취소 실행을 연결해야 한다. 현재 공통 Payment의 TIMEOUT은 승인 전 결과 불명을 표현하며, 승인 후 환불 요청 진행/결과 불명 자체를 구분할 계약은 없다. 이를 임시 새 상태나 요청 테이블로 대신 구현하지 않았다.
 
 향후 외부 환불 경로를 활성화하기 전에 그 진행·결과 불명 표식을 이 경계와 함께 확인해야 한다. 이 코드만으로 미래의 미확인 환불 요청까지 구분한다고 주장하지 않는다. 이미 과거 코드로 취소된 예약을 복구하거나 누락 환불을 실행하는 보정도 포함하지 않는다. #68은 열린 상태로 유지하며 실제 Toss·프런트·CI·배포는 미확인이다.
+
+
+## 2026-10-29 후속 — 공통 환불 진행 기록 보존
+
+- 기준: 최신 `dev@555e0aabd243b52e5007e55460d2aae398952f27`과 공통 기능62를 별도 로컬 브랜치에 merge했다. 기존 공개 PR #150 head/base는 그대로 두었다.
+- 공통 `PaymentRefund`의 `REQUESTED`·`UNKNOWN`이 있으면 기존 `409 REFUND_DATA_NOT_READY`로 예상액·고객 취소·점주 취소를 차단한다. 정책상 추가 환불액이0이어도 진행 중 환불을 완료로 간주하지 않는다. 예약·자리·취소 알림은 기존 트랜잭션에서 함께 보존된다.
+- 새 PostgreSQL16 컨테이너 `phase2-sol-max-20261029-pg16`, 전용 DB `phase2_refund`, `DB_PORT=54936`에서 `./gradlew test --tests com.catchtable.reservation.service.ReservationCancellationRefundTest --tests com.catchtable.reservation.service.ReservationRefundPreviewTest`: 53개 통과, 실패·건너뜀0. 전체 로그·명령·XML은 인계 산출물 `refund-inflight-targeted/`에 보관했다.
+- 양수 환불 실행은 여전히 `REFUND_NOT_COMPLETED`로 차단한다. 결제 환불 API와 예약 취소 결합 방식·멱등키·최초 요청시각 및 변경 동결은 사용자 결정 대기라 새 HTTP endpoint를 제공하지 않았다. 공통 서비스 자체의 완료를 기능60 전체 완료로 쓰지 않는다.
+- V20 이력·upgrade, 실제 Toss·프런트 연동·배포·새 CI 실행은 미확인이다. 기능63을 대신 구현하지 않았다.
