@@ -70,3 +70,7 @@
 같은 키의 금액·사유·처리 당시 결과는 공통 서비스가 보존한다. 결과 불명에 새 키를 만들어 다시 보내지 않는다. Toss 멱등키15일 경과 또는 남은 `REQUESTED`·`UNKNOWN`의 복구는 [기능63 #142](https://github.com/Techeer-2026-2-E/catchtable-backend/issues/142)와 연결해야 하며 이번 보강은 재확인·복구 구현이 아니다.
 
 로컬 소스는 전용 PostgreSQL16의 관련53개 테스트(실패·건너뜀0)로 확인했다. 이 문서 커밋은 코드·링크·Markdown·`git diff --check`만 확인하며 새 CI·실제 Toss·프런트 화면·배포는 미확인이다.
+
+## 2026-10-29 후속 — 기능63 환불 복구
+
+앞선 기록은 보존한다. 남은 `REQUESTED`·`UNKNOWN`은  Toss 누적 취소액으로 반영 여부를 확인한다. 반영됐으면 `COMPLETED`, 아니면 요청 15일 안에는 같은 키 재시도, 지나면 `FAILED`(`IDEMPOTENCY_KEY_EXPIRED`)다. 늦은 승인은 `refundRequired` 표시만 하며 양수 환불 endpoint는 4B 결정 전까지 열지 않는다.
