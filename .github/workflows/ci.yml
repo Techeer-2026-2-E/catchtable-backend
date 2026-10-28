@@ -2,7 +2,7 @@ name: CI
 
 on:
   pull_request:
-    branches: [dev, main]
+    branches: [dev, main, feat/65-deposit-snapshot-independent, feat/67-refund-preview]
   push:
     branches: [dev, main]
 
