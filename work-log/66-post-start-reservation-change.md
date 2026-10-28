@@ -58,3 +58,15 @@
 - 기존 스냅샷 fixture에 최초10,001원, 누적 환불1,000원, 확정 환불 이력1건을 연결했다. 일정·인원 변경과 반복 요청, 시작 후 미입장 변경, 충돌/배정 실패 뒤 금액·정책·결제 상태·누적 환불액·환불 기록·상태 이력이 그대로인지 검사한다. 실제 승인·환불은 호출하지 않는다.
 - 새 PostgreSQL16 컨테이너 `phase2-sol-max-20261029-pg16`, 전용 DB `phase2_change`, `DB_PORT=54936`에서 `./gradlew test --tests com.catchtable.reservation.service.ReservationSettingsTest`: 42개 통과, 실패·건너뜀0. 전체 로그·명령·XML은 인계 산출물 `change-ledger-targeted/`에 보관했다.
 - 새 fixture는 공통 기능62의 `PaymentTestData.completedRefund`를 사용한다. 공개 부모/base가 최신 dev와 스냅샷을 포함하기 전에는 이 테스트 commit만 옛 부모에 게시하지 않는다. V20 영속 이력·upgrade 및 결제 준비·승인부터 화면까지의 연동은 미확인이다.
+
+## 2026-10-29 승인 보호 부모 통합 후 재검증
+
+기능10의 승인 시작/주문/키 영속 보호와 V24, dev `7d320491a6ed9107ac3149ed8cfaa1bb1dad45bb`, 별도 CI 선행 [#164](https://github.com/Techeer-2026-2-E/catchtable-backend/pull/164)를 정상 merge했다. 기존 공개 #147 head `a7d27e999d6b28e3633ddaaa9dddeecb294b2eb0`와 원장 보존 단언을 유지한다. 최초 금액10,001원·누적 환불1,000원·완료 환불1건은 일정/인원 변경·재요청·충돌 롤백 후에도 같다. 진행/불명 선점은 최초 기한 뒤에도 배정 SQL과 GiST에서 점유하므로 다른 예약 변경으로 자리를 가져오지 못한다.
+
+새 disposable PostgreSQL16 `phase2-approved-20261029-pg16`, `127.0.0.1:54937/phase2_change_approved`에서 아래 검증42개가 실패/오류/건너뜀0으로 통과했다. 로그·XML은 로컬 `approved-followup/change-targeted`에 보존한다.
+
+```sh
+DB_HOST=127.0.0.1 DB_PORT=54937 DB_NAME=phase2_change_approved DB_USERNAME=phase2_test DB_PASSWORD=phase2_test ./gradlew test --tests 'com.catchtable.reservation.service.ReservationSettingsTest' --no-daemon
+```
+
+기능33 유료 설정 원본과 생성 연결, 사용자4B의 양수 환불 실행·환불 중 변경 동결은 추가하지 않았다. V20 공유 이력과 upgrade 차단은 [기능10 기록](65-deposit-snapshot.md)을 따른다. 실제 source CI·Toss·프런트·배포는 이 검사에 포함하지 않는다.
