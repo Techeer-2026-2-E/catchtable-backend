@@ -153,6 +153,51 @@ class PaymentServiceTest {
                 toss("order", "DONE", AMOUNT), PaymentStatusSource.TOSS_QUERY), ErrorCode.PAYMENT_NOT_FOUND);
     }
 
+    @Test
+    void markFailedRecordsOneHistoryAndRepeatRecordsNone() {
+        Long paymentId = payment("READY");
+
+        service.markFailed(paymentId, "REJECT_CARD_PAYMENT", "한도 초과", PaymentStatusSource.TOSS_CONFIRM);
+        var repeated = service.markFailed(paymentId, "REJECT_CARD_PAYMENT", "한도 초과",
+                PaymentStatusSource.TOSS_CONFIRM);
+
+        assertThat(repeated.status()).isEqualTo(PaymentStatus.FAILED);
+        assertThat(reload(paymentId).getFailureCode()).isEqualTo("REJECT_CARD_PAYMENT");
+        assertThat(historyRepository.findAllByPaymentIdOrderByIdAsc(paymentId)).singleElement()
+                .satisfies(history -> {
+                    assertThat(history.getPreviousStatus()).isEqualTo(PaymentStatus.READY);
+                    assertThat(history.getStatus()).isEqualTo(PaymentStatus.FAILED);
+                    assertThat(history.getSource()).isEqualTo(PaymentStatusSource.TOSS_CONFIRM);
+                });
+    }
+
+    @Test
+    void markTimeoutRecordsOneHistoryAndRepeatRecordsNone() {
+        Long paymentId = payment("READY");
+
+        service.markTimeout(paymentId, "승인 응답 시간초과", PaymentStatusSource.TOSS_CONFIRM);
+        var repeated = service.markTimeout(paymentId, "승인 응답 시간초과", PaymentStatusSource.TOSS_CONFIRM);
+
+        assertThat(repeated.status()).isEqualTo(PaymentStatus.TIMEOUT);
+        assertThat(historyRepository.findAllByPaymentIdOrderByIdAsc(paymentId)).singleElement()
+                .satisfies(history -> {
+                    assertThat(history.getPreviousStatus()).isEqualTo(PaymentStatus.READY);
+                    assertThat(history.getStatus()).isEqualTo(PaymentStatus.TIMEOUT);
+                });
+    }
+
+    @Test
+    void markFailedOnApprovedPaymentIsRejected() {
+        Long paymentId = payment("READY");
+        service.applyTossPayment(paymentId, toss(data.orderId(paymentId), "DONE", AMOUNT),
+                PaymentStatusSource.TOSS_CONFIRM);
+
+        assertBusinessFailure(() -> service.markFailed(paymentId, "REJECT_CARD_PAYMENT", "한도 초과",
+                PaymentStatusSource.TOSS_CONFIRM), ErrorCode.INVALID_PAYMENT_STATUS);
+        assertThat(reload(paymentId).getStatus()).isEqualTo(PaymentStatus.DONE);
+        assertThat(historyRepository.findAllByPaymentIdOrderByIdAsc(paymentId)).hasSize(1);
+    }
+
     private Long payment(String status) {
         return data.payment(customerId, data.hold(customerId, storeId, slot++), status, 0);
     }
