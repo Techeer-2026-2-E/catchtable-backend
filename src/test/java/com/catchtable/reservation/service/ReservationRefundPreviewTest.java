@@ -133,6 +133,23 @@ class ReservationRefundPreviewTest {
     }
 
     @ParameterizedTest
+    @ValueSource(strings = {"REQUESTED", "UNKNOWN"})
+    void anInFlightRefundCannotBePresentedAsAConfirmedRemainingAmount(String refundStatus) throws Exception {
+        Long reservationId = reservation(10_000L, "STANDARD", true);
+        Long paymentId = data.payment(memberId, reservationId, "DONE", 0);
+        jdbc.update("""
+                INSERT INTO payment_refund
+                    (payment_id, idempotency_key, cancel_reason, refund_amount, status, requested_at)
+                VALUES (?, 'preview-pending', '환불 요청', 5000, ?, ?)
+                """, paymentId, refundStatus, NOW);
+
+        assertDataNotReady(reservationId);
+        assertThat(jdbc.queryForObject("SELECT status FROM payment_refund WHERE payment_id = ?",
+                String.class, paymentId)).isEqualTo(refundStatus);
+        verifyNoInteractions(toss);
+    }
+
+    @ParameterizedTest
     @ValueSource(strings = {"READY", "TIMEOUT", "FAILED", "CANCELED"})
     void unapprovedPaymentsDoNotSupplyPaidAmount(String paymentStatus) throws Exception {
         Long reservationId = reservation(10_000L, "FLEXIBLE", true);

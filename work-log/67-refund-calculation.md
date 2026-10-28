@@ -63,3 +63,12 @@
 새 전용 PostgreSQL16 컨테이너 `catchtable-phase2-astra-20261028`, `127.0.0.1:49498`, DB `catchtable_phase2_test`에서 `DB_HOST=127.0.0.1 DB_PORT=49498 DB_NAME=catchtable_phase2_test DB_USERNAME=catchtable DB_PASSWORD=catchtable ./gradlew build --no-daemon`을 실행했다. 47클래스 441개 테스트, 실패·오류·건너뜀0이며 bootJar를 생성했다. 신규 `ReservationRefundPreviewTest` 30개는 HTTP 소유권·헤더, 시작 시각·상태, 한국 자정, 원 미만 버림·누적액, 변경 후 방문일, 기존 무료·신규 무료·원본 누락 및 반복 조회의 무변경을 검증했다. `git diff --check`를 통과했다.
 
 유료 생성 흐름은 기능33 설정과 기능10 호출부 연결 대기이므로 이 검증의 유료 데이터는 테스트 fixture다. 실제 결제 승인으로 만든 예약에서 프런트까지 연동한 결과가 아니다. CI·실제 Toss·프런트 실행·배포는 미확인이다. 기능61 HTTP 조회 자체는 구현했지만 선행 기능 미병합과 유료 원본 생성 연결이 남아 #67을 닫지 않는다.
+
+
+## 2026-10-29 후속 — 환불 진행 기록과 예상액 경계
+
+- 기준: `dev@555e0aabd243b52e5007e55460d2aae398952f27`과 공통 기능62 `358040e`를 별도 로컬 검증 브랜치에 merge했다. 기존 공개 PR #146 head와 base는 변경하지 않았다.
+- `payment_refund`의 `REQUESTED`·`UNKNOWN`이 있으면 예상액을 확정된 잔액처럼 표시하지 않고 기존 `409 REFUND_DATA_NOT_READY`로 응답한다. 정책상 추가액0원이어도 동일하다. 공통 환불 기록·원장·예약을 변경하거나 외부 결제를 부르지 않는다.
+- 새 PostgreSQL16 컨테이너 `phase2-sol-max-20261029-pg16`, 전용 DB `phase2_snapshot`, `DB_PORT=54936`에서 `./gradlew test --tests com.catchtable.reservation.service.ReservationRefundPreviewTest --tests com.catchtable.payment.service.PaymentRefundServiceTest --tests com.catchtable.payment.service.PaymentApprovalServiceTest`: 51개 통과, 실패·건너뜀0. 전체 로그·명령·XML은 작업자 인계 산출물 `preview-inflight-targeted/`에 보관했다.
+- V20은 기존 Draft의 파일을 그대로 사용해 새 빈 테스트 DB에 적용했다. 공유·영속 DB의 V20 적용 여부와 V21/V22 이후 upgrade는 미확인이다. 마이그레이션 순서 결정 전 이 로컬 결과를 공개 PR 적용 가능 판정으로 쓰지 않는다.
+- 환불 실행 HTTP, 기능63 재확인·웹훅·자동 보정, 프런트 연동·실제 Toss·배포·새 CI 실행은 이번 변경 범위가 아니다.
