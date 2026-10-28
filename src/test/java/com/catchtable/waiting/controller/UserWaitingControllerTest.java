@@ -10,6 +10,7 @@ import com.catchtable.waiting.entity.Waiting;
 import com.catchtable.waiting.entity.WaitingStatus;
 import com.catchtable.waiting.repository.WaitingEndHistoryRepository;
 import com.catchtable.waiting.repository.WaitingRepository;
+import com.jayway.jsonpath.JsonPath;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -22,11 +23,13 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
 
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.List;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -130,6 +133,55 @@ class UserWaitingControllerTest {
                 .andExpect(jsonPath("$.waitNumber").value(2))
                 .andExpect(jsonPath("$.teamsAhead").doesNotExist())
                 .andExpect(jsonPath("$.currentPosition").doesNotExist());
+    }
+
+    @Test
+    @DisplayName("호출된 웨이팅은 호출 시각과 만료 시각을 함께 돌려준다 (재접속 복구용)")
+    void calledWaitingExposesCallTimes() throws Exception {
+        Waiting mine = saveCalledWaiting(me, 1);
+
+        String body = getWaiting(me, mine.getId())
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("CALLED"))
+                .andReturn().getResponse().getContentAsString();
+
+        assertThat(instantAt(body, "calledAt")).isEqualTo(OffsetDateTime.parse("2030-01-10T12:00:00+09:00").toInstant());
+        assertThat(instantAt(body, "expiresAt")).isEqualTo(OffsetDateTime.parse("2030-01-10T12:10:00+09:00").toInstant());
+    }
+
+    @Test
+    @DisplayName("도착 의사를 응답한 웨이팅도 호출 시각과 만료 시각을 돌려준다")
+    void confirmedWaitingExposesCallTimes() throws Exception {
+        Waiting mine = saveCalledWaiting(me, 1);
+        changeStatus(mine, WaitingStatus.CONFIRMED);
+
+        getWaiting(me, mine.getId())
+                .andExpect(jsonPath("$.status").value("CONFIRMED"))
+                .andExpect(jsonPath("$.calledAt").isNotEmpty())
+                .andExpect(jsonPath("$.expiresAt").isNotEmpty());
+    }
+
+    @Test
+    @DisplayName("호출 전 웨이팅은 호출 시각과 만료 시각이 없다")
+    void waitingBeforeCallHasNoCallTimes() throws Exception {
+        Waiting mine = saveWaiting(me, store, TODAY, 1, WaitingStatus.WAITING);
+
+        getWaiting(me, mine.getId())
+                .andExpect(jsonPath("$.status").value("WAITING"))
+                .andExpect(jsonPath("$.calledAt").doesNotExist())
+                .andExpect(jsonPath("$.expiresAt").doesNotExist());
+    }
+
+    @Test
+    @DisplayName("호출 뒤 종료된 웨이팅은 호출 시각과 만료 시각을 숨긴다")
+    void endedWaitingHasNoCallTimes() throws Exception {
+        Waiting mine = saveCalledWaiting(me, 1);
+        changeStatus(mine, WaitingStatus.NO_SHOW);
+
+        getWaiting(me, mine.getId())
+                .andExpect(jsonPath("$.status").value("NO_SHOW"))
+                .andExpect(jsonPath("$.calledAt").doesNotExist())
+                .andExpect(jsonPath("$.expiresAt").doesNotExist());
     }
 
     @Test
@@ -258,6 +310,12 @@ class UserWaitingControllerTest {
     private ResultActions getWaiting(Member member, Long waitingId) throws Exception {
         return mockMvc.perform(get("/api/user/waitings/{waitingId}", waitingId)
                 .header("X-Member-Id", member.getId()));
+    }
+
+    // 응답의 시각 필드를 시간대와 무관하게 같은 시점으로 비교하려고 Instant로 변환
+    private Instant instantAt(String body, String field) {
+        String value = JsonPath.read(body, "$." + field);
+        return OffsetDateTime.parse(value).toInstant();
     }
 
     // 상태 변경 메서드가 아직 없어서(취소·착석 등 미구현) DB 값을 직접 바꾼다
