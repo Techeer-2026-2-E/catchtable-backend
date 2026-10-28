@@ -26,3 +26,7 @@
 ## 문서 검증
 
 컨트롤러·DTO·서비스와 명시한 프런트 소스를 대조했고 상대 링크와 git diff --check를 확인했다. 문서만 변경하므로 앱 테스트를 새로 실행한 것으로 보고하지 않는다. 프런트 저장소 수정·화면 실행·Toss 실행·배포 검증은 포함하지 않는다.
+
+## 2026-10-29 승인 결과와 명시적 해제 후속
+
+`DELETE /api/user/reservations/holds/{holdId}`는 기존 `X-Member-Id`와 성공204를 유지하지만 승인 진행/결과 불명/과거 격리 중에는 `409 RESERVATION_NOT_CANCELLABLE`로 자리를 보존한다. [해제 검사](https://github.com/Techeer-2026-2-E/catchtable-backend/blob/c3f971013ae5cfbb7072bb3b3d8691ebe5d3b939/src/main/java/com/catchtable/reservation/entity/Reservation.java)와 [승인 완료 처리](https://github.com/Techeer-2026-2-E/catchtable-backend/blob/c3f971013ae5cfbb7072bb3b3d8691ebe5d3b939/src/main/java/com/catchtable/reservation/service/ReservationPaymentService.java)가 같은 보호를 따른다. 서버에서 확인한 FAILED/CANCELED만 보호를 해제한 뒤 기존 release 경로로 즉시 반환하며 기한 뒤에는 EXPIRED가 된다. READY/TIMEOUT이나 화면 이탈을 실패로 바꾸지 않는다. 세부 결과는 [기능10](feature-10-deposit-payment.md)을 따른다. Draft 소스 계약 검토이며 실제 PG·프런트·배포 확인은 아니다.
