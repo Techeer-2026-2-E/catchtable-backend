@@ -196,6 +196,18 @@ public class Waiting extends BaseTimeEntity {
         return true;
     }
 
+    // 호출 기한 자동 만료
+    public WaitingEndHistory expire(OffsetDateTime now) {
+        if (status != WaitingStatus.CALLED && status != WaitingStatus.CONFIRMED) {
+            return null;
+        }
+        // 기한 전·재호출로 연장된 건 제외
+        if (callExpiresAt == null || !callExpiresAt.isBefore(now)) {
+            return null;
+        }
+        return end(WaitingStatus.NO_SHOW, WaitingEndReason.AUTO_EXPIRED, "호출 후 응답·입장 기한 만료", null, now);
+    }
+
     private WaitingEndHistory end(WaitingStatus nextStatus, WaitingEndReason reason, String detail,
                                   Long actorId, OffsetDateTime now) {
         WaitingEndHistory history = WaitingEndHistory.record(this, nextStatus, reason, detail, actorId, now);
