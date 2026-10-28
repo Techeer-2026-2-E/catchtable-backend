@@ -26,3 +26,7 @@
 ## 문서 검증
 
 컨트롤러·DTO·서비스와 명시한 프런트 소스를 대조했고 상대 링크와 git diff --check를 확인했다. 문서만 변경하므로 앱 테스트를 새로 실행한 것으로 보고하지 않는다. 프런트 저장소 수정·화면 실행·Toss 실행·배포 검증은 포함하지 않는다.
+
+## 2026-10-29 승인 시작 보호와 늦은 성공 후속
+
+승인 시작 전 READY만 최초5분 만료·재예약 흐름을 따른다. 기한 안에 시작을 저장한 진행/불명·과거 격리 선점은 원래 시간이 지나도 만료 정리·가용 조회·생성/변경 배정에서 점유하므로 같은 자리를 다시 선점할 수 없다. [만료/활성 조회](https://github.com/Techeer-2026-2-E/catchtable-backend/blob/c3f971013ae5cfbb7072bb3b3d8691ebe5d3b939/src/main/java/com/catchtable/reservation/repository/ReservationRepository.java)와 [수량 SQL](https://github.com/Techeer-2026-2-E/catchtable-backend/blob/c3f971013ae5cfbb7072bb3b3d8691ebe5d3b939/src/main/java/com/catchtable/store/repository/StoreTableRepository.java)을 함께 적용한다. 사용자5A에 따라 같은 최초 요청의 서버 확인 DONE은 원래 만료 뒤에도 같은 자리를 한 번 확정한다. READY/TIMEOUT·불일치는 확정하지 않으며 미복구 행·웹훅·자동 재확인은 기능142 경계다. [기능10](feature-10-deposit-payment.md)·[기능54](feature-54-hold-countdown.md)를 따르는 검토 계약으로, V20 upgrade·프런트·배포 완료를 뜻하지 않는다.
