@@ -65,4 +65,4 @@ docker compose exec -T postgres psql -U catchtable -d catchtable < scripts/local
 
 ## 취소 시점별 환불금 계산
 
-기능61의 환불 계산기는 예약 당시 금액·정책과 변경 후 방문일을 기준으로 원 미만을 버린 뒤 기환불액을 차감한다. 점주 취소는 원결제액을 총 환불 한도로 사용한다. 현재는 계산 로직만 구현했으며, 환불 예상액 HTTP API와 실제 Toss 취소는 공통 결제 계약 후 연결한다. [기능61 작업 기록](work-log/67-refund-calculation.md)에 판단·검증·연동 조건을 남겼다.
+기능61의 환불 계산기는 예약 당시 금액·정책과 변경 후 방문일을 기준으로 원 미만을 버린 뒤 기환불액을 차감한다. 점주 취소는 원결제액을 총 환불 한도로 사용한다. `GET /api/user/reservations/{reservationId}/refund-preview`는 `X-Member-Id`로 본인 예약을 확인하고 시작 전·미입장·확정 예약의 고객 취소 예상액을 반환한다. 무료 예약은 0원이며, 유료 금액·정책·승인 원장이 불완전하면 `409 REFUND_DATA_NOT_READY`다. 조회는 실제 취소·환불을 실행하지 않는다. 이 API는 기능10 스냅샷과 미병합 기능58 PR #144에 의존하며, 유료 생성·실제 Toss 취소는 아직 연결하지 않았다. [기능61 작업 기록](work-log/67-refund-calculation.md)에 판단·검증·연동 조건을 남겼다.

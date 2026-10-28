@@ -40,3 +40,26 @@
 ## 남은 점
 
 정책 스냅샷과 누적 환불액의 원본, 본인 예약 권한 검증을 포함한 예상액 API, [기능60 환불 실행](https://github.com/Techeer-2026-2-E/catchtable-backend/issues/68)은 공통 결제 계약 후 연결한다. #67 전체는 아직 완료가 아니므로 이번 PR로 자동 종료하지 않는다. Toss·프런트 실제 화면·배포 검증은 수행하지 않았다.
+
+## 2026-10-28 — 환불 예상액 조회 연결
+
+사용자는 본인 예약 중 시작 전·미입장·`CONFIRMED` 예약만 조회하도록 결정했다. 취소·완료·노쇼·선점 및 시작 시각과 같거나 이후인 예약은 `409 RESERVATION_NOT_CANCELLABLE`이다. 이전 Notion API의 취소된 건 조회 제안은 이번 범위에 적용하지 않는다. 기존 계산기의 정책·원 미만 버림·기환불액 차감은 변경하지 않았다.
+
+### 실제 변경
+
+- `GET /api/user/reservations/{reservationId}/refund-preview`, 기존 `@LoginMember`의 `X-Member-Id` 계약을 사용한다. 없는 예약과 다른 고객의 예약은 모두 `404 RESERVATION_NOT_FOUND`다.
+- 예약의 최초 `depositAmountSnapshot`·`refundPolicySnapshot`, 현재 예약 시작 시각, 서버 Clock, 공통 Payment의 승인 원장과 누적 환불액으로 계산한다. 읽기 전용 `REPEATABLE_READ` 트랜잭션으로 예약과 결제를 같은 DB 시점에서 읽는다.
+- 기존 무료 즉시 확정은 `holdExpiresAt == null`이고 결제 행이 없는 경로였다. 이런 기존 무료 예약과 명시적 0원 스냅샷은 금액 0·정책 없음·`paymentId=null`을 반환한다. 선점 출신이거나 결제 행이 있는 원본 누락 건은 무료로 간주하지 않는다.
+- 유료 스냅샷 누락, 승인 원장 없음·여러 건, 진행/결과 불명 결제, 금액·회원 불일치는 `409 REFUND_DATA_NOT_READY`다. 현재 매장 정책으로 채우지 않는다.
+- 응답은 `reservationId`, `paymentId`, `currency`, `paidAmount`, `alreadyRefundedAmount`, `policyType`, `reservationStartAt`, `calculatedAt`, `refundRate`, `refundableAmount`, `nonRefundableAmount`, `policyDescription`이다. `refundableAmount`는 이번 추가 환불 가능액, `nonRefundableAmount`는 미환불 잔액 중 환불 불가액이다. 무료 응답의 비율은 0, 정책은 null이다.
+- 조회는 예약 취소·자리 반환·Payment 상태 변경·외부 Toss 요청·알림을 실행하지 않는다. 실제 취소 시점에는 다시 계산해야 한다.
+
+### 기반과 소유권
+
+공통 결제 [PR #144](https://github.com/Techeer-2026-2-E/catchtable-backend/pull/144)의 `c1534ed65145a4af2b5e3b813a65649f3705d93f`를 읽어 사용했다. 기능58 엔티티·상태·클라이언트·실패/결과 불명 처리를 재구현하지 않았으며, 기존 PaymentRepository에 예약별 조회 메서드만 추가했다. 기능10 스냅샷과 V19 → V20 적용 순서가 선행한다. 기능62 요청 멱등성·기능63 재확인과 기능60 실제 환불은 포함하지 않는다.
+
+### 검증
+
+새 전용 PostgreSQL16 컨테이너 `catchtable-phase2-astra-20261028`, `127.0.0.1:49498`, DB `catchtable_phase2_test`에서 `DB_HOST=127.0.0.1 DB_PORT=49498 DB_NAME=catchtable_phase2_test DB_USERNAME=catchtable DB_PASSWORD=catchtable ./gradlew build --no-daemon`을 실행했다. 47클래스 441개 테스트, 실패·오류·건너뜀0이며 bootJar를 생성했다. 신규 `ReservationRefundPreviewTest` 30개는 HTTP 소유권·헤더, 시작 시각·상태, 한국 자정, 원 미만 버림·누적액, 변경 후 방문일, 기존 무료·신규 무료·원본 누락 및 반복 조회의 무변경을 검증했다. `git diff --check`를 통과했다.
+
+유료 생성 흐름은 기능33 설정과 기능10 호출부 연결 대기이므로 이 검증의 유료 데이터는 테스트 fixture다. 실제 결제 승인으로 만든 예약에서 프런트까지 연동한 결과가 아니다. CI·실제 Toss·프런트 실행·배포는 미확인이다. 기능61 HTTP 조회 자체는 구현했지만 선행 기능 미병합과 유료 원본 생성 연결이 남아 #67을 닫지 않는다.
