@@ -46,7 +46,13 @@ public enum ErrorCode {
     REVIEW_NOT_WRITABLE(HttpStatus.CONFLICT, "이용 완료된 예약에만 리뷰를 작성할 수 있습니다."),
     REVIEW_WRITE_PERIOD_EXPIRED(HttpStatus.CONFLICT, "리뷰 작성 기간이 지났습니다."),
     REVIEW_ALREADY_EXISTS(HttpStatus.CONFLICT, "이미 리뷰를 작성한 예약입니다."),
-    REVIEW_NOT_FOUND(HttpStatus.NOT_FOUND, "리뷰를 찾을 수 없습니다.");
+    REVIEW_NOT_FOUND(HttpStatus.NOT_FOUND, "리뷰를 찾을 수 없습니다."),
+
+    // 결제
+    PAYMENT_NOT_FOUND(HttpStatus.NOT_FOUND, "결제를 찾을 수 없습니다."),
+    INVALID_PAYMENT_STATUS(HttpStatus.CONFLICT, "현재 결제 상태에서 할 수 없는 요청입니다."),
+    REFUND_AMOUNT_EXCEEDED(HttpStatus.CONFLICT, "누적 환불액은 결제 금액을 넘을 수 없습니다."),
+    PAYMENT_MISMATCH(HttpStatus.CONFLICT, "결제 정보가 주문과 일치하지 않습니다.");
 
 
 
