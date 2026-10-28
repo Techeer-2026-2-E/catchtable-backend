@@ -1,6 +1,8 @@
 package com.catchtable.reservation.entity;
 
 import com.catchtable.global.common.BaseTimeEntity;
+import com.catchtable.global.exception.BusinessException;
+import com.catchtable.global.exception.ErrorCode;
 import com.catchtable.member.entity.Member;
 import com.catchtable.store.entity.Store;
 import jakarta.persistence.Column;
@@ -72,6 +74,21 @@ public class Reservation extends BaseTimeEntity {
 
     @Column(name = "hold_expires_at")
     private OffsetDateTime holdExpiresAt;
+
+    @Column(name = "approval_started_at")
+    private OffsetDateTime approvalStartedAt;
+
+    @Column(name = "approval_payment_id")
+    private Long approvalPaymentId;
+
+    @Column(name = "approval_order_id", length = 64)
+    private String approvalOrderId;
+
+    @Column(name = "approval_payment_key", length = 200)
+    private String approvalPaymentKey;
+
+    @Column(name = "approval_quarantined", nullable = false)
+    private boolean approvalQuarantined;
 
     @Column(name = "cancelled_at")
     private OffsetDateTime cancelledAt;
@@ -190,7 +207,8 @@ public class Reservation extends BaseTimeEntity {
 
     public ReservationStatus getStatusAt(OffsetDateTime now) {
         Objects.requireNonNull(now);
-        if (status == ReservationStatus.PENDING_PAYMENT && !holdExpiresAt.isAfter(now)) {
+        if (status == ReservationStatus.PENDING_PAYMENT && approvalPaymentId == null && !approvalQuarantined
+                && !holdExpiresAt.isAfter(now)) {
             return ReservationStatus.EXPIRED;
         }
         return status;
@@ -201,6 +219,9 @@ public class Reservation extends BaseTimeEntity {
     }
 
     public void releaseHold(OffsetDateTime now) {
+        if (approvalPaymentId != null || approvalQuarantined) {
+            throw new IllegalStateException("승인 결과 확인 전에는 선점을 해제할 수 없습니다.");
+        }
         expireHold(now);
         if (status == ReservationStatus.EXPIRED || status == ReservationStatus.CANCELLED) {
             return;
@@ -212,6 +233,54 @@ public class Reservation extends BaseTimeEntity {
         cancelledAt = now;
         cancellationActor = CancellationActor.CUSTOMER;
         cancellationReason = "결제 전 선점 취소";
+    }
+
+    public boolean matchesPaymentApproval(Long paymentId, String orderId, String paymentKey) {
+        return Objects.equals(approvalPaymentId, paymentId)
+                && Objects.equals(approvalOrderId, orderId)
+                && Objects.equals(approvalPaymentKey, paymentKey);
+    }
+
+    public void beginPaymentApproval(Long paymentId, String orderId, String paymentKey, OffsetDateTime now) {
+        if (approvalQuarantined) {
+            throw new BusinessException(ErrorCode.PAYMENT_RECONCILIATION_REQUIRED);
+        }
+        if (approvalPaymentId != null) {
+            if (!matchesPaymentApproval(paymentId, orderId, paymentKey)) {
+                throw new BusinessException(ErrorCode.PAYMENT_MISMATCH);
+            }
+            return;
+        }
+        if (getStatusAt(now) != ReservationStatus.PENDING_PAYMENT) {
+            throw new BusinessException(ErrorCode.INVALID_PAYMENT_STATUS);
+        }
+        approvalStartedAt = now.truncatedTo(ChronoUnit.MICROS);
+        approvalPaymentId = Objects.requireNonNull(paymentId);
+        approvalOrderId = Objects.requireNonNull(orderId);
+        approvalPaymentKey = Objects.requireNonNull(paymentKey);
+    }
+
+    public boolean confirmPayment(Long paymentId, String orderId, String paymentKey, OffsetDateTime now) {
+        if (approvalStartedAt == null || !approvalStartedAt.isBefore(holdExpiresAt)
+                || !matchesPaymentApproval(paymentId, orderId, paymentKey)) {
+            throw new BusinessException(ErrorCode.PAYMENT_RECONCILIATION_REQUIRED);
+        }
+        if (status == ReservationStatus.CONFIRMED) {
+            return false;
+        }
+        if (status != ReservationStatus.PENDING_PAYMENT) {
+            throw new BusinessException(ErrorCode.PAYMENT_RECONCILIATION_REQUIRED);
+        }
+        status = ReservationStatus.CONFIRMED;
+        confirmedAt = now;
+        return true;
+    }
+
+    public void clearPaymentApproval() {
+        approvalStartedAt = null;
+        approvalPaymentId = null;
+        approvalOrderId = null;
+        approvalPaymentKey = null;
     }
 
     public void validateModifiable() {
