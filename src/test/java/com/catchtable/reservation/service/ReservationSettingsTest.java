@@ -4,6 +4,7 @@ import com.catchtable.global.exception.BusinessException;
 import com.catchtable.global.exception.ErrorCode;
 import com.catchtable.global.exception.GlobalExceptionHandler;
 import com.catchtable.global.auth.LoginMemberArgumentResolver;
+import com.catchtable.payment.PaymentTestData;
 import com.catchtable.reservation.controller.ReservationController;
 import com.catchtable.reservation.controller.OwnerReservationController;
 import com.catchtable.reservation.dto.CreateReservationRequest;
@@ -117,6 +118,9 @@ class ReservationSettingsTest {
 
     @AfterEach
     void cleanUp() {
+        jdbc.update("DELETE FROM payment_refund WHERE payment_id IN (SELECT id FROM payment WHERE reservation_id IN (SELECT id FROM reservation WHERE store_id = ?))", storeId);
+        jdbc.update("DELETE FROM payment_status_history WHERE payment_id IN (SELECT id FROM payment WHERE reservation_id IN (SELECT id FROM reservation WHERE store_id = ?))", storeId);
+        jdbc.update("DELETE FROM payment WHERE reservation_id IN (SELECT id FROM reservation WHERE store_id = ?)", storeId);
         jdbc.update("DELETE FROM reservation WHERE store_id = ?", storeId);
         jdbc.update("DELETE FROM business_hour WHERE store_id = ?", storeId);
         jdbc.update("DELETE FROM store_table WHERE store_id = ?", storeId);
@@ -592,6 +596,7 @@ class ReservationSettingsTest {
     @Test
     void changingAnOverlappingTimeExcludesItselfAndReleasesTheOldSlotOnCommit() {
         Long id = reserve();
+        recordDepositSnapshot(id);
         var overlapping = ownerReservations.updateReservation(ownerId, id,
                 new OwnerReservationUpdateRequest(start.plusHours(1), null));
         assertThat(overlapping.tableId()).isEqualTo(tableId);
@@ -603,6 +608,7 @@ class ReservationSettingsTest {
         assertThat(moved.reservationId()).isEqualTo(id);
         assertThat(availability.getAvailableTableCount(storeId, start, 4).availableTableCount()).isEqualTo(1);
         assertThat(availability.getAvailableTableCount(storeId, start.plusHours(4), 4).availableTableCount()).isZero();
+        assertDepositSnapshot(id);
     }
 
     @Test
@@ -718,18 +724,28 @@ class ReservationSettingsTest {
                 UPDATE reservation SET deposit_amount_snapshot = 10001, refund_policy_snapshot = 'STRICT'
                 WHERE id = ?
                 """, id);
+        var data = new PaymentTestData(jdbc);
+        Long paymentId = data.payment(customerId, id, "PARTIAL_REFUNDED", 1000);
+        jdbc.update("UPDATE payment SET amount = 10001 WHERE id = ?", paymentId);
+        data.completedRefund(paymentId, 1000, 1000, "기존 환불");
     }
 
     private void assertDepositSnapshot(Long id) {
         var saved = reservationRepository.findById(id).orElseThrow();
         assertThat(saved.getDepositAmountSnapshot()).isEqualTo(10_001);
         assertThat(saved.getRefundPolicySnapshot().name()).isEqualTo("STRICT");
+        assertThat(jdbc.queryForMap("SELECT amount, refunded_amount, status FROM payment WHERE reservation_id = ?", id))
+                .containsEntry("amount", 10_001L).containsEntry("refunded_amount", 1000L)
+                .containsEntry("status", "PARTIAL_REFUNDED");
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM payment_status_history h JOIN payment p ON p.id = h.payment_id WHERE p.reservation_id = ?", Integer.class, id)).isZero();
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM payment_refund f JOIN payment p ON p.id = f.payment_id WHERE p.reservation_id = ? AND f.status = 'COMPLETED' AND f.total_refunded_amount = 1000", Integer.class, id)).isEqualTo(1);
     }
 
     @ParameterizedTest
     @ValueSource(booleans = {true, false})
     void aPastReservationCannotMoveToAnOccupiedFutureSlot(boolean hold) {
         Long id = reserve();
+        recordDepositSnapshot(id);
         backdateReservation(id);
         var original = reservations.getReservation(customerId, id);
         var destination = new CreateReservationRequest(storeId, start, 4);
@@ -741,6 +757,7 @@ class ReservationSettingsTest {
                 .isInstanceOfSatisfying(ResponseStatusException.class,
                         failure -> assertThat(failure.getStatusCode()).isEqualTo(HttpStatus.CONFLICT));
         assertThat(reservations.getReservation(customerId, id)).isEqualTo(original);
+        assertDepositSnapshot(id);
     }
 
     @Test
@@ -759,6 +776,7 @@ class ReservationSettingsTest {
     @Test
     void aPastReservationKeepsItsPartySizeAndTableWhenNoLargerTableIsAvailable() {
         Long id = reserve();
+        recordDepositSnapshot(id);
         backdateReservation(id);
         var original = reservations.getReservation(customerId, id);
 
@@ -767,6 +785,7 @@ class ReservationSettingsTest {
                 .isInstanceOfSatisfying(ResponseStatusException.class,
                         failure -> assertThat(failure.getStatusCode()).isEqualTo(HttpStatus.CONFLICT));
         assertThat(reservations.getReservation(customerId, id)).isEqualTo(original);
+        assertDepositSnapshot(id);
     }
 
     @ParameterizedTest

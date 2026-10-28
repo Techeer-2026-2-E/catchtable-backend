@@ -50,3 +50,11 @@
 - 신규 전용 PostgreSQL16 컨테이너 `catchtable-phase2-astra-20261028`, `127.0.0.1:49498`, DB `catchtable_snapshot_independent_test`에서 `DB_HOST=127.0.0.1 DB_PORT=49498 DB_NAME=catchtable_snapshot_independent_test DB_USERNAME=catchtable DB_PASSWORD=catchtable ./gradlew test --tests 'com.catchtable.reservation.service.ReservationSettingsTest' --no-daemon`을 실행했다. 42개 모두 통과, 실패·오류·건너뜀0이다. `git diff --check`도 통과했다.
 
 이 변경은 기능10 독립 커밋 `36d473ff4e8ad9c789314628379baf82c389d808`에 의존하는 테스트·기록만 포함한다. 공통 결제 코드나 실제 Toss 승인 흐름을 추가하지 않는다. 유료 예약 생성 호출부는 기능33 설정 계약과 기능10 연결이 남아 있으므로 #66 전체를 완료·종료하지 않는다. 기존 PR #120의 변경을 재구현하지 않았다.
+
+
+## 2026-10-29 후속 — 변경 후 결제·환불 원장 보존 단언
+
+- 최신 `dev@555e0aa`의 공통 기능62·공공데이터 변경을 별도 로컬 검증 브랜치에 merge했다. 기존 공개 PR #147 및 부모 PR #145는 변경하지 않았다.
+- 기존 스냅샷 fixture에 최초10,001원, 누적 환불1,000원, 확정 환불 이력1건을 연결했다. 일정·인원 변경과 반복 요청, 시작 후 미입장 변경, 충돌/배정 실패 뒤 금액·정책·결제 상태·누적 환불액·환불 기록·상태 이력이 그대로인지 검사한다. 실제 승인·환불은 호출하지 않는다.
+- 새 PostgreSQL16 컨테이너 `phase2-sol-max-20261029-pg16`, 전용 DB `phase2_change`, `DB_PORT=54936`에서 `./gradlew test --tests com.catchtable.reservation.service.ReservationSettingsTest`: 42개 통과, 실패·건너뜀0. 전체 로그·명령·XML은 인계 산출물 `change-ledger-targeted/`에 보관했다.
+- 새 fixture는 공통 기능62의 `PaymentTestData.completedRefund`를 사용한다. 공개 부모/base가 최신 dev와 스냅샷을 포함하기 전에는 이 테스트 commit만 옛 부모에 게시하지 않는다. V20 영속 이력·upgrade 및 결제 준비·승인부터 화면까지의 연동은 미확인이다.
