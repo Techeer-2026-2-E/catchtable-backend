@@ -3,7 +3,8 @@
 - 작업일: 2026-10-28
 - 이슈: [#65](https://github.com/Techeer-2026-2-E/catchtable-backend/issues/65)
 - 정본: [기능10](https://app.notion.com/p/3d548d76fa32819386a3e858c26b2c1b), [기능33](https://app.notion.com/p/3d548d76fa3281d48af9ea164f74c563)
-- 기반: `dev@10b434ca2dc979cdfd90b40cd87ee7092e9ce290`와 기능58 `cd3093eb0af884b57fada9bb45d08a780d85d652`를 전용 브랜치에서 통합했다. 공통 Payment·Toss 클라이언트·V19는 이윤서의 변경이며 이 작업의 구현으로 계산하지 않는다.
+- 기반: `dev@10b434ca2dc979cdfd90b40cd87ee7092e9ce290`에서 분리했다. 공통 Payment·Toss 클라이언트·V19 및 그 테스트는 포함하지 않는다.
+- 적용 순서: [기능58 PR #144](https://github.com/Techeer-2026-2-E/catchtable-backend/pull/144)의 V19가 먼저 적용된 후 이 V20을 적용해야 한다. 아직 V19가 없는 새 테스트 DB에서도 검증하지만, V20 적용 뒤 V19를 새로 끼우는 순서로 운영하지 않는다. 공유 V19 번호는 변경하지 않았다.
 
 ## 문제와 변경
 
@@ -22,7 +23,7 @@
 
 ## 검증
 
-새 전용 PostgreSQL16 컨테이너 `catchtable-phase2-astra-20261028`, `127.0.0.1:49498`, DB `catchtable_phase2_test`를 사용했다.
+새 전용 PostgreSQL16 컨테이너 `catchtable-phase2-astra-20261028`, `127.0.0.1:49498`을 사용했다. 기능58과 함께 검증한 통합 기반과 별개로, 독립 브랜치는 새 DB `catchtable_snapshot_independent_test`에서 검증한다.
 
 ```sh
 DB_HOST=127.0.0.1 DB_PORT=49498 DB_NAME=catchtable_phase2_test \
@@ -30,7 +31,9 @@ DB_USERNAME=catchtable DB_PASSWORD=catchtable ./gradlew test \
   --tests 'com.catchtable.reservation.entity.ReservationDepositSnapshotTest' --no-daemon
 ```
 
-11개 테스트가 통과했다. 유료 조건의 DB 저장·재조회·해제 후 보존, 무료 0원, 기존 선점의 미확인 값, 양수 금액·정책 필수, DB 제약을 검증했다. 같은 환경에서 `./gradlew build --no-daemon`도 통과했다(46클래스 408개, 실패·오류·건너뜀 0, bootJar 생성). `git diff --check`와 문서 상대 링크를 확인했다.
+통합 기반에서 신규 11개 테스트와 전체 408개 테스트가 통과했다. 유료 조건의 DB 저장·재조회·해제 후 보존, 무료 0원, 기존 선점의 미확인 값, 양수 금액·정책 필수, DB 제약을 검증했다. 이후 테스트 준비 데이터의 기능58 의존을 제거했다. 독립 브랜치의 전체 빌드 결과는 아래 후속 결과로 구분한다.
+
+독립 브랜치에서 `DB_NAME=catchtable_snapshot_independent_test`와 위와 같은 나머지 연결 변수를 사용해 `./gradlew build --no-daemon`을 실행했다. 기능58 없이 42클래스 343개 테스트가 통과했고 실패·오류·건너뜀은 0이다. 빈 DB에 V1~V18·V20 적용과 bootJar 생성, `git diff --check`를 확인했다. 이는 V20 후 V19를 적용해도 된다는 검증이 아니며 실제 통합 순서는 V19 → V20이다.
 
 ## 남은 점
 
