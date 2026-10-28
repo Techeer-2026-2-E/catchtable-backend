@@ -70,3 +70,11 @@
 같은 키의 금액·사유·처리 당시 결과는 공통 서비스가 보존한다. 결과 불명에 새 키를 만들어 다시 보내지 않는다. Toss 멱등키15일 경과 또는 남은 `REQUESTED`·`UNKNOWN`의 복구는 [기능63 #142](https://github.com/Techeer-2026-2-E/catchtable-backend/issues/142)와 연결해야 하며 이번 보강은 재확인·복구 구현이 아니다.
 
 로컬 소스는 전용 PostgreSQL16의 관련53개 테스트(실패·건너뜀0)로 확인했다. 이 문서 커밋은 코드·링크·Markdown·`git diff --check`만 확인하며 새 CI·실제 Toss·프런트 화면·배포는 미확인이다.
+
+## 2026-10-29 실제 결정 반영 — 실행 보류와 기존 취소 보호
+
+앞선 사용자 답 대기 문구는 당시 기록이다. 실제 답변2A는 결제 환불 경로가 **돈만 환불하고 예약을 유지**하며 예약 취소는 남은 **정책상** 환불액을 처리한 뒤 취소한다는 계약이다. 고객의 임의 전액 환불 허용이 아니다. 점주는 원결제100%에서 기환불액을 차감한다. 3A의 client `Idempotency-Key`는 양수 환불을 실행하는 예약 취소에만 필요한 미래 계약이며 기존 무료 취소 요청은 유지한다.
+
+4B에 따라 최초 유효 요청시각·한도 저장과 처리 중 일정/인원 변경·입장·노쇼·다른 취소 동결이 합의될 때까지 양수 환불 endpoint와 PG 기반 예약 취소는 **구현·공개하지 않는다**. `POST /api/user/payments/{paymentId}/cancel`은 없다. [후속 소스](https://github.com/Techeer-2026-2-E/catchtable-backend/blob/610539b5faa18395df89a379937028033bffe41b/src/main/java/com/catchtable/reservation/service/ReservationRefundService.java)와 [고객 취소](https://github.com/Techeer-2026-2-E/catchtable-backend/blob/610539b5faa18395df89a379937028033bffe41b/src/main/java/com/catchtable/reservation/service/ReservationService.java)는 기존 무료·추가0원·필요 환불 확인 후 취소만 유지한다. 양수가 남으면 `409 REFUND_NOT_COMPLETED`, REQUESTED/UNKNOWN 또는 불신 원장은 `409 REFUND_DATA_NOT_READY`이며 예약·자리·SSE를 보존한다. 고객/점주 route·기존 식별/사유 계약은 위 절과 같다.
+
+5A의 [기능10 승인 확정](feature-10-deposit-payment.md)은 환불 실행 허용을 뜻하지 않는다. 공통 서비스 재사용·기능142 복구도 이 경계를 넘지 않는다. 기능 [Draft PR #150](https://github.com/Techeer-2026-2-E/catchtable-backend/pull/150)은 미머지 검토용이며 V20 공유 이력·populated V22 upgrade 차단은 그대로다. 기능60 전체 완료·실제 환불·화면·배포로 표시하지 않는다. 이 문서 변경 자체는 고정 소스·링크·Markdown·diff만 검사한다.
