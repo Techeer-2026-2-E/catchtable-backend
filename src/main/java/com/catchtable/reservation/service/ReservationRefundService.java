@@ -37,7 +37,7 @@ public class ReservationRefundService {
     public void requireRefundCompleted(Reservation reservation, CancellationActor actor, OffsetDateTime now) {
         var payments = paymentRepository.findAllByReservationIdForUpdate(reservation.getId());
         var refund = calculate(reservation, payments, actor, now);
-        // shortcut: 실제 환불 요청·결과 불명 확인은 기능62·63 계약 후 연결한다.
+        // shortcut: 양수 환불 실행은 최초 요청 고정·진행 중 변경 동결 계약(사용자4B) 후 연결한다.
         if (refund.refundableAmount() > 0) {
             throw new BusinessException(ErrorCode.REFUND_NOT_COMPLETED);
         }

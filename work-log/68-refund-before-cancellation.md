@@ -41,3 +41,17 @@
 - 새 PostgreSQL16 컨테이너 `phase2-sol-max-20261029-pg16`, 전용 DB `phase2_refund`, `DB_PORT=54936`에서 `./gradlew test --tests com.catchtable.reservation.service.ReservationCancellationRefundTest --tests com.catchtable.reservation.service.ReservationRefundPreviewTest`: 53개 통과, 실패·건너뜀0. 전체 로그·명령·XML은 인계 산출물 `refund-inflight-targeted/`에 보관했다.
 - 양수 환불 실행은 여전히 `REFUND_NOT_COMPLETED`로 차단한다. 결제 환불 API와 예약 취소 결합 방식·멱등키·최초 요청시각 및 변경 동결은 사용자 결정 대기라 새 HTTP endpoint를 제공하지 않았다. 공통 서비스 자체의 완료를 기능60 전체 완료로 쓰지 않는다.
 - V20 이력·upgrade, 실제 Toss·프런트 연동·배포·새 CI 실행은 미확인이다. 기능63을 대신 구현하지 않았다.
+
+## 2026-10-29 실제 결정 후속 — 양수 실행 보류 유지
+
+사용자 실제 답변2A는 결제 환불 endpoint가 돈만 환불하고 예약을 유지하며, 예약 취소는 남은 **정책상** 환불액을 먼저 처리한 뒤 취소한다는 계약이다. 고객에게 임의로 최초 전액을 돌려주는 계약이 아니다. 3A는 양수 환불을 실행하는 예약 취소에만 client Idempotency-Key가 필요한 미래 계약이며 기존 무료 취소 요청은 유지한다. 사용자4B는 최초 요청시각/한도 저장·진행 중 변경 동결 합의 전 실행을 보류한다는 결정이다. 따라서 양수 환불 endpoint·PG 기반 예약 취소·새 환불 fence를 구현하지 않고 `REFUND_NOT_COMPLETED`와 REQUESTED/UNKNOWN의 `REFUND_DATA_NOT_READY` 보호를 유지했다.
+
+기능10의 정상 confirm/영속 승인 보호와 V24, dev `7d320491a6ed9107ac3149ed8cfaa1bb1dad45bb`, CI 선행 [#164](https://github.com/Techeer-2026-2-E/catchtable-backend/pull/164)를 preview 부모에서 정상 merge했다. 기존 공개 #150 head `a000485fee9c3970fb3fb55b57ddd07b26c98689`와 독립 후속 `665c120`의 보호를 보존한다. 5A의 late DONE 확정은 승인 경계이며 환불 실행 허용으로 확대하지 않는다.
+
+새 disposable PostgreSQL16 `phase2-approved-20261029-pg16`, `127.0.0.1:54937/phase2_refund_approved`에서 아래87개가 실패/오류/건너뜀0으로 통과했다. 로그·XML은 로컬 `approved-followup/refund-targeted`에 보존한다.
+
+```sh
+DB_HOST=127.0.0.1 DB_PORT=54937 DB_NAME=phase2_refund_approved DB_USERNAME=phase2_test DB_PASSWORD=phase2_test ./gradlew test --tests 'com.catchtable.reservation.service.ReservationCancellationRefundTest' --tests 'com.catchtable.reservation.service.ReservationRefundPreviewTest' --tests 'com.catchtable.reservation.service.ReservationPaymentServiceTest' --no-daemon
+```
+
+고객/점주 취소·예상액·정상 승인 경계를 함께 확인했다. V20 공유 이력·upgrade 차단은 [기능10 기록](65-deposit-snapshot.md)을 따른다. 실제 source CI·Toss·프런트·배포는 이 검사에 포함하지 않는다. 합본 전체 빌드는 별도 결과다.
