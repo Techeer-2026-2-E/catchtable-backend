@@ -4,6 +4,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
+import java.util.List;
 import java.util.UUID;
 
 // 결제 테스트 데이터 (JdbcTemplate INSERT ... RETURNING id)
@@ -66,5 +67,37 @@ public record PaymentTestData(JdbcTemplate jdbc) {
 
     public String orderId(Long paymentId) {
         return jdbc.queryForObject("SELECT order_id FROM payment WHERE id = ?", String.class, paymentId);
+    }
+
+    public String paymentKey(Long paymentId) {
+        return jdbc.queryForObject("SELECT payment_key FROM payment WHERE id = ?", String.class, paymentId);
+    }
+
+    // 트랜잭션 없는 테스트 정리 (매장 단위 결제·예약 + 회원)
+    public void deleteStore(Long storeId, List<Long> memberIds) {
+        String payments = """
+                SELECT p.id FROM payment p JOIN reservation r ON r.id = p.reservation_id WHERE r.store_id = ?
+                """;
+        jdbc.update("DELETE FROM payment_refund WHERE payment_id IN (" + payments + ")", storeId);
+        jdbc.update("DELETE FROM payment_status_history WHERE payment_id IN (" + payments + ")", storeId);
+        jdbc.update("DELETE FROM payment WHERE reservation_id IN (SELECT id FROM reservation WHERE store_id = ?)",
+                storeId);
+        jdbc.update("DELETE FROM reservation WHERE store_id = ?", storeId);
+        jdbc.update("DELETE FROM store_table WHERE store_id = ?", storeId);
+        jdbc.update("DELETE FROM store WHERE id = ?", storeId);
+        memberIds.forEach(memberId -> jdbc.update("DELETE FROM member WHERE id = ?", memberId));
+    }
+
+    // 확정된 환불 기록
+    public Long completedRefund(Long paymentId, long refundAmount, long totalRefundedAmount, String reason) {
+        return jdbc.queryForObject("""
+                INSERT INTO payment_refund (
+                    payment_id, idempotency_key, cancel_reason, refund_amount, status,
+                    total_refunded_amount, requested_at, completed_at
+                )
+                VALUES (?, ?, ?, ?, 'COMPLETED', ?, ?, ?)
+                RETURNING id
+                """, Long.class, paymentId, "refund-" + UUID.randomUUID(), reason, refundAmount,
+                totalRefundedAmount, START.minusDays(1), START.minusDays(1));
     }
 }
