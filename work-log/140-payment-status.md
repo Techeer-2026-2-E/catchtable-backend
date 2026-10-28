@@ -44,6 +44,7 @@
 
 ## 남은 점과 후속 작업
 
+- `src/main`에서 `Payment.ready`·`TossPaymentsClient`·`PaymentService.applyTossPayment`를 호출하는 곳이 없다. 실제 앱에서는 결제 데이터가 생기지 않고 조회 API는 빈 목록을 돌려준다. 결제 흐름 연결은 #65(준비·승인)·#68(환불)부터 한다.
 - 예약 상태 연결(#65·#68), 선점 자동 만료가 `READY`·`TIMEOUT` 결제를 보도록 하는 연결(기능63), 멱등키 정책(기능62)이 남았다. 내용은 계약 문서의 "남은 연결"에 있다.
 - 프런트 `PaymentStatus` 타입 갱신이 필요하다.
 - Notion API 명세에 상태값·응답 필드를 반영해야 한다(외부 문서는 수정하지 않았다).
