@@ -28,6 +28,15 @@ public interface PaymentRepository extends JpaRepository<Payment, Long> {
 
     Optional<Payment> findByOrderIdAndMemberId(String orderId, Long memberId);
 
+    @Query("select p.reservation.id from Payment p where p.orderId = :orderId and p.member.id = :memberId")
+    Optional<Long> findReservationIdByOrderIdAndMemberId(@Param("orderId") String orderId,
+                                                       @Param("memberId") Long memberId);
+
+    @Query(value = "select * from payment where order_id = :orderId and member_id = :memberId for update",
+            nativeQuery = true)
+    Optional<Payment> findByOrderIdAndMemberIdForUpdate(@Param("orderId") String orderId,
+                                                       @Param("memberId") Long memberId);
+
     // 다른 결제에 쓰인 paymentKey
     boolean existsByPaymentKeyAndIdNot(String paymentKey, Long id);
 }

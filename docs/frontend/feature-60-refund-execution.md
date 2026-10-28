@@ -56,3 +56,17 @@
 `POST /api/user/payments/{paymentId}/cancel`은 계속 미구현이다. [기능62 #141](https://github.com/Techeer-2026-2-E/catchtable-backend/issues/141)의 요청 멱등성 및 [기능63 #142](https://github.com/Techeer-2026-2-E/catchtable-backend/issues/142)의 결과 재확인 계약 후 양수 환불을 연결한다. 현재 TIMEOUT은 승인 전 결과 불명을 나타내며 승인 후 환불 진행/결과 불명을 별도로 구별할 계약이 없다. 실제 외부 환불 경로를 열기 전 이 표식을 취소 보호 검사에도 연결해야 한다.
 
 이 문서는 기능60 전체 완료·실제 PG 환불·화면 연동·배포 확인을 뜻하지 않는다. 구현 브랜치는 전용 PostgreSQL16에서 전체462개 테스트와 신규 경계21개가 통과했지만, 이 문서 커밋 자체는 링크·소스·Markdown·`git diff --check`만 검사했다.
+
+## 2026-10-29 후속 — 기능62 환불 표식과 취소 보호
+
+앞선 날짜의 기록은 보존한다. 확인 기준 dev `555e0aabd243b52e5007e55460d2aae398952f27`에는 [공통 기능62 환불 서비스](https://github.com/Techeer-2026-2-E/catchtable-backend/blob/555e0aabd243b52e5007e55460d2aae398952f27/src/main/java/com/catchtable/payment/service/PaymentRefundService.java)와 [영속 환불 기록](https://github.com/Techeer-2026-2-E/catchtable-backend/blob/555e0aabd243b52e5007e55460d2aae398952f27/src/main/java/com/catchtable/payment/entity/PaymentRefund.java)이 있다. 따라서 과거의 “환불 진행·결과 불명을 구별할 계약이 없다”는 현재 공통 모델 설명으로 사용하지 않는다. 기능60 [Draft PR #150](https://github.com/Techeer-2026-2-E/catchtable-backend/pull/150)의 공개 head `a000485`에는 새 기록을 보는 보강이 아직 없다.
+
+로컬 후속 커밋 `665c120`의 `ReservationRefundService.calculate`는 `REQUESTED`·`UNKNOWN` 환불이 있으면 기존 `409 REFUND_DATA_NOT_READY`로 예상액과 고객·점주 취소를 막는다. 정책상 추가액이0이어도 확정 잔액처럼 다루지 않고 예약·자리·취소 SSE를 보존한다. 이 커밋은 공개 PR·dev 반영 전 후보이며, 기존 공개 head의 검증 결과와 구분한다.
+
+공통 호출은 [기능58 문서의 기능62 절](feature-58-payment-status.md#중복-요청-방지-기능62)을 따른다. `PaymentRefundService.refund`는 바깥 트랜잭션 없이 호출하고 마지막 인자에는 **정책상 누적 환불 한도**를 넘긴다. 추가 환불액을 그 자리에 넘기면 기환불액이 두 번 차감된다. 점주 취소는 매장 소유권을 확인한 뒤 원결제 고객 식별자로 호출해야 한다. 클라이언트가 정책·actor·회원 ID를 본문으로 정하지 않는다.
+
+기존 공개 및 이번 로컬 취소 경로는 양수 환불이 남으면 여전히 `409 REFUND_NOT_COMPLETED`다. `POST /api/user/payments/{paymentId}/cancel` HTTP 실행 endpoint는 제공하지 않는다. 결제 환불과 예약 취소의 결합 방식, 기존 취소의 키 계약, 최초 요청시각 고정 및 처리 중 변경 동결은 사용자 답 대기다. 이미 결정한 순서는 외부 환불 성공 확인 또는 추가0원 뒤 취소·자리 반환이며, 실패·결과 불명에는 기존 예약·자리를 유지하는 것이다.
+
+같은 키의 금액·사유·처리 당시 결과는 공통 서비스가 보존한다. 결과 불명에 새 키를 만들어 다시 보내지 않는다. Toss 멱등키15일 경과 또는 남은 `REQUESTED`·`UNKNOWN`의 복구는 [기능63 #142](https://github.com/Techeer-2026-2-E/catchtable-backend/issues/142)와 연결해야 하며 이번 보강은 재확인·복구 구현이 아니다.
+
+로컬 소스는 전용 PostgreSQL16의 관련53개 테스트(실패·건너뜀0)로 확인했다. 이 문서 커밋은 코드·링크·Markdown·`git diff --check`만 확인하며 새 CI·실제 Toss·프런트 화면·배포는 미확인이다.
