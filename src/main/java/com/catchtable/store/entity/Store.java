@@ -31,8 +31,14 @@ public class Store extends BaseTimeEntity {
     private Long id;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "owner_id", nullable = false)
+    @JoinColumn(name = "owner_id")          // 미입점 매장(공공데이터)은 점주가 없다
     private Member owner;
+
+    @Column(name = "external_id", length = 30, unique = true)
+    private String externalId;
+
+    private Double latitude;
+    private Double longitude;
 
     @Column(nullable = false, length = 200)
     private String name;
