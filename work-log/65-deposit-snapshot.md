@@ -78,3 +78,5 @@ DB_USERNAME=phase2_test DB_PASSWORD=phase2_test ./gradlew test \
 ### 남은 연결
 
 기능33의 예약금 설정 원본·점주 계약이 없어 prepare API와 유료 생성 연결을 만들지 않았다. 올바른 준비 원장이 저장된 경우만 검증했으며 유료 생성 전체 E2E는 미완료다. 2A는 결제 환불과 예약 취소를 분리하며 고객 취소는 남은 **정책상** 환불액이 기준이고 임의 전액 환불을 허용하지 않는다. 3A의 양수 취소 환불에만 필요한 client Idempotency-Key는 미래 계약이다. 4B에 따라 최초 요청 시각/한도 저장·진행 중 변경 동결 계약 전 양수 환불 endpoint와 PG 기반 예약 취소는 보류하며 기존 양수 환불 차단을 유지한다. 기능142 복구·실제 Toss·프런트/JWT·배포는 이번 구현·검증 범위에 없다.
+
+합본 첫 실행에서는539개 중 기존 WaitingQueueNotifierTest의7개가 새 컨텍스트 시작 시 PostgreSQL 기본100연결 한도(`too many clients already`)로 실패했다. 새 Clock/Toss mock 승인 테스트의 독립 Spring 컨텍스트를 `DirtiesContext(AFTER_CLASS)`로 테스트 종료 시 반환하도록 보완했다. 운영 설정·DB 한도·기존 테스트는 바꾸지 않으며 테스트를 제외하지 않는다. 실패 전체 로그/XML은 `approved-followup/aggregate-first-attempt`에 보존하고 최종 clean build 결과를 별도로 기록한다.
