@@ -53,6 +53,13 @@ public class Reservation extends BaseTimeEntity {
     @Column(name = "party_size", nullable = false)
     private int partySize;
 
+    @Column(name = "deposit_amount_snapshot", updatable = false)
+    private Long depositAmountSnapshot;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "refund_policy_snapshot", length = 20, updatable = false)
+    private RefundPolicy refundPolicySnapshot;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
     private ReservationStatus status;
@@ -143,6 +150,7 @@ public class Reservation extends BaseTimeEntity {
         );
         reservation.status = ReservationStatus.CONFIRMED;
         reservation.confirmedAt = confirmedAt;
+        reservation.depositAmountSnapshot = 0L;
         return reservation;
     }
 
@@ -161,6 +169,22 @@ public class Reservation extends BaseTimeEntity {
                 member, store, tableId, reservationStartAt, reservationEndAt, partySize, requestedAt);
         reservation.status = ReservationStatus.PENDING_PAYMENT;
         reservation.holdExpiresAt = requestedAt.plusMinutes(5);
+        return reservation;
+    }
+
+    /** 매장 정책 원본을 확인한 생성 호출부에서만 최초 예약금 조건을 전달한다. */
+    public static Reservation held(
+            Member member, Store store, Long tableId,
+            OffsetDateTime reservationStartAt, OffsetDateTime reservationEndAt,
+            int partySize, OffsetDateTime requestedAt, long depositAmount, RefundPolicy refundPolicy
+    ) {
+        if (depositAmount <= 0 || refundPolicy == null) {
+            throw new IllegalArgumentException("예약금과 환불 정책이 올바르지 않습니다.");
+        }
+        Reservation reservation = held(member, store, tableId, reservationStartAt, reservationEndAt,
+                partySize, requestedAt);
+        reservation.depositAmountSnapshot = depositAmount;
+        reservation.refundPolicySnapshot = refundPolicy;
         return reservation;
     }
 
