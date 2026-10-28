@@ -6,11 +6,15 @@ import com.catchtable.member.entity.Member;
 import com.catchtable.member.entity.UserType;
 import com.catchtable.member.repository.MemberRepository;
 import com.catchtable.payment.client.TossPaymentResponse;
+import com.catchtable.payment.dto.PaymentDetailResponse;
+import com.catchtable.payment.dto.PaymentListCondition;
+import com.catchtable.payment.dto.PaymentListResponse;
 import com.catchtable.payment.dto.PaymentResponse;
 import com.catchtable.payment.entity.Payment;
 import com.catchtable.payment.entity.PaymentStatus;
 import com.catchtable.payment.entity.PaymentStatusHistory;
 import com.catchtable.payment.entity.PaymentStatusSource;
+import com.catchtable.payment.repository.PaymentRefundRepository;
 import com.catchtable.payment.repository.PaymentRepository;
 import com.catchtable.payment.repository.PaymentStatusHistoryRepository;
 import lombok.RequiredArgsConstructor;
@@ -30,21 +34,21 @@ public class PaymentService {
 
     private final PaymentRepository paymentRepository;
     private final PaymentStatusHistoryRepository historyRepository;
+    private final PaymentRefundRepository refundRepository;
     private final MemberRepository memberRepository;
     private final Clock clock;
 
-    public List<PaymentResponse> getPayments(Long memberId) {
+    public PaymentListResponse getPayments(Long memberId, PaymentListCondition condition) {
         requireCustomer(memberId);
-        return paymentRepository.findAllByMemberIdOrderByIdDesc(memberId).stream()
-                .map(PaymentResponse::from)
-                .toList();
+        return PaymentListResponse.of(paymentRepository.findSliceByMemberId(memberId, condition.toPageable())
+                .map(PaymentResponse::from));
     }
 
-    public PaymentResponse getPayment(Long memberId, Long paymentId) {
+    public PaymentDetailResponse getPayment(Long memberId, Long paymentId) {
         requireCustomer(memberId);
-        return paymentRepository.findByIdAndMemberId(paymentId, memberId)
-                .map(PaymentResponse::from)
+        Payment payment = paymentRepository.findByIdAndMemberId(paymentId, memberId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.PAYMENT_NOT_FOUND));
+        return PaymentDetailResponse.of(payment, refundRepository.findAllByPaymentIdOrderByIdAsc(paymentId));
     }
 
     // Toss 승인·조회·취소 결과 반영 (#65 confirm, #63 재확인, #68 취소용)
