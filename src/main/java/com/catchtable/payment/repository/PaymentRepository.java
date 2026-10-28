@@ -19,4 +19,8 @@ public interface PaymentRepository extends JpaRepository<Payment, Long> {
     Optional<Payment> findByIdAndMemberId(Long id, Long memberId);
 
     List<Payment> findAllByReservation_Id(Long reservationId);
+
+    @Query(value = "select * from payment where reservation_id = :reservationId order by id for update",
+            nativeQuery = true)
+    List<Payment> findAllByReservationIdForUpdate(@Param("reservationId") Long reservationId);
 }
