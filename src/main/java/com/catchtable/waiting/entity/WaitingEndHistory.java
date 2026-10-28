@@ -43,7 +43,8 @@ public class WaitingEndHistory {
     @Column(nullable = false, length = 300)
     private String detail;
 
-    @Column(name = "actor_id", nullable = false)
+    // 시스템 처리 시 null
+    @Column(name = "actor_id")
     private Long actorId;
 
     @Column(name = "created_at", nullable = false, updatable = false)
