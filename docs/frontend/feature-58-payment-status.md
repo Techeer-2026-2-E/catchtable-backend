@@ -60,7 +60,11 @@
 | `refund(totalRefundedAmount, reason, source, now)` | `DONE`·`PARTIAL_REFUNDED` → `PARTIAL_REFUNDED`·`REFUNDED` | 같은 누적 환불액. 이번 환불액이 아닌 **누적 총액**을 넘긴다 |
 
 - 변경 출처 `PaymentStatusSource`: `USER`, `TOSS_CONFIRM`, `TOSS_QUERY`, `TOSS_CANCEL`, `SYSTEM`.
+- 상태 변경은 엔티티 메서드를 직접 부르지 말고 `PaymentService`의 잠금 메서드(`applyTossPayment`, `markFailed`, `markTimeout`)로 한다. 모두 결제 행을 잠근 뒤 현재 상태를 확인하고 바꾸며, 같은 요청 반복이면 이력 없이 성공한다.
 - `PaymentService.applyTossPayment(paymentId, tossResponse, source)`: 결제 행을 잠그고, 주문번호·금액이 다르면 `409 PAYMENT_MISMATCH`로 거부한다. 그 뒤 Toss 상태에 맞는 엔티티 메서드를 호출해 이력을 저장한다. `TIMEOUT` 중 Toss에서 환불까지 진행된 결과면 승인·환불 이력을 차례로 남긴다. confirm 응답, 재확인 조회, 취소 응답에 모두 사용한다.
+- `PaymentService.markFailed(paymentId, code, message, source)`: Toss 승인 4xx(`TossPaymentsException`)일 때 `FAILED`로 바꾼다. 승인 이후 상태면 `409 INVALID_PAYMENT_STATUS`.
+- `PaymentService.markTimeout(paymentId, reason, source)`: 결과 불명(`TossPaymentsUnknownResultException`)일 때 `TIMEOUT`으로 바꾼다. 이후 조회 결과를 `applyTossPayment`로 반영한다.
+- prepare 재요청 시 같은 선점에 `READY` 결제가 있으면 새로 만들지 않고 기존 결제(같은 `orderId`)를 반환한다. 예약당 진행 중 결제 1건 인덱스(`uk_payment_active_reservation`) 때문에 새 `READY`를 만들면 DB 유니크 위반이 된다.
 - 리다이렉트의 `paymentKey`·`orderId`·`amount`만으로 `approve`를 호출하지 않는다. Toss 승인 응답 또는 조회 결과를 `applyTossPayment`에 넘긴다.
 
 Toss 클라이언트 (`TossPaymentsClient`, Toss v1, Basic 인증 `시크릿키:`):
@@ -82,6 +86,7 @@ Toss 클라이언트 (`TossPaymentsClient`, Toss v1, Basic 인증 `시크릿키:
 
 - 예약 상태와 결제 상태를 맞추는 일(`DONE` ↔ 예약 `CONFIRMED`, 환불 ↔ 예약 취소)은 #65·#68에서 같은 트랜잭션으로 연결한다. 이번 변경은 결제 측 규칙(예약당 진행 중 결제 1건, 승인·환불 금액 일관성)만 보장한다.
 - 선점 자동 만료(`expireHolds`)는 아직 결제 상태를 보지 않는다. `READY`·`TIMEOUT` 결제가 있는 선점을 만료·반환하지 않도록 기능63과 함께 연결해야 한다.
+- 이미 다른 결제에 쓰인 `paymentKey`의 재사용 거부는 기능62에서 처리한다. 지금은 DB 유니크 제약만 있다.
 - 예약금·환불 정책 스냅샷 컬럼은 아직 없다. 결제 금액은 `Payment.ready` 인자로 받는다.
 
 ## 문서 검증
