@@ -38,3 +38,43 @@ DB_USERNAME=catchtable DB_PASSWORD=catchtable ./gradlew test \
 ## 남은 점
 
 기능33 설정 원본과 생성 연결, prepare/confirm, 승인/만료 경합, 기능62 요청 멱등성 및 기능63 재확인은 남아 있다. 기능37의 실제 예약 변경 경로 보존과 기능61 HTTP 조회는 각각 후속 작업에서 검증한다. 실제 Toss 호출·프런트 화면·CI·배포는 이 로컬 검증에 포함하지 않는다. #65는 열린 상태로 유지한다.
+
+## 2026-10-29 사용자 결정 후속 — 승인 시작 보호와 정상 확정
+
+기준은 정상 merge한 `dev@7d320491a6ed9107ac3149ed8cfaa1bb1dad45bb`이며 기존 공개 #145 head `8cb8e971ae31776b5246a15a24177fad39230448`의 이력을 보존한다. 앞선 미구현·미결정 기록은 당시 상태다. 사용자 실제 답변 `1C 2A 3A 4B 5A` 중 5A에 따라 유효한 최초5분 안에 시작을 저장한 승인은 원래 만료시각 뒤 서버에서 확인한 `DONE`도 **같은 테이블·같은 시간**에 한 번 확정한다. 실패·READY·TIMEOUT은 확정하지 않는다.
+
+### 변경과 트랜잭션
+
+- `POST /api/user/payments/confirm`, `X-Member-Id`, JSON `{orderId,paymentKey,amount}`를 제공한다. 반환은 기존 `PaymentResponse`이며 `DONE` 성공200, 확정 거절은 기존 공통 계약의 `FAILED`200이다. 입력400·미식별401·남의 주문404·불일치/진행/결과 불명409를 구분한다.
+- `ReservationPaymentService`가 예약→결제 잠금 안에서 소유권·주문·금액·양수 최초 스냅샷·원래 기한을 검사하고 시작 시각/paymentId/orderId/paymentKey를 저장·커밋한다. 이 최초 연결은 같은 키 재요청으로 바뀌지 않으며 다른 결제의 진행 키도 유니크 제약으로 차단한다.
+- 바깥 트랜잭션은 거부한다. 공통 `PaymentApprovalService.approve`를 **트랜잭션·행 잠금 없이** 호출하고 별도 짧은 트랜잭션에서 현재 연결·원장 `DONE`을 다시 검사한다. 예약 확정·시각은 한 번만 바꾸며 기존 `AFTER_COMMIT` 리스너로 `RESERVATION_CONFIRMED`를 전송한다. 예약 확정 롤백은 이미 커밋된 결제 결과를 지우지 않는다.
+- 만료 배치·엔티티 유효 상태·가용 수량 SQL·활성 예약/테이블 설정 충돌 조회·명시적 해제와 기존 배정 SQL/GiST가 동일한 진행 보호를 따른다. 진행/불명에는 최초 expiresAt을 연장하지 않고 remainingSeconds=0이어도 raw `PENDING_PAYMENT`와 자리를 보존한다. 확인된 FAILED/CANCELED만 시작 보호를 해제한 뒤 기존 `releaseHold`로 즉시 반환한다. 원래 기한 이후의 확인된 실패는 EXPIRED가 된다. SYSTEM 취소·환불은 만들지 않았다.
+- 같은 최초 키 재요청만 공통 멱등 승인을 사용한다. [Toss 공식 멱등키 계약](https://docs.tosspayments.com/reference/using-api/authorization)과 기존 [기능141 기록](141-payment-idempotency.md)에 맞춰 최초 시작부터15일 이상인 READY/TIMEOUT에는 외부 재승인을 보내지 않고409로 보존한다. 이미 서버 원장에 같은 키 DONE이 있으면 새 외부 승인 없이 5A 확정이 가능하다. 새 조회·웹훅·스케줄 복구는 만들지 않았다.
+
+### 스키마와 적용 차단
+
+`V24__protect_reservation_payment_approval.sql`을 추가했다. 최신 dev는 V22이고 V23은 V20 후속 적용 전략 자리로 비워 두었다. 기존 V20 파일의 SHA-256 `5a2d0f56b27320836841e258607edc86c239218cbc8eae6a6db294880eb978f2`를 유지하며 rename·repair·outOfOrder·ignore는 사용하지 않는다.
+
+과거 **raw PENDING_PAYMENT** + TIMEOUT/DONE/PARTIAL_REFUNDED/REFUNDED 원장은 `approval_quarantined`로만 격리한다. 기존 행의 시작 시각·요청 키를 추정하지 않고 원장·예약 상태·시각·슬롯을 그대로 둔다. 준비만 된 READY는 원래5분을 유지하며 EXPIRED/CANCELLED는 되살리지 않는다. 격리 행은 모든 자리 보호 경로와 confirm409를 적용하고 기능142 확인 대상으로 남긴다.
+
+공유·영속 DB의 V20 적용 여부가 여전히 미확인이므로 **V22(이미 적용, V20 미적용) → 이 후보 upgrade는 차단 상태**다. 빈 DB 통과와 V20 포함 기존 스키마에서 V24 적용 검증으로 이 차단이 해결되었다고 하지 않는다. 기능 PR은 Draft·미머지 검토용이다. CI base 허용 목록의 공통 선행 변경은 별도 [기술 PR #164](https://github.com/Techeer-2026-2-E/catchtable-backend/pull/164)이며 기능 변경과 구분한다.
+
+### 이번 검증
+
+기존 DB/컨테이너는 시작하거나 변경하지 않았다. 새 disposable PostgreSQL16 `phase2-approved-20261029-pg16`, `127.0.0.1:54937`, `phase2_snapshot`에서 다음을 실행했다.
+
+```sh
+DB_HOST=127.0.0.1 DB_PORT=54937 DB_NAME=phase2_snapshot \
+DB_USERNAME=phase2_test DB_PASSWORD=phase2_test ./gradlew test \
+  --tests 'com.catchtable.reservation.ReservationApprovalMigrationTest' \
+  --tests 'com.catchtable.reservation.service.ReservationPaymentServiceTest' \
+  --tests 'com.catchtable.reservation.entity.ReservationDepositSnapshotTest' --no-daemon
+```
+
+44개(승인32·스냅샷11·마이그레이션1), 실패/오류/건너뜀0이다. HTTP 성공·실패·인증/소유권·입력/금액 검증, 동일/경쟁 키, 동시 확정 1회·원장 1회·알림 1회, PG 중 행 잠금 없음, 최초 기한 뒤 같은 자리 확정, READY/TIMEOUT·예외 시 모든 자리 보호, 확정 롤백의 결제 원장·알림 보존, 설정/생성/변경 충돌과15일 경계를 검증했다. V24의10개 기존 행과 결제/상태이력/환불 JSON 전후 비교로 격리 대상4개만 표식이 생기고 기존 데이터·GiST 제약이 보존됨을 확인했다.
+
+전체 로그·명령·JUnit XML은 로컬 검토 자료 `approved-followup/approval-migration-targeted`에 보관한다. 확장 테스트의 최초 컴파일 실패(AssertJ generic 추론)는 수정했고 실패 로그도 `approval-compile-attempt`에 남겼다. 합본 전체 빌드·각 최종 head의 실제 CI는 별도 후속 결과로 구분한다.
+
+### 남은 연결
+
+기능33의 예약금 설정 원본·점주 계약이 없어 prepare API와 유료 생성 연결을 만들지 않았다. 올바른 준비 원장이 저장된 경우만 검증했으며 유료 생성 전체 E2E는 미완료다. 2A는 결제 환불과 예약 취소를 분리하며 고객 취소는 남은 **정책상** 환불액이 기준이고 임의 전액 환불을 허용하지 않는다. 3A의 양수 취소 환불에만 필요한 client Idempotency-Key는 미래 계약이다. 4B에 따라 최초 요청 시각/한도 저장·진행 중 변경 동결 계약 전 양수 환불 endpoint와 PG 기반 예약 취소는 보류하며 기존 양수 환불 차단을 유지한다. 기능142 복구·실제 Toss·프런트/JWT·배포는 이번 구현·검증 범위에 없다.
