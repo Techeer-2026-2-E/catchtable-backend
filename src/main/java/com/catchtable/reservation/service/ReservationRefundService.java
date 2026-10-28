@@ -4,7 +4,9 @@ import com.catchtable.global.exception.BusinessException;
 import com.catchtable.global.exception.ErrorCode;
 import com.catchtable.payment.entity.Payment;
 import com.catchtable.payment.entity.PaymentStatus;
+import com.catchtable.payment.entity.PaymentRefundStatus;
 import com.catchtable.payment.repository.PaymentRepository;
+import com.catchtable.payment.repository.PaymentRefundRepository;
 import com.catchtable.reservation.dto.RefundPreviewResponse;
 import com.catchtable.reservation.entity.CancellationActor;
 import com.catchtable.reservation.entity.Reservation;
@@ -15,6 +17,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.OffsetDateTime;
 import java.util.List;
+import java.util.EnumSet;
 
 @Service
 @RequiredArgsConstructor
@@ -22,6 +25,7 @@ import java.util.List;
 public class ReservationRefundService {
 
     private final PaymentRepository paymentRepository;
+    private final PaymentRefundRepository paymentRefundRepository;
     private final ReservationRefundCalculator refundCalculator;
 
     public RefundPreviewResponse preview(Reservation reservation, OffsetDateTime now) {
@@ -41,6 +45,10 @@ public class ReservationRefundService {
 
     private RefundPreviewResponse calculate(Reservation reservation, List<Payment> payments,
                                             CancellationActor actor, OffsetDateTime now) {
+        if (payments.stream().anyMatch(payment -> paymentRefundRepository.existsByPaymentIdAndStatusIn(
+                payment.getId(), EnumSet.of(PaymentRefundStatus.REQUESTED, PaymentRefundStatus.UNKNOWN)))) {
+            throw new BusinessException(ErrorCode.REFUND_DATA_NOT_READY);
+        }
         Long reservationId = reservation.getId();
         Long amount = reservation.getDepositAmountSnapshot();
         var policy = reservation.getRefundPolicySnapshot();

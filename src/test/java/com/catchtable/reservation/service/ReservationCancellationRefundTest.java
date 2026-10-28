@@ -83,12 +83,32 @@ class ReservationCancellationRefundTest {
     @AfterEach
     void cleanUp() {
         emitters.delete(memberId, emitter);
+        jdbc.update("DELETE FROM payment_refund WHERE payment_id IN (SELECT id FROM payment WHERE reservation_id IN (SELECT id FROM reservation WHERE store_id = ?))", storeId);
         jdbc.update("DELETE FROM payment_status_history WHERE payment_id IN (SELECT id FROM payment WHERE reservation_id IN (SELECT id FROM reservation WHERE store_id = ?))", storeId);
         jdbc.update("DELETE FROM payment WHERE reservation_id IN (SELECT id FROM reservation WHERE store_id = ?)", storeId);
         jdbc.update("DELETE FROM reservation WHERE store_id = ?", storeId);
         jdbc.update("DELETE FROM store_table WHERE store_id = ?", storeId);
         jdbc.update("DELETE FROM store WHERE id = ?", storeId);
         jdbc.update("DELETE FROM member WHERE id IN (?, ?)", memberId, ownerId);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"REQUESTED", "UNKNOWN"})
+    void anInFlightRefundBlocksEvenAZeroEntitlementCancellation(String refundStatus) {
+        Long id = reservation(10_000L, "STRICT", true);
+        Long paymentId = data.payment(memberId, id, "DONE", 0);
+        jdbc.update("""
+                INSERT INTO payment_refund
+                    (payment_id, idempotency_key, cancel_reason, refund_amount, status, requested_at)
+                VALUES (?, 'cancel-pending', '환불 요청', 5000, ?, ?)
+                """, paymentId, refundStatus, NOW);
+
+        for (boolean owner : new boolean[] {false, true}) {
+            assertThatThrownBy(() -> cancel(owner, id)).isInstanceOfSatisfying(BusinessException.class,
+                    exception -> assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.REFUND_DATA_NOT_READY));
+            assertPreserved(id);
+        }
+        verifyNoInteractions(toss);
     }
 
     @ParameterizedTest
