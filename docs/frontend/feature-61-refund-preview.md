@@ -4,6 +4,7 @@
 - 기능 이슈: [#67](https://github.com/Techeer-2026-2-E/catchtable-backend/issues/67)
 - 정본: [기능61](https://app.notion.com/p/3d548d76fa3281699f09e28ed2198911), [Notion API 초안](https://app.notion.com/p/0a448d76fa32827ab9d681efb3756196)
 - 연동 대상 코드: [백엔드 기능61 커밋 9af6392](https://github.com/Techeer-2026-2-E/catchtable-backend/commit/9af6392), [작업 기록](https://github.com/Techeer-2026-2-E/catchtable-backend/blob/9af6392/work-log/67-refund-calculation.md)
+- 구현 검토: [기능61 Draft PR #146](https://github.com/Techeer-2026-2-E/catchtable-backend/pull/146), 선행 스냅샷 [Draft PR #145](https://github.com/Techeer-2026-2-E/catchtable-backend/pull/145).
 - 대조한 프런트: dev `e47b63b2c546dd5ff3d3b327b0299c5453b3342d`의 [RefundPreview 타입](https://github.com/Techeer-2026-2-E/catchtable-frontend/blob/e47b63b2c546dd5ff3d3b327b0299c5453b3342d/src/entities/reservation/model.ts), [reservationApi](https://github.com/Techeer-2026-2-E/catchtable-frontend/blob/e47b63b2c546dd5ff3d3b327b0299c5453b3342d/src/features/reservation/api/reservationApi.ts), [ReservationDetailPage](https://github.com/Techeer-2026-2-E/catchtable-frontend/blob/e47b63b2c546dd5ff3d3b327b0299c5453b3342d/src/pages/reservation-detail/ReservationDetailPage.tsx).
 
 ## 구현 위치와 적용 전제
