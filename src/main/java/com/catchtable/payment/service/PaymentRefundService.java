@@ -21,6 +21,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.Clock;
 import java.time.OffsetDateTime;
+import java.time.temporal.ChronoUnit;
 import java.util.EnumSet;
 import java.util.function.Function;
 
@@ -93,7 +94,7 @@ public class PaymentRefundService {
         if (refundAmount > allowed) {
             throw new BusinessException(ErrorCode.REFUND_AMOUNT_EXCEEDED);
         }
-        OffsetDateTime now = OffsetDateTime.now(clock);
+        OffsetDateTime now = now();
         if (refundAmount == 0) {
             PaymentRefund refund = refundRepository.save(
                     PaymentRefund.notRequired(payment, idempotencyKey, reason, now));
@@ -143,9 +144,14 @@ public class PaymentRefundService {
         // 외부 환불 성공 확인 후 누적액·결제 상태 확정
         return update(attempt, refund -> {
             paymentService.applyTossPayment(attempt.paymentId(), toss, PaymentStatusSource.TOSS_CANCEL);
-            refund.complete(refund.getPayment().getRefundedAmount(), OffsetDateTime.now(clock));
+            refund.complete(refund.getPayment().getRefundedAmount(), now());
             return RefundResult.from(refund);
         });
+    }
+
+    // DB 저장 정밀도(마이크로초)에 맞춤, 재요청 응답과 같은 시각
+    private OffsetDateTime now() {
+        return OffsetDateTime.now(clock).truncatedTo(ChronoUnit.MICROS);
     }
 
     // 동시 같은 키 요청이 먼저 확정했으면 그 결과
