@@ -50,8 +50,7 @@ public class PaymentService {
     // Toss 승인·조회·취소 결과 반영 (#65 confirm, #63 재확인, #68 취소용)
     @Transactional
     public PaymentResponse applyTossPayment(Long paymentId, TossPaymentResponse toss, PaymentStatusSource source) {
-        Payment payment = paymentRepository.findByIdForUpdate(paymentId)
-                .orElseThrow(() -> new BusinessException(ErrorCode.PAYMENT_NOT_FOUND));
+        Payment payment = lock(paymentId);
         // 주문·금액 위변조 차단
         if (!payment.getOrderId().equals(toss.orderId()) || payment.getAmount() != toss.totalAmount()) {
             throw new BusinessException(ErrorCode.PAYMENT_MISMATCH);
@@ -78,6 +77,34 @@ public class PaymentService {
         }
         historyRepository.saveAll(histories.stream().filter(Objects::nonNull).toList());
         return PaymentResponse.from(payment);
+    }
+
+    // Toss 승인 실패 확정 (TossPaymentsException)
+    @Transactional
+    public PaymentResponse markFailed(Long paymentId, String code, String message, PaymentStatusSource source) {
+        Payment payment = lock(paymentId);
+        save(payment.fail(code, message, source, OffsetDateTime.now(clock)));
+        return PaymentResponse.from(payment);
+    }
+
+    // 결과 불명 (TossPaymentsUnknownResultException), 이후 조회로 재확인
+    @Transactional
+    public PaymentResponse markTimeout(Long paymentId, String reason, PaymentStatusSource source) {
+        Payment payment = lock(paymentId);
+        save(payment.markTimeout(reason, source, OffsetDateTime.now(clock)));
+        return PaymentResponse.from(payment);
+    }
+
+    private Payment lock(Long paymentId) {
+        return paymentRepository.findByIdForUpdate(paymentId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.PAYMENT_NOT_FOUND));
+    }
+
+    // 같은 요청 반복이면 이력 없음
+    private void save(PaymentStatusHistory history) {
+        if (history != null) {
+            historyRepository.save(history);
+        }
     }
 
     private void requireCustomer(Long memberId) {
