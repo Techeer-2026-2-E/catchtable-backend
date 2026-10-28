@@ -39,3 +39,14 @@
 ## 남은 점
 
 결제 금액과 환불 정책 스냅샷 보존의 실제 연결은 공통 결제 계약 후 진행한다. 예약 변경 후 환불 날짜 기준은 현재 예약 시각이며 최초 금액·정책 종류를 유지한다. #66의 이 후속 범위는 남아 있으므로 이번 PR로 이슈를 자동 종료하지 않는다. 프런트 실행·배포 검증은 수행하지 않았다.
+
+## 2026-10-28 — 최초 금액·정책 보존 회귀 검증
+
+[기능10 스냅샷 저장 경계](65-deposit-snapshot.md)의 `depositAmountSnapshot`·`refundPolicySnapshot`을 실제 DB 예약에 넣어 기존 `OwnerReservationService.updateReservation` 경로를 검증했다. 기존 변경 로직은 두 필드를 수정하지 않으므로 생산 코드를 추가하지 않았다.
+
+- 시작 후 미입장 예약의 인원 변경·테이블 재배정 및 기존 이용 구간 유지, 미래 시각으로 변경 후에도 최초 10,001원·STRICT 정책이 유지된다.
+- 목적 시간대가 확정 예약 또는 선점으로 찬 경우 원래 예약·슬롯·스냅샷을 함께 보존한다.
+- HTTP 변경 재요청에서 스냅샷을 보존하고 기존 알림 한 번 발행 검증을 유지한다.
+- 신규 전용 PostgreSQL16 컨테이너 `catchtable-phase2-astra-20261028`, `127.0.0.1:49498`, DB `catchtable_snapshot_independent_test`에서 `DB_HOST=127.0.0.1 DB_PORT=49498 DB_NAME=catchtable_snapshot_independent_test DB_USERNAME=catchtable DB_PASSWORD=catchtable ./gradlew test --tests 'com.catchtable.reservation.service.ReservationSettingsTest' --no-daemon`을 실행했다. 42개 모두 통과, 실패·오류·건너뜀0이다. `git diff --check`도 통과했다.
+
+이 변경은 기능10 독립 커밋 `36d473ff4e8ad9c789314628379baf82c389d808`에 의존하는 테스트·기록만 포함한다. 공통 결제 코드나 실제 Toss 승인 흐름을 추가하지 않는다. 유료 예약 생성 호출부는 기능33 설정 계약과 기능10 연결이 남아 있으므로 #66 전체를 완료·종료하지 않는다. 기존 PR #120의 변경을 재구현하지 않았다.

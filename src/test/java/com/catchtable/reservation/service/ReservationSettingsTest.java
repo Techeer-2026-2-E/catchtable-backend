@@ -548,6 +548,7 @@ class ReservationSettingsTest {
     @Test
     void changeApiValidatesOwnerAndPartialInputAndNotifiesOnlyOnceOnRetry() throws Exception {
         Long id = reserve();
+        recordDepositSnapshot(id);
         var original = reservationRepository.findById(id).orElseThrow();
         var mvc = MockMvcBuilders.standaloneSetup(new OwnerReservationController(ownerReservations))
                 .setCustomArgumentResolvers(new LoginMemberArgumentResolver())
@@ -581,6 +582,7 @@ class ReservationSettingsTest {
             assertThat(changed.getReservationStartAt()).isEqualTo(original.getReservationStartAt());
             assertThat(changed.getRequestedAt()).isEqualTo(original.getRequestedAt());
             assertThat(changed.getConfirmedAt()).isEqualTo(original.getConfirmedAt());
+            assertDepositSnapshot(id);
         } finally {
             emitterRepository.delete(customerId, emitter);
             jdbc.update("DELETE FROM member WHERE id = ?", otherOwner);
@@ -622,6 +624,7 @@ class ReservationSettingsTest {
     @ValueSource(booleans = {true, false})
     void blockedDestinationKeepsOriginalReservationAndSlot(boolean hold) {
         Long id = reserve();
+        recordDepositSnapshot(id);
         var original = reservations.getReservation(customerId, id);
         var destination = new CreateReservationRequest(storeId, start.plusHours(4), 4);
         if (hold) reservations.createHold(customerId, destination);
@@ -633,6 +636,7 @@ class ReservationSettingsTest {
                         failure -> assertThat(failure.getStatusCode()).isEqualTo(HttpStatus.CONFLICT));
         assertThat(reservations.getReservation(customerId, id)).isEqualTo(original);
         assertThat(availability.getAvailableTableCount(storeId, start, 4).availableTableCount()).isZero();
+        assertDepositSnapshot(id);
     }
 
     @Test
@@ -670,6 +674,7 @@ class ReservationSettingsTest {
     @Test
     void anUnenteredPastReservationCanMoveToAFutureSlot() {
         Long id = reserve();
+        recordDepositSnapshot(id);
         backdateReservation(id);
 
         var changed = ownerReservations.updateReservation(ownerId, id,
@@ -679,6 +684,7 @@ class ReservationSettingsTest {
         assertThat(changed.reservationStartAt().toInstant()).isEqualTo(start.plusDays(1).toInstant());
         assertThat(changed.partySize()).isEqualTo(2);
         assertThat(changed.status()).isEqualTo(ReservationStatus.CONFIRMED);
+        assertDepositSnapshot(id);
         assertThat(reservations.getReservation(customerId, id).reservationStartAt())
                 .isEqualTo(changed.reservationStartAt());
     }
@@ -686,6 +692,7 @@ class ReservationSettingsTest {
     @Test
     void changingOnlyPartySizeKeepsAPastReservationsScheduleAndReassignsItsTable() {
         Long id = reserve();
+        recordDepositSnapshot(id);
         backdateReservation(id);
         var original = reservations.getReservation(customerId, id);
         Long largerTable = jdbc.queryForObject("""
@@ -701,8 +708,22 @@ class ReservationSettingsTest {
         assertThat(changed.tableId()).isEqualTo(largerTable);
         assertThat(changed.reservationStartAt()).isEqualTo(original.reservationStartAt());
         assertThat(changed.reservationEndAt()).isEqualTo(original.reservationEndAt());
+        assertDepositSnapshot(id);
         assertThat(ownerReservations.updateReservation(ownerId, id,
                 new OwnerReservationUpdateRequest(original.reservationStartAt(), 7))).isEqualTo(changed);
+    }
+
+    private void recordDepositSnapshot(Long id) {
+        jdbc.update("""
+                UPDATE reservation SET deposit_amount_snapshot = 10001, refund_policy_snapshot = 'STRICT'
+                WHERE id = ?
+                """, id);
+    }
+
+    private void assertDepositSnapshot(Long id) {
+        var saved = reservationRepository.findById(id).orElseThrow();
+        assertThat(saved.getDepositAmountSnapshot()).isEqualTo(10_001);
+        assertThat(saved.getRefundPolicySnapshot().name()).isEqualTo("STRICT");
     }
 
     @ParameterizedTest
