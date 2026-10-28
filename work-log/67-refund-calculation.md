@@ -72,3 +72,16 @@
 - 새 PostgreSQL16 컨테이너 `phase2-sol-max-20261029-pg16`, 전용 DB `phase2_snapshot`, `DB_PORT=54936`에서 `./gradlew test --tests com.catchtable.reservation.service.ReservationRefundPreviewTest --tests com.catchtable.payment.service.PaymentRefundServiceTest --tests com.catchtable.payment.service.PaymentApprovalServiceTest`: 51개 통과, 실패·건너뜀0. 전체 로그·명령·XML은 작업자 인계 산출물 `preview-inflight-targeted/`에 보관했다.
 - V20은 기존 Draft의 파일을 그대로 사용해 새 빈 테스트 DB에 적용했다. 공유·영속 DB의 V20 적용 여부와 V21/V22 이후 upgrade는 미확인이다. 마이그레이션 순서 결정 전 이 로컬 결과를 공개 PR 적용 가능 판정으로 쓰지 않는다.
 - 환불 실행 HTTP, 기능63 재확인·웹훅·자동 보정, 프런트 연동·실제 Toss·배포·새 CI 실행은 이번 변경 범위가 아니다.
+## 2026-10-29 실제 결정 후속
+
+기능10의 정상 confirm/영속 승인 보호와 V24, dev `7d320491a6ed9107ac3149ed8cfaa1bb1dad45bb`, CI 선행 [#164](https://github.com/Techeer-2026-2-E/catchtable-backend/pull/164)를 부모에서 정상 merge했다. 기존 공개 #146 head `9af6392e16b8b3e2e957cafb78938be00234b88d`와 REQUESTED/UNKNOWN 예상액409 보강을 보존한다. 예상액 조회는 외부 승인·환불을 실행하지 않는다.
+
+사용자2A의 예약 취소는 남은 **정책상** 환불액이 기준이며 임의 전액 환불을 뜻하지 않는다. 3A의 양수 취소 환불용 client Idempotency-Key는 미래 계약이고, 4B에 따라 최초 요청시각/한도 저장·진행 중 변경 동결 합의 전 실행 endpoint와 PG 기반 예약 취소를 보류한다. 5A는 기능10의 late DONE 확정이며 조회 자격(본인·시작 전·미입장 CONFIRMED)은 바뀌지 않는다.
+
+새 disposable PostgreSQL16 `phase2-approved-20261029-pg16`, `127.0.0.1:54937/phase2_preview_approved`에서 아래51개가 실패/오류/건너뜀0으로 통과했다. 로그·XML은 로컬 `approved-followup/preview-targeted`에 보존한다. README의 과거 계산기만 구현됐다는 현재 설명을 실제 refund-preview 경로에 맞췄다.
+
+```sh
+DB_HOST=127.0.0.1 DB_PORT=54937 DB_NAME=phase2_preview_approved DB_USERNAME=phase2_test DB_PASSWORD=phase2_test ./gradlew test --tests 'com.catchtable.reservation.service.ReservationRefundPreviewTest' --tests 'com.catchtable.payment.service.PaymentApprovalServiceTest' --tests 'com.catchtable.payment.service.PaymentRefundServiceTest' --no-daemon
+```
+
+기능10 부모 정렬 후 base retarget·실제 게시/CI는 coordinator가 수행한다. 공개 이력 rewrite는 하지 않는다. V20 공유 이력·upgrade 차단은 [기능10 기록](65-deposit-snapshot.md)을 따른다. Toss·프런트·배포는 이 검사에 포함하지 않는다.
