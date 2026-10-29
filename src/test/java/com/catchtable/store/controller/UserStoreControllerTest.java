@@ -320,6 +320,123 @@ class UserStoreControllerTest {
                 .andExpect(status().isBadRequest());
     }
 
+    // 이름 검색 결과의 id 목록 (공공데이터가 섞여 있어도 한 페이지에 다 들어오게 size를 크게 준다)
+    private List<Integer> searchIds(String keyword, String... extraParams) throws Exception {
+        var request = get("/api/user/stores").queryParam("keyword", keyword).queryParam("size", "50");
+        for (int i = 0; i < extraParams.length; i += 2) {
+            request.queryParam(extraParams[i], extraParams[i + 1]);
+        }
+        String body = mockMvc.perform(request).andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        return JsonPath.read(body, "$.stores[*].id");
+    }
+
+    @Test
+    @DisplayName("이름 일부가 맞는 매장만 대소문자 구분 없이 내려준다")
+    void keywordMatchesNamePartiallyIgnoringCase() throws Exception {
+        Long first = insertStore("ZQX 파스타", "WESTERN");
+        Long second = insertStore("맛있는 zqxbar", "WESTERN");
+        Long other = insertStore("무관한 매장", "WESTERN");
+
+        assertThat(searchIds("zqx")).containsExactly(first.intValue(), second.intValue());
+        assertThat(searchIds("ZQX")).containsExactly(first.intValue(), second.intValue());
+        assertThat(searchIds("스케줄")).contains(storeId.intValue()).doesNotContain(other.intValue());
+    }
+
+    @Test
+    @DisplayName("한 글자 키워드도 검색된다")
+    void keywordAllowsSingleCharacter() throws Exception {
+        Long target = insertStore("Ω", "WESTERN");
+
+        assertThat(searchIds("Ω")).contains(target.intValue());
+    }
+
+    @Test
+    @DisplayName("앞뒤 공백은 무시하고, 공백뿐인 키워드는 조건이 없는 것으로 본다")
+    void keywordIsTrimmedAndBlankMeansNoCondition() throws Exception {
+        Long target = insertStore("zqx 공백", "WESTERN");
+
+        assertThat(searchIds("  zqx  ")).containsExactly(target.intValue());
+
+        String withBlank = mockMvc.perform(get("/api/user/stores").queryParam("keyword", "   "))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        String without = mockMvc.perform(get("/api/user/stores"))
+                .andReturn().getResponse().getContentAsString();
+        assertThat(withBlank).isEqualTo(without);
+    }
+
+    @Test
+    @DisplayName("% _ \\ 는 와일드카드가 아니라 문자 그대로 찾는다")
+    void keywordTreatsWildcardsAsLiterals() throws Exception {
+        Long percent = insertStore("zqp100%할인", "WESTERN");
+        Long digit = insertStore("zqp100점할인", "WESTERN");
+        Long underscore = insertStore("zqu_bar", "WESTERN");
+        insertStore("zquxbar", "WESTERN");
+        Long backslash = insertStore("zqb\\bar", "WESTERN");
+        insertStore("zqbxbar", "WESTERN");
+
+        assertThat(searchIds("zqp100%")).containsExactly(percent.intValue());
+        assertThat(searchIds("%할인")).contains(percent.intValue()).doesNotContain(digit.intValue());
+        assertThat(searchIds("zqu_bar")).containsExactly(underscore.intValue());
+        assertThat(searchIds("zqb\\bar")).containsExactly(backslash.intValue());
+    }
+
+    @Test
+    @DisplayName("키워드는 점주 없는 공공데이터 매장도 찾는다")
+    void keywordFindsPublicStores() throws Exception {
+        Long publicStore = jdbcTemplate.queryForObject("""
+                INSERT INTO store (owner_id, name, category, address, waiting_available,
+                                   reservation_duration_minutes, reservation_slot_minutes, arrival_grace_minutes)
+                VALUES (NULL, 'zqpub 공공 식당', 'KOREAN', '서울', FALSE, 60, 30, 10)
+                RETURNING id""", Long.class);
+
+        assertThat(searchIds("zqpub")).containsExactly(publicStore.intValue());
+    }
+
+    @Test
+    @DisplayName("키워드는 카테고리·인원 조건과 함께 모두 맞아야 한다")
+    void keywordCombinesWithOtherConditions() throws Exception {
+        Long koreanSeatable = insertStore("zqc 한식 A", "KOREAN");
+        Long koreanNoTable = insertStore("zqc 한식 B", "KOREAN");
+        Long western = insertStore("zqc 양식", "WESTERN");
+        insertTable(koreanSeatable, 1, 4);
+        insertTable(western, 1, 4);
+
+        assertThat(searchIds("zqc", "category", "KOREAN"))
+                .containsExactly(koreanSeatable.intValue(), koreanNoTable.intValue());
+        assertThat(searchIds("zqc", "partySize", "4"))
+                .containsExactly(koreanSeatable.intValue(), western.intValue());
+        assertThat(searchIds("zqc", "category", "KOREAN", "partySize", "4"))
+                .containsExactly(koreanSeatable.intValue());
+    }
+
+    @Test
+    @DisplayName("키워드 결과도 id 순으로 page·size에 맞춰 자르고 hasNext를 계산한다")
+    void keywordResultsArePaged() throws Exception {
+        Long a = insertStore("zqg 하나", "WESTERN");
+        Long b = insertStore("zqg 둘", "WESTERN");
+        Long c = insertStore("zqg 셋", "WESTERN");
+
+        mockMvc.perform(get("/api/user/stores").queryParam("keyword", "zqg").queryParam("size", "2"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.stores[*].id", contains(a.intValue(), b.intValue())))
+                .andExpect(jsonPath("$.hasNext").value(true));
+        mockMvc.perform(get("/api/user/stores").queryParam("keyword", "zqg").queryParam("size", "2")
+                        .queryParam("page", "1"))
+                .andExpect(jsonPath("$.stores[*].id", contains(c.intValue())))
+                .andExpect(jsonPath("$.page").value(1))
+                .andExpect(jsonPath("$.hasNext").value(false));
+    }
+
+    @Test
+    @DisplayName("맞는 매장이 없으면 빈 목록이다")
+    void keywordWithoutMatchIsEmpty() throws Exception {
+        mockMvc.perform(get("/api/user/stores").queryParam("keyword", "zz없는이름zz"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.stores", hasSize(0)))
+                .andExpect(jsonPath("$.hasNext").value(false));
+    }
+
     @Test
     @DisplayName("없는 매장이면 404")
     void storeNotFound() throws Exception {

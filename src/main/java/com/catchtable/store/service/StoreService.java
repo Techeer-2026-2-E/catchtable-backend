@@ -82,7 +82,8 @@ public class StoreService {
         LocalDateTime startAt = condition.hasDateTime() ? condition.date().atTime(condition.time()) : null;
         List<Store> matches = storeRepository.searchFiltered(
                 condition.category() == null ? null : condition.category().name(),
-                condition.partySize(), startAt, LocalDateTime.now(clock), condition.size() + 1,
+                condition.keywordPattern(), condition.partySize(), startAt, LocalDateTime.now(clock),
+                condition.size() + 1,
                 (long) condition.page() * condition.size());
         boolean hasNext = matches.size() > condition.size();
         List<StoreSummaryResponse> stores = matches.stream().limit(condition.size())
