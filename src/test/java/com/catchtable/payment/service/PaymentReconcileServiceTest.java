@@ -1,5 +1,7 @@
 package com.catchtable.payment.service;
 
+import com.catchtable.payment.ReconcileTestClock;
+
 import com.catchtable.payment.ConfirmedEventCounter;
 import com.catchtable.payment.FakeTossPaymentsClient;
 import com.catchtable.payment.PaymentTestData;
@@ -13,18 +15,14 @@ import org.junit.jupiter.params.provider.CsvSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.transaction.support.TransactionTemplate;
 
-import java.time.Clock;
 import java.time.OffsetDateTime;
-import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.atomic.AtomicReference;
 
 import static com.catchtable.payment.PaymentTestData.AMOUNT;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -35,7 +33,7 @@ import static org.mockito.Mockito.when;
 @SpringBootTest
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 @AutoConfigureMockMvc
-@Import({FakeTossPaymentsClient.Config.class, ConfirmedEventCounter.Config.class})
+@Import({FakeTossPaymentsClient.Config.class, ConfirmedEventCounter.Config.class, ReconcileTestClock.Config.class})
 class PaymentReconcileServiceTest {
 
     static final OffsetDateTime NOW = OffsetDateTime.parse("2030-01-20T12:00:00+09:00");
@@ -46,9 +44,8 @@ class PaymentReconcileServiceTest {
     @Autowired ConfirmedEventCounter events;
     @Autowired TransactionTemplate transactionTemplate;
     @Autowired JdbcTemplate jdbc;
-    @MockBean Clock clock;
+    @Autowired ReconcileTestClock clock;
 
-    private final AtomicReference<OffsetDateTime> now = new AtomicReference<>();
     private final List<Long> members = new ArrayList<>();
     private PaymentTestData data;
     private Long customerId;
@@ -57,9 +54,9 @@ class PaymentReconcileServiceTest {
 
     @BeforeEach
     void setUp() {
-        now.set(NOW);
-        when(clock.getZone()).thenReturn(ZoneId.of("Asia/Seoul"));
-        when(clock.instant()).thenAnswer(call -> now.get().toInstant());
+        clock.set(NOW);
+
+
         toss.reset();
         data = new PaymentTestData(jdbc);
         customerId = member("CUSTOMER");
@@ -121,7 +118,7 @@ class PaymentReconcileServiceTest {
     void unresolvedPaymentKeepsHold(String status) {
         Long paymentId = protectedPayment(status, "pk-1");
         toss.query(data.orderId(paymentId), null, "IN_PROGRESS", AMOUNT);
-        now.set(NOW.plusMinutes(30));
+        clock.set(NOW.plusMinutes(30));
 
         service.reconcile(paymentId);
         reservationService.expireHolds();
