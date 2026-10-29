@@ -5,8 +5,8 @@ import com.catchtable.store.dto.CategoryResponse;
 import com.catchtable.store.dto.NearbyStoreCondition;
 import com.catchtable.store.dto.NearbyStoreListResponse;
 import com.catchtable.store.dto.StoreDetailResponse;
+import com.catchtable.store.dto.StoreListResponse;
 import com.catchtable.store.dto.StoreSearchCondition;
-import com.catchtable.store.dto.StoreSummaryResponse;
 import com.catchtable.store.service.NearbyStoreService;
 import com.catchtable.store.service.StoreService;
 import jakarta.validation.Valid;
@@ -35,7 +35,7 @@ public class UserStoreController {
     }
 
     @GetMapping("/stores")
-    public ResponseEntity<List<StoreSummaryResponse>> searchStores(@Valid @ModelAttribute StoreSearchCondition condition)
+    public ResponseEntity<StoreListResponse> searchStores(@Valid @ModelAttribute StoreSearchCondition condition)
     {
         return ResponseEntity.ok(service.searchStores(condition));
     }
