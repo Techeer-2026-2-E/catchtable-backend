@@ -35,7 +35,7 @@ public class ReservationController {
         return reservationService.getRefundPreview(memberId, reservationId);
     }
 
-    /** 생성 시 가용 여부를 다시 확인하고 바로 확정(201)한다. 그 사이 테이블이 소진되면 409를 반환한다. */
+    /** 즉시 확정(201)한다. 서버 설정 리더가 연결된 유료 매장은 선점·결제 경로를 안내하는 409를 반환한다. */
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     public ReservationResponse createReservation(@Valid @RequestBody CreateReservationRequest request) {
