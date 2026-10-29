@@ -26,3 +26,7 @@
 ## 문서 검증
 
 컨트롤러·DTO·서비스와 명시한 프런트 소스를 대조했고 상대 링크와 git diff --check를 확인했다. 문서만 변경하므로 앱 테스트를 새로 실행한 것으로 보고하지 않는다. 프런트 저장소 수정·화면 실행·Toss 실행·배포 검증은 포함하지 않는다.
+
+## 2026-10-29 승인 진행 중 0초 표시 후속
+
+승인 시작 전에는 원래5분이 신규 승인 자격의 경계다. 기한과 같거나 이후인 새 요청은 거부하며 조회/준비로 기한을 늘리지 않는다. 이미 유효하게 시작한 승인·결과 불명은 `remainingSeconds=0`과 PENDING_PAYMENT가 함께 올 수 있으므로 실패·만료·자리 반환으로 단정하거나 새 키로 결제하지 않는다. [응답 DTO](https://github.com/Techeer-2026-2-E/catchtable-backend/blob/c3f971013ae5cfbb7072bb3b3d8691ebe5d3b939/src/main/java/com/catchtable/reservation/dto/ReservationHoldResponse.java)와 [기능10](feature-10-deposit-payment.md)의 DONE/FAILED/409 구분을 따르고 상태를 다시 조회한다. 과거 격리 행도 확인 전 보존한다. 이 절은 이전 0초 안내를 보완한 소스 후보 계약이며 화면 구현·배포 완료가 아니다.
