@@ -55,3 +55,18 @@
 - 웹훅 처리 중 Toss 조회가 10초를 넘으면 Toss가 재전송한다. 재처리는 같은 결과라 안전하지만 비동기 처리는 하지 않았다.
 - 실제 Toss 테스트 결제·웹훅 등록·프런트 `sync` 호출·CI·배포는 미확인.
 - 머지 순서: #145 다음.
+
+## 2026-10-30 dev 머지 준비
+
+사용자 지시에 따라 승인·CI 통과한 선행 PR145/146/147/150을 dev에 머지한 뒤 이 브랜치에 dev를 정상 merge했다. 기존 결제 재확인 로직과 선행 예약·환불 코드는 유지하며 이력을 재작성하지 않았다.
+
+신규 전용 PostgreSQL16(기본 max_connections100)의 전체 빌드604개 중7개가 DB 연결 고갈로 실패했다. 새 재확인 테스트 context가 이후 웨이팅 테스트까지 연결을 보유한 원인이었으며 PaymentReconcileServiceTest에 AFTER_CLASS context 반환을 추가했다. 운영 설정·결제/예약 로직·테스트 단언은 바꾸지 않았다.
+
+수정 후 새 빈 전용 DB에서 Java21의 `./gradlew clean build --no-daemon --console=plain`은 62클래스604개·실패/오류/건너뜀0 및 bootJar 성공이다. 최초 실패·수정 후 XML/전체 로그·검증 입력 SHA를 로컬 merge 증거 폴더에 보존했다. 이 변경 이후 source head CI를 별도로 확인한 뒤 dev에 머지한다. 실제 Toss·공유 DB 적용·배포는 수행하지 않았다.
+
+
+### GitHub CI의 테스트 시계 경합 후속
+
+첫 통합 head75d0d2b의 GitHub CI(https://github.com/Techeer-2026-2-E/catchtable-backend/actions/runs/40903869299)는 604개 중1개가 Clock mock stubbing과 백그라운드 조회 경합으로 실패했다. ZoneRegion을 Instant로 변환하려는 ClassCastException을 로그에서 확인했다. 재실행으로 넘기지 않고 재확인 테스트3개가 같은 시계 원본을 안전하게 갱신하도록 AtomicReference 기반 테스트 Clock을 사용했다. 같은 NOW와 시간 전진·검증 단언은 유지하고 세 클래스 종료 시 context를 반환한다.
+
+운영 Clock·스케줄·서비스 로직·DB 설정은 변경하지 않았다. 새 빈 전용 DB의 전체 clean build는 다시62클래스604개·실패/오류/건너뜀0 및 bootJar 성공이다. 이후 새 source head의 CI를 별도로 확인한다.

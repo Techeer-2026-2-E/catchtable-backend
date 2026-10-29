@@ -22,6 +22,7 @@ public class StoreInfoService {
     {
         Store store=storeRepository.findById(storeId)
                 .orElseThrow(()->new BusinessException(ErrorCode.STORE_NOT_FOUND));
+        store.validateManaged();
         store.changeInfo(request.name(),
                 request.category(),
                 request.address(),

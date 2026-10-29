@@ -1,5 +1,17 @@
 # 기능60 — 전액·부분 환불 프런트 연동
 
+## 2026-10-29 후속 — 같은 환불 요청의 시각 표현
+
+[소스 PR #211](https://github.com/Techeer-2026-2-E/catchtable-backend/pull/211), 이슈 #205. 소스는 dev 대상 일반 PR·Ready for review·미머지다. 이 문서의 dev 머지는 기능 코드 머지·배포 완료와 구분한다.
+
+같은 멱등키의 최초 환불 결과와 재요청 결과에서 `refundedAt`을 같은 UTC 오프셋으로 반환한다. 예를 들어 첫 응답의 `2026-10-28T16:27:31.123456+09:00`과 재요청의 `2026-10-28T07:27:31.123456Z`는 같은 시점이지만 JSON이 달랐다. 수정 후보는 두 응답 모두 `2026-10-28T07:27:31.123456Z`로 반환한다. 기존 서비스의 마이크로초 정밀도 처리는 유지하며 NOT_REQUIRED는 계속 null이다.
+
+요청·환불액·누적액·상태·최초 결과 보존·추가 Toss 실행 없음은 기존 계약을 따른다. 프런트는 ISO8601 시각을 파싱하고 표시할 때 사용자/매장 시간대로 변환한다. 시간대 표현을 예약일·환불 비율의 계산 기준 변경으로 해석하지 않는다.
+
+실제 PostgreSQL16에서 변경 전 관련12개 중1개 실패, 변경 후12개 통과와 첫/재요청 JSON 동일·PG 실행1회를 확인했다. 새 빈 DB 전체 clean build는 **479개·실패/오류/건너뜀0**, bootJar 성공이다. [작업 기록](https://github.com/Techeer-2026-2-E/catchtable-backend/blob/b61dc6378624177a0436fa87b3e52c0d5ab1129f/work-log/205-refund-response-time.md)과 해당 소스 head CI를 별도로 확인한다. 실제 Toss·프런트 런타임·공유 DB 적용·배포는 미검증이다.
+
+
+
 - 확인일: 2026-10-27
 - 문서 작업 이슈: [#130](https://github.com/Techeer-2026-2-E/catchtable-backend/issues/130)
 - 명세: [기능60](https://app.notion.com/3d548d76fa3281369431cf4bd1c07a00)

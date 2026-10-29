@@ -1,5 +1,7 @@
 package com.catchtable.payment.service;
 
+import com.catchtable.payment.ReconcileTestClock;
+
 import com.catchtable.payment.ConfirmedEventCounter;
 import com.catchtable.payment.FakeTossPaymentsClient;
 import com.catchtable.payment.PaymentTestData;
@@ -14,13 +16,11 @@ import org.junit.jupiter.api.Timeout;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.test.annotation.DirtiesContext;
 
-import java.time.Clock;
 import java.time.OffsetDateTime;
-import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.Callable;
@@ -29,7 +29,6 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicReference;
 
 import static com.catchtable.payment.PaymentTestData.AMOUNT;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -37,8 +36,9 @@ import static org.mockito.Mockito.when;
 
 // 트랜잭션 없음 (요청마다 실제 커밋), 고정 Clock, UUID 데이터는 매 테스트 후 정리
 @SpringBootTest
+@DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 @AutoConfigureMockMvc
-@Import({FakeTossPaymentsClient.Config.class, ConfirmedEventCounter.Config.class})
+@Import({FakeTossPaymentsClient.Config.class, ConfirmedEventCounter.Config.class, ReconcileTestClock.Config.class})
 class PaymentReconcileConcurrencyTest {
 
     static final OffsetDateTime NOW = OffsetDateTime.parse("2030-01-20T12:00:00+09:00");
@@ -49,9 +49,8 @@ class PaymentReconcileConcurrencyTest {
     @Autowired FakeTossPaymentsClient toss;
     @Autowired ConfirmedEventCounter events;
     @Autowired JdbcTemplate jdbc;
-    @MockBean Clock clock;
+    @Autowired ReconcileTestClock clock;
 
-    private final AtomicReference<OffsetDateTime> now = new AtomicReference<>();
     private PaymentTestData data;
     private Long customerId;
     private Long ownerId;
@@ -60,9 +59,9 @@ class PaymentReconcileConcurrencyTest {
 
     @BeforeEach
     void setUp() {
-        now.set(NOW);
-        when(clock.getZone()).thenReturn(ZoneId.of("Asia/Seoul"));
-        when(clock.instant()).thenAnswer(call -> now.get().toInstant());
+        clock.set(NOW);
+
+
         toss.reset();
         data = new PaymentTestData(jdbc);
         customerId = data.member("CUSTOMER");
@@ -112,7 +111,7 @@ class PaymentReconcileConcurrencyTest {
         data.protect(reservationId, paymentId, "pk-1", NOW.minusMinutes(1));
         toss.query(data.orderId(paymentId), null, "IN_PROGRESS", AMOUNT);
         toss.delay(200);
-        now.set(NOW.plusMinutes(30));
+        clock.set(NOW.plusMinutes(30));
 
         List<Object> outcomes = concurrently(() -> {
             service.reconcile(paymentId);

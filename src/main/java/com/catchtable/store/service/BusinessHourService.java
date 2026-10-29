@@ -44,9 +44,9 @@ public class BusinessHourService {
     // TODO: 점주 본인 매장인지 확인 (로그인 기능 만든 후 작업)
 
     public List<BusinessHourResponse> getBusinessHours(Long storeId) {
-        if (!storeRepository.existsById(storeId)) {
-            throw new BusinessException(ErrorCode.STORE_NOT_FOUND);
-        }
+        storeRepository.findById(storeId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.STORE_NOT_FOUND))
+                .validateManaged();
         return businessHourRepository.findAllByStoreIdOrderByDayOfWeekAsc(storeId).stream()
                 .map(BusinessHourResponse::from)
                 .toList();
@@ -58,6 +58,8 @@ public class BusinessHourService {
         // 예약 생성의 공유 잠금과 맞물려, 영업시간 검증 중 새 예약이 생기지 않게 한다.
         Store store = storeRepository.findByIdForUpdate(storeId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.STORE_NOT_FOUND));
+
+        store.validateManaged();
 
         Set<DayOfWeek> requestedDays = EnumSet.noneOf(DayOfWeek.class);
         for (BusinessHourRequest hour : request.businessHours()) {

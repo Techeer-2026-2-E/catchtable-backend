@@ -112,6 +112,12 @@ public class Store extends BaseTimeEntity {
         this.bookingDeadlineMinutes = bookingDeadlineMinutes;
     }
 
+    public void validateManaged() {
+        if (owner == null) {
+            throw new BusinessException(ErrorCode.STORE_NOT_FOUND);
+        }
+    }
+
     public void validateBookable(LocalDateTime startAt, LocalDateTime now) {
         if (!isBookingOpen(startAt, now)) {
             throw new BusinessException(ErrorCode.BOOKING_NOT_OPEN_YET);
@@ -140,7 +146,7 @@ public class Store extends BaseTimeEntity {
 
     // 접수 중 여부 검증 (마감 시 WAITING_CLOSED)
     public void validateWaitingAvailable() {
-        if (!waitingAvailable) {
+        if (owner == null || !waitingAvailable) {
             throw new BusinessException(ErrorCode.WAITING_CLOSED);
         }
     }
