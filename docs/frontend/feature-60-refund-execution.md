@@ -9,7 +9,7 @@
 
 ## 2026-10-29 실행 계약 후보 — 최초 기준 고정과 예약 변경 보호
 
-문서 이슈 [#189](https://github.com/Techeer-2026-2-E/catchtable-backend/issues/189), 소스 실행 이슈 [#188](https://github.com/Techeer-2026-2-E/catchtable-backend/issues/188), 상위 [#68](https://github.com/Techeer-2026-2-E/catchtable-backend/issues/68)을 연결한다. **이 절은 별도 Draft 소스 후보의 계약이다. 기준 dev `7f90132bfed65d0dce5b5597f162bf4bac62d6c2`에는 새 실행 endpoint가 없으며 소스 PR은 검토·CI·머지 전이다.** 문서 머지를 기능 배포로 표시하지 않는다. 아래 날짜별 기록의 실행 보류·미구현 설명은 당시 이력이다. 사용자는 최초 요청 기준 저장과 진행 중 변경 차단을 승인해 #188 범위의 실행 보류를 해제했다.
+문서 이슈 [#189](https://github.com/Techeer-2026-2-E/catchtable-backend/issues/189), 소스 실행 이슈 [#188](https://github.com/Techeer-2026-2-E/catchtable-backend/issues/188), 상위 [#68](https://github.com/Techeer-2026-2-E/catchtable-backend/issues/68)을 연결한다. **이 절은 별도 Draft 소스 후보의 계약이다. 기준 dev `7f90132bfed65d0dce5b5597f162bf4bac62d6c2`에는 새 실행 endpoint가 없으며 소스는 Draft·미머지 후보이며 기준 dev에 반영되지 않았다.** 문서 머지를 기능 배포로 표시하지 않는다. 아래 날짜별 기록의 실행 보류·미구현 설명은 당시 이력이다. 사용자는 최초 요청 기준 저장과 진행 중 변경 차단을 승인해 #188 범위의 실행 보류를 해제했다.
 
 ### 돈만 환불하는 요청
 
