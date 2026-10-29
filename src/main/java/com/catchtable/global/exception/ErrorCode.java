@@ -58,6 +58,7 @@ public enum ErrorCode {
     PAYMENT_KEY_ALREADY_USED(HttpStatus.CONFLICT, "이미 다른 결제에 사용된 결제 키입니다."),
     IDEMPOTENCY_CONFLICT(HttpStatus.CONFLICT, "같은 멱등키로 다른 요청을 보낼 수 없습니다."),
     PAYMENT_RECONCILIATION_REQUIRED(HttpStatus.CONFLICT, "결제 결과 확인이 필요합니다. 확인 후 같은 요청으로 다시 시도해 주세요."),
+    PAYMENT_STATUS_CHECK_REQUIRED(HttpStatus.CONFLICT, "진행하거나 완료한 결제가 있습니다. 기존 결제 상태를 조회해 주세요."),
     PAYMENT_NOT_REFUNDABLE(HttpStatus.CONFLICT, "환불할 수 없는 결제 상태입니다."),
     PAYMENT_REFUND_FAILED(HttpStatus.CONFLICT, "결제사에서 환불을 거절했습니다.");
 

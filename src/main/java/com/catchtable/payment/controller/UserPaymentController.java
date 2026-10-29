@@ -4,15 +4,21 @@ import com.catchtable.global.auth.LoginMember;
 import com.catchtable.payment.dto.PaymentDetailResponse;
 import com.catchtable.payment.dto.PaymentListCondition;
 import com.catchtable.payment.dto.PaymentListResponse;
+import com.catchtable.payment.dto.PaymentPrepareRequest;
+import com.catchtable.payment.dto.PaymentPrepareResponse;
+import com.catchtable.payment.service.PaymentPrepareService;
 import com.catchtable.payment.service.PaymentReconcileService;
 import com.catchtable.payment.service.PaymentService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
@@ -22,6 +28,16 @@ public class UserPaymentController {
 
     private final PaymentService paymentService;
     private final PaymentReconcileService reconcileService;
+    private final PaymentPrepareService prepareService;
+
+    /** 저장된 유료 선점의 주문을 준비하며 같은 READY 재요청은 원본 그대로 반환한다. */
+    @PostMapping("/prepare")
+    public ResponseEntity<PaymentPrepareResponse> prepare(@LoginMember Long memberId,
+                                                         @Valid @RequestBody PaymentPrepareRequest request) {
+        var prepared = prepareService.prepare(memberId, request);
+        return ResponseEntity.status(prepared.created() ? HttpStatus.CREATED : HttpStatus.OK)
+                .body(prepared.response());
+    }
 
     /** 내 결제 목록을 최신순으로 조회한다. */
     @GetMapping
