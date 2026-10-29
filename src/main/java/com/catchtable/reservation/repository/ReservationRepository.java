@@ -72,6 +72,11 @@ public interface ReservationRepository extends JpaRepository<Reservation, Long> 
             @Param("memberId") Long memberId
     );
 
+    // 기능63 재확인용 (회원 조건 없이 예약 행 잠금)
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select r from Reservation r where r.id = :id")
+    Optional<Reservation> findByIdForUpdate(@Param("id") Long id);
+
     @Query("""
             select r from Reservation r
             where r.store.id = :storeId and r.reservationEndAt > :now
