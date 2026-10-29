@@ -6,6 +6,7 @@ import com.catchtable.reservation.dto.RefundPreviewResponse;
 import com.catchtable.reservation.dto.ReservationHoldResponse;
 import com.catchtable.reservation.dto.ReservationResponse;
 import com.catchtable.reservation.service.ReservationService;
+import com.catchtable.reservation.service.ReservationRefundExecutionService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -21,6 +22,7 @@ public class ReservationController {
     private static final long MOCK_CUSTOMER_ID = 1L;
 
     private final ReservationService reservationService;
+    private final ReservationRefundExecutionService refundExecution;
 
     /** 알림 수신 또는 SSE 재접속 후 본인 예약의 최신 상태와 취소 사유를 조회한다. */
     @GetMapping("/{reservationId}")
@@ -66,10 +68,12 @@ public class ReservationController {
     @PostMapping("/{reservationId}/cancel")
     public ReservationResponse cancelReservation(
             @LoginMember Long memberId,
-            @PathVariable Long reservationId
+            @PathVariable Long reservationId,
+            @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey
     )
     {
-        return reservationService.cancelReservation(memberId, reservationId);
+        return idempotencyKey == null ? reservationService.cancelReservation(memberId, reservationId)
+                : refundExecution.cancelCustomer(memberId, reservationId, idempotencyKey);
     }
 
 }
