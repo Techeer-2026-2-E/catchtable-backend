@@ -7,6 +7,66 @@
 - 구현 기준: [백엔드 dev@61aaf74](https://github.com/Techeer-2026-2-E/catchtable-backend/commit/61aaf744eab5fbfb8024e1c2fe83b915124c4f41)
 - 대조한 코드: [백엔드](../../src/main/java/com/catchtable/reservation/service/ReservationService.java), [프런트 초안 e47b63b](https://github.com/Techeer-2026-2-E/catchtable-frontend/blob/e47b63b2c546dd5ff3d3b327b0299c5453b3342d/src/features/payment/api/paymentApi.ts)
 
+## 2026-10-29 실행 계약 후보 — 최초 기준 고정과 예약 변경 보호
+
+문서 이슈 [#189](https://github.com/Techeer-2026-2-E/catchtable-backend/issues/189), 소스 실행 이슈 [#188](https://github.com/Techeer-2026-2-E/catchtable-backend/issues/188), 상위 [#68](https://github.com/Techeer-2026-2-E/catchtable-backend/issues/68)을 연결한다. **이 절은 별도 Draft 소스 후보의 계약이다. 기준 dev `7f90132bfed65d0dce5b5597f162bf4bac62d6c2`에는 새 실행 endpoint가 없으며 소스 PR은 검토·CI·머지 전이다.** 문서 머지를 기능 배포로 표시하지 않는다. 아래 날짜별 기록의 실행 보류·미구현 설명은 당시 이력이다. 사용자는 최초 요청 기준 저장과 진행 중 변경 차단을 승인해 #188 범위의 실행 보류를 해제했다.
+
+### 돈만 환불하는 요청
+
+`POST /api/user/payments/{paymentId}/cancel`은 기존 고객 식별 `X-Member-Id`와 필수 `Idempotency-Key`를 받는다. CUSTOMER 유형의 본인 결제 및 시작 전·미입장 CONFIRMED 예약만 새 요청을 시작할 수 있다. 남의 결제는404다.
+
+```json
+{"cancelReason":"고객 요청","cancelAmount":1000}
+```
+
+`cancelReason`은 필수이고 최대500자다. `cancelAmount`는 양수 정수이며 생략하면 최초 유효 요청 당시의 남은 정책상 환불액 전부다. 명시적0원은 입력 오류이고, 서버 계산 결과가0원이면 `NOT_REQUIRED`로 반환하며 PG를 호출하지 않는다. 이미 전액 환불된 결제에는 새 요청을 시작할 수 없지만 완료된 같은 키의 재조회는 가능하다. 같은 키는 사유와 요청액의 원본을 재사용해야 한다. 금액 생략과 명시적 금액은 서로 다른 요청으로 판단한다.
+
+성공200은 현재 공통 `RefundResult` 계약을 사용한다. 예를 들어 원결제10,000원에서1,000원을 환불하면 다음과 같다. 예약·테이블·예약 상태와 취소 알림은 유지한다.
+
+```json
+{
+  "paymentId": 10,
+  "reservationId": 20,
+  "currency": "KRW",
+  "refundAmount": 1000,
+  "totalRefundedAmount": 1000,
+  "remainingAmount": 9000,
+  "paymentStatus": "PARTIAL_REFUNDED",
+  "refundStatus": "COMPLETED",
+  "refundedAt": "2030-01-20T12:00:00+09:00"
+}
+```
+
+현재 상태값은 `DONE`, `PARTIAL_REFUNDED`, `REFUNDED`다. 과거 초안의 `PAID`나 `PARTIALLY_REFUNDED`를 사용하지 않는다. 계산 결과0원의 `refundStatus`는 `NOT_REQUIRED`, `refundedAt`은 null이다. 완료된 동일 요청은 최초 처리 결과를 반환하고 PG를 다시 호출하지 않는다.
+
+### 예약 취소 요청
+
+- 고객: `POST /api/user/reservations/{reservationId}/cancel`. 기존 `X-Member-Id`와 본문 없음 계약을 유지한다. 새 양수 환불을 실행하려면 `Idempotency-Key`를 보낸다.
+- 점주: `POST /api/owner/reservations/{reservationId}/cancel`. 기존 고정 목 점주 `2L`, 필수 본문 `{"reason":"매장 사정"}`를 유지한다. 이 경로는 `X-Member-Id`나 JWT로 점주를 식별하지 않는다. 새 양수 환불에는 `Idempotency-Key`를 보낸다.
+- 양수 환불을 실행하는 취소는 남은 정책상 환불액 **전부가 성공한 뒤에** 기존 예약 응답으로 취소를 확정하고 자리 반환·취소 SSE를 한 번 반영한다. 무료·추가 환불0원 요청은 기존 헤더 없는 호출도 가능하다. 헤더 없는 양수 미환불 요청은 기존409 `REFUND_NOT_COMPLETED`를 유지한다.
+- 고객의 새 취소는 시작 전·미입장 CONFIRMED만 가능하다. 점주의 기존 미입장 CONFIRMED 취소는 시작 후에도 가능하다. 최초 유효 요청 후 지연된 동일 요청 복구는 저장된 취소 의도를 사용한다. 완료된 취소의 같은 키 재시도는 반환된 자리를 다시 건드리거나 환불을 추가하지 않는다.
+
+### 최초 기준과 진행 중 화면
+
+최초 **유효** 요청에서 요청시각, 당시 변경된 예약시각, 정책상 총 환불한도, 요청 원본 금액과 실제 환불액을 DB에 보관한다. 금액·정책은 최초 예약 스냅샷을 사용하고 원 미만을 버린 뒤 누적 완료 환불액을 차감한다. 고객은 당시 예약의 KST 방문일, 점주는 날짜와 무관한 원결제100%를 총 한도로 삼는다. 날짜 변경이나 프로세스 재시작 후에도 동일 요청의 기준을 다시 계산하지 않는다.
+
+예약 쪽 준비 기록이 커밋된 직후부터 공통 `PaymentRefund`의 `REQUESTED`/`UNKNOWN`이 해소될 때까지 시간·인원 변경, 입장, 노쇼, 자동 이용완료, 다른 환불·취소를 차단한다. 신규 실행 기록이 없는 기존 공통 진행 중 환불도 같은 보호를 받는다. 외부 호출 중에는 예약·결제 행 잠금과 바깥 트랜잭션을 유지하지 않는다.
+
+실패·결과 불명 응답을 취소 완료 화면으로 해석하지 않는다. 예약·자리·취소 알림은 유지한다. 확정 실패면 진행 보호를 해제하고 같은 실패 키는 기존 실패를 반환한다. `UNKNOWN`은 로컬 임의 시간 만료로 해제하지 않는다. 기존 공통 결과 재확인 및 같은 키 재시도를 사용한다. `POST /api/user/payments/{paymentId}/sync` 또는 기존 공통 재확인에서 환불 완료를 확인하면 저장된 예약 취소 의도도 한 번 정산한다. 돈만 환불한 요청은 재확인 후에도 예약을 취소하지 않는다.
+
+| HTTP / code | 후보 계약에서의 의미 |
+| --- | --- |
+| 400 `INVALID_INPUT` | 빈/과도한 키·사유, 양수가 아닌 명시적 금액 등 입력 오류. 최초 요청 기록과 PG 호출 없음. |
+| 403 `FORBIDDEN_MEMBER_TYPE` | 돈 환불 endpoint를 CUSTOMER가 아닌 유형으로 호출함. |
+| 404 `PAYMENT_NOT_FOUND` / `RESERVATION_NOT_FOUND` | 본인 결제·해당 고객/점주 예약을 찾을 수 없음. |
+| 409 `REFUND_DATA_NOT_READY` | 최초 금액·정책·원장 불일치 또는 진행 중인 다른 환불. 예약을 유지한다. |
+| 409 `REFUND_AMOUNT_EXCEEDED` | 요청액이 최초 정책상 한도에서 누적 완료액을 뺀 잔액을 초과함. |
+| 409 `IDEMPOTENCY_CONFLICT` | 같은 키의 금액 생략 여부·금액·사유·돈 환불/취소 의도가 달라짐. |
+| 409 `PAYMENT_RECONCILIATION_REQUIRED` | 결과 불명. 같은 요청/기존 sync로 결과를 확인한다. |
+| 409 `PAYMENT_REFUND_FAILED` / `PAYMENT_NOT_REFUNDABLE` | 확정 환불 거절 또는 새 환불을 시작할 수 없는 결제 상태. |
+
+이 후보는 실제 PostgreSQL과 가짜/루프백 클라이언트로 검증하며 실제 Toss 환불, 프런트 코드·화면, JWT, 배포를 확인한 결과가 아니다. 공유 V20 적용 이력 UNKNOWN과 V20 없는 populated V22 upgrade 차단은 남아 있다. 기능33 예약금 설정과 prepare도 별도 담당 범위다. 이 문서 후보 자체는 링크·Markdown·실제 DTO/컨트롤러와의 대조 및 `git diff --check`만 검사한다.
+
 ## 목적과 현재 범위
 
 환불 계산의 확정된 판단과 실제 외부 취소 실행의 미구현 경계를 정리한다. 이 문서는 환불 API를 추가하지 않는다.
