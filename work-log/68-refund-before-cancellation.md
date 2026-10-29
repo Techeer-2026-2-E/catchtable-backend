@@ -66,3 +66,6 @@ DB_HOST=127.0.0.1 DB_PORT=54937 DB_NAME=phase2_refund_approved DB_USERNAME=phase
 승인 연결 FK가 있는 fixture 정리는 기존 `PaymentTestData.deleteStore`를 재사용한다. normal merge 때 중복된 `List` import 한 줄만 제거했으며 공통 결제/환불 로직·마이그레이션은 변경하지 않았다.
 
 새 disposable PostgreSQL16 localhost:54941, DB `phase2_targeted`, 기본 max_connections=100에서 `./gradlew test --tests '*ReservationCancellationRefundTest' --tests '*ReservationRefundPreviewTest' --no-daemon`을 실행해 두 클래스60개가 실패·오류·건너뜀0으로 통과했다. 전체 합본·source CI·기존 DB upgrade는 별도 검증이다. 실제 Toss·프런트/JWT·배포, 사용자4B가 보류한 새 양수 환불 실행은 포함하지 않는다.
+
+
+후속 이슈는 [#181](https://github.com/Techeer-2026-2-E/catchtable-backend/issues/181)이며 #68은 사용자4B의 실행 보류 범위로 열어 둔다. #67은 예상액 보호 확인의 관련 이슈다. 첫 합본61클래스584개 중 마지막 WaitingQueueNotifierTest 7개는 HikariPool-12의 PostgreSQL SQLSTATE53300(기본100연결)로 컨텍스트 시작에 실패했다. 새 회귀를 담은 이 취소 테스트에만 `@DirtiesContext(AFTER_CLASS)`를 추가해 own 컨텍스트·풀을 반환한다. 운영 풀/DB 한도와 waiting 테스트는 바꾸지 않고 실패 원본과 새 빈DB의 재검증을 구분해 보존한다.
