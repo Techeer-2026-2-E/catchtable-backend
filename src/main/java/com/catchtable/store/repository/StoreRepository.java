@@ -34,13 +34,16 @@ public interface StoreRepository extends JpaRepository<Store,Long> {
     // 필터 있는 목록: 전부 읽되 id 순으로 정렬해 페이지 사이 순서를 고정한다
     List<Store> findAllByCategory(StoreCategory category, Sort sort);
     // 후보 전체를 JVM으로 가져오지 않는다. 영업 구간·예약 창을 먼저 거른 뒤 DB에서 페이징한다.
+    // keywordPattern은 이스케이프된 LIKE 패턴이다 (이름 부분 일치, 대소문자 무시).
     @Query(value = """
             WITH criteria AS (
-                SELECT CAST(:category AS TEXT) AS category, CAST(:partySize AS INTEGER) AS party_size,
+                SELECT CAST(:category AS TEXT) AS category, CAST(:keywordPattern AS TEXT) AS keyword_pattern,
+                       CAST(:partySize AS INTEGER) AS party_size,
                        CAST(:startAt AS TIMESTAMP) AS start_at, CAST(:now AS TIMESTAMP) AS now_at
             )
             SELECT s.* FROM store s CROSS JOIN criteria c
             WHERE (c.category IS NULL OR s.category = c.category)
+              AND (c.keyword_pattern IS NULL OR s.name ILIKE c.keyword_pattern)
               AND (c.party_size IS NULL OR (s.owner_id IS NOT NULL AND EXISTS (
                   SELECT 1 FROM store_table st
                   WHERE st.store_id = s.id AND st.status = 'ACTIVE'
@@ -78,7 +81,8 @@ public interface StoreRepository extends JpaRepository<Store,Long> {
             ORDER BY s.id
             LIMIT :limit OFFSET :offset
             """, nativeQuery = true)
-    List<Store> searchFiltered(@Param("category") String category, @Param("partySize") Integer partySize,
+    List<Store> searchFiltered(@Param("category") String category, @Param("keywordPattern") String keywordPattern,
+                               @Param("partySize") Integer partySize,
                                @Param("startAt") LocalDateTime startAt, @Param("now") LocalDateTime now,
                                @Param("limit") int limit, @Param("offset") long offset);
 }
