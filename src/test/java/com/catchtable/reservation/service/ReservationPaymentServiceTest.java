@@ -8,6 +8,7 @@ import com.catchtable.payment.client.TossPaymentResponse;
 import com.catchtable.payment.client.TossPaymentsClient;
 import com.catchtable.payment.dto.PaymentConfirmRequest;
 import com.catchtable.payment.entity.PaymentStatus;
+import com.catchtable.payment.service.PaymentReconcileService;
 import com.catchtable.notification.repository.SseEmitterRepository;
 import com.catchtable.reservation.dto.CreateReservationRequest;
 import com.catchtable.reservation.dto.OwnerReservationUpdateRequest;
@@ -58,6 +59,7 @@ import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -70,6 +72,7 @@ class ReservationPaymentServiceTest {
     private static final OffsetDateTime NOW = OffsetDateTime.parse("2030-01-20T12:00:00+09:00");
     @Autowired private JdbcTemplate jdbc;
     @Autowired private ReservationPaymentService service;
+    @Autowired private PaymentReconcileService reconciler;
     @Autowired private ReservationService reservations;
     @Autowired private ReservationRepository repository;
     @Autowired private StoreTableRepository tables;
@@ -510,6 +513,179 @@ class ReservationPaymentServiceTest {
                 .andExpect(status().isBadRequest());
         assertThat(fenced()).isFalse();
         verifyNoInteractions(toss, emitter);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"key", "order", "amount", "member"})
+    void settlementChecksTheOriginalBindingAndSnapshotBeforeChangingTheReservation(String mismatch) {
+        when(toss.confirm(anyString(), anyString(), anyLong(), anyString())).thenReturn(response("IN_PROGRESS"));
+        assertFailure(() -> service.confirm(memberId, request()), ErrorCode.PAYMENT_RECONCILIATION_REQUIRED);
+        jdbc.update("UPDATE payment SET status = 'DONE', payment_key = 'pk-test', approved_at = ? WHERE id = ?",
+                NOW, paymentId);
+        switch (mismatch) {
+            case "key" -> jdbc.update("UPDATE payment SET payment_key = 'another-key' WHERE id = ?", paymentId);
+            case "order" -> jdbc.update("UPDATE payment SET order_id = ? WHERE id = ?", "changed-" + orderId, paymentId);
+            case "amount" -> jdbc.update("UPDATE payment SET amount = 10001 WHERE id = ?", paymentId);
+            case "member" -> jdbc.update("UPDATE payment SET member_id = ? WHERE id = ?", ownerId, paymentId);
+        }
+        now.set(NOW.plusMinutes(5));
+
+        assertFailure(() -> service.settle(paymentId), ErrorCode.PAYMENT_MISMATCH);
+
+        assertProtected();
+        assertThat(confirmedAt()).isNull();
+        assertThat(fenced()).isTrue();
+        verifyNoInteractions(emitter);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"CANCELLED", "COMPLETED", "NO_SHOW"})
+    void reconciliationOfAPreviouslyConfirmedTerminalReservationIsAnIdempotentRead(String terminal) throws Exception {
+        when(toss.confirm(anyString(), anyString(), anyLong(), anyString())).thenReturn(response("DONE"));
+        service.confirm(memberId, request());
+        OffsetDateTime originalConfirmation = confirmedAt();
+        jdbc.update("UPDATE reservation SET status = ? WHERE id = ?", terminal, reservationId);
+
+        reconciler.reconcile(paymentId);
+        reconciler.reconcile(paymentId);
+
+        assertThat(state()).isEqualTo(terminal);
+        assertThat(confirmedAt()).isEqualTo(originalConfirmation);
+        assertThat(historyCount()).isEqualTo(1);
+        assertThat(jdbc.queryForObject("SELECT refund_required_at FROM payment WHERE id = ?",
+                OffsetDateTime.class, paymentId)).isNull();
+        verify(emitter, times(1)).send(any(SseEmitter.SseEventBuilder.class));
+        verify(toss, times(1)).confirm(anyString(), anyString(), anyLong(), anyString());
+        verify(toss, never()).getByOrderId(anyString());
+        verify(toss, never()).getByPaymentKey(anyString());
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"CANCELLED", "EXPIRED"})
+    void aLateSuccessCannotResurrectATerminalHoldAndIsMarkedForRefund(String terminal) {
+        when(toss.confirm(anyString(), anyString(), anyLong(), anyString())).thenReturn(response("IN_PROGRESS"));
+        assertFailure(() -> service.confirm(memberId, request()), ErrorCode.PAYMENT_RECONCILIATION_REQUIRED);
+        jdbc.update("UPDATE reservation SET status = ? WHERE id = ?", terminal, reservationId);
+        when(toss.getByOrderId(orderId)).thenReturn(response("DONE"));
+
+        reconciler.reconcile(paymentId);
+        reconciler.reconcile(paymentId);
+
+        assertThat(state()).isEqualTo(terminal);
+        assertThat(confirmedAt()).isNull();
+        assertThat(fenced()).isFalse();
+        assertThat(jdbc.queryForObject("SELECT refund_required_at IS NOT NULL FROM payment WHERE id = ?",
+                Boolean.class, paymentId)).isTrue();
+        assertThat(historyCount()).isEqualTo(2);
+        verifyNoInteractions(emitter);
+    }
+
+    @Test
+    @Timeout(20)
+    void aLateReconciliationQueryHoldsNoLocksAndKeepsTheSameSlotUntilDone() throws Exception {
+        when(toss.confirm(anyString(), anyString(), anyLong(), anyString())).thenThrow(FakeTossPaymentsClient.timeout());
+        assertFailure(() -> service.confirm(memberId, request()), ErrorCode.PAYMENT_RECONCILIATION_REQUIRED);
+        var original = reservations.getHold(memberId, reservationId);
+        CountDownLatch entered = new CountDownLatch(1);
+        CountDownLatch finish = new CountDownLatch(1);
+        when(toss.getByOrderId(orderId)).thenAnswer(call -> {
+            assertThat(TransactionSynchronizationManager.isActualTransactionActive()).isFalse();
+            transactions.executeWithoutResult(status -> {
+                jdbc.queryForObject("SELECT id FROM reservation WHERE id = ? FOR UPDATE NOWAIT", Long.class, reservationId);
+                jdbc.queryForObject("SELECT id FROM payment WHERE id = ? FOR UPDATE NOWAIT", Long.class, paymentId);
+            });
+            entered.countDown();
+            assertThat(finish.await(10, TimeUnit.SECONDS)).isTrue();
+            return response("DONE");
+        });
+        now.set(NOW.plusMinutes(5));
+        try (var executor = Executors.newSingleThreadExecutor()) {
+            var result = executor.submit(() -> reconciler.reconcile(paymentId));
+            assertThat(entered.await(10, TimeUnit.SECONDS)).isTrue();
+            try {
+                assertProtected();
+            } finally {
+                finish.countDown();
+            }
+            result.get(10, TimeUnit.SECONDS);
+        }
+        reconciler.reconcile(paymentId);
+        var confirmed = reservations.getReservation(memberId, reservationId);
+        assertThat(confirmed.status()).isEqualTo(ReservationStatus.CONFIRMED);
+        assertThat(confirmed.tableId()).isEqualTo(original.tableId());
+        assertThat(confirmed.reservationStartAt()).isAtSameInstantAs(original.reservationStartAt());
+        assertThat(historyCount()).isEqualTo(2);
+        verify(emitter, times(1)).send(any(SseEmitter.SseEventBuilder.class));
+        verify(toss, times(1)).getByOrderId(orderId);
+    }
+
+    @ParameterizedTest
+    @CsvSource({"3, CANCELLED", "4, EXPIRED"})
+    void aConfirmedFailureReleasesAtTheOriginalBoundaryAndReplayDoesNotTouchTheNewHold(int minutes,
+                                                                                      String expected) {
+        when(toss.confirm(anyString(), anyString(), anyLong(), anyString())).thenReturn(response("IN_PROGRESS"));
+        assertFailure(() -> service.confirm(memberId, request()), ErrorCode.PAYMENT_RECONCILIATION_REQUIRED);
+        var original = reservations.getHold(memberId, reservationId);
+        now.set(NOW.plusMinutes(minutes));
+        when(toss.getByOrderId(orderId)).thenReturn(response("ABORTED"));
+
+        reconciler.reconcile(paymentId);
+        assertThat(state()).isEqualTo(expected);
+        assertThat(fenced()).isFalse();
+        var replacement = reservations.createHold(memberId,
+                new CreateReservationRequest(storeId, original.reservationStartAt(), 2));
+        reconciler.reconcile(paymentId);
+
+        assertThat(replacement.tableId()).isEqualTo(original.tableId());
+        assertThat(reservations.getHold(memberId, replacement.holdId()).status())
+                .isEqualTo(ReservationStatus.PENDING_PAYMENT);
+        assertThat(state()).isEqualTo(expected);
+        verifyNoInteractions(emitter);
+    }
+
+    @Test
+    void aFullyRefundedLegacyAttemptCannotClearQuarantineWhileAnotherResultIsUnknown() {
+        Long legacy = data.payment(memberId, reservationId, "REFUNDED", 10000);
+        jdbc.update("UPDATE reservation SET approval_quarantined = TRUE WHERE id = ?", reservationId);
+        jdbc.update("UPDATE payment SET status = 'TIMEOUT' WHERE id = ?", paymentId);
+        now.set(NOW.plusMinutes(5));
+        when(toss.getByOrderId(orderId)).thenReturn(response("IN_PROGRESS"));
+
+        reconciler.reconcile(legacy);
+        reconciler.reconcile(paymentId);
+        assertProtected();
+        assertThat(jdbc.queryForMap("SELECT approval_started_at, approval_payment_id, approval_order_id, approval_payment_key FROM reservation WHERE id = ?",
+                reservationId).values()).containsOnlyNulls();
+
+        when(toss.getByOrderId(orderId)).thenReturn(response("ABORTED"));
+        reconciler.reconcile(paymentId);
+        assertThat(state()).isEqualTo("EXPIRED");
+        assertThat(jdbc.queryForObject("SELECT approval_quarantined FROM reservation WHERE id = ?",
+                Boolean.class, reservationId)).isFalse();
+        verifyNoInteractions(emitter);
+    }
+
+    @Test
+    void syncAndDetailKeepTheFlattenedPaymentContractAndExposeRefundRequired() throws Exception {
+        jdbc.update("UPDATE payment SET status = 'TIMEOUT' WHERE id = ?", paymentId);
+        now.set(NOW.plusMinutes(5));
+        when(toss.getByOrderId(orderId)).thenReturn(response("DONE"));
+
+        mvc.perform(post("/api/user/payments/{paymentId}/sync", paymentId).header("X-Member-Id", memberId))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.paymentId").value(paymentId))
+                .andExpect(jsonPath("$.status").value("DONE"))
+                .andExpect(jsonPath("$.refundRequired").value(true))
+                .andExpect(jsonPath("$.refunds").isArray())
+                .andExpect(jsonPath("$.payment").doesNotExist());
+        mvc.perform(get("/api/user/payments/{paymentId}", paymentId).header("X-Member-Id", memberId))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.paymentId").value(paymentId))
+                .andExpect(jsonPath("$.refundRequired").value(true))
+                .andExpect(jsonPath("$.refunds").isEmpty())
+                .andExpect(jsonPath("$.payment").doesNotExist());
+        assertThat(state()).isEqualTo("EXPIRED");
+        assertThat(historyCount()).isEqualTo(2);
+        verify(toss, never()).cancel(anyString(), any(), anyString(), anyString());
+        verifyNoInteractions(emitter);
     }
 
     private void assertProtected() {

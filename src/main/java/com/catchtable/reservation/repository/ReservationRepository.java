@@ -72,6 +72,11 @@ public interface ReservationRepository extends JpaRepository<Reservation, Long> 
             @Param("memberId") Long memberId
     );
 
+    // 기능63 재확인용 (회원 조건 없이 예약 행 잠금)
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select r from Reservation r where r.id = :id")
+    Optional<Reservation> findByIdForUpdate(@Param("id") Long id);
+
     @Query("""
             select r from Reservation r
             where r.store.id = :storeId and r.reservationEndAt > :now
@@ -116,15 +121,19 @@ public interface ReservationRepository extends JpaRepository<Reservation, Long> 
 
     // 방문 확인을 마치고 이용시간이 끝난 확정 예약만 일괄 완료 처리한다.
     @Modifying(clearAutomatically = true, flushAutomatically = true)
-    @Query("""
-            update Reservation r
-            set r.status = com.catchtable.reservation.entity.ReservationStatus.COMPLETED,
-                r.completedAt = :completedAt,
-                r.updatedAt = :completedAt
-            where r.status = com.catchtable.reservation.entity.ReservationStatus.CONFIRMED
-              and r.checkedInAt is not null
-              and r.reservationEndAt <= :completedAt
-            """)
+    @Query(value = """
+            WITH completing AS (
+                SELECT r.id FROM reservation r
+                WHERE r.status = 'CONFIRMED' AND r.checked_in_at IS NOT NULL
+                  AND r.reservation_end_at <= :completedAt AND NOT r.refund_in_progress
+                  AND NOT EXISTS (
+                      SELECT 1 FROM payment p JOIN payment_refund f ON f.payment_id = p.id
+                      WHERE p.reservation_id = r.id AND f.status IN ('REQUESTED', 'UNKNOWN'))
+                ORDER BY r.id FOR UPDATE OF r SKIP LOCKED
+            )
+            UPDATE reservation r SET status = 'COMPLETED', completed_at = :completedAt, updated_at = :completedAt
+            FROM completing WHERE r.id = completing.id
+            """, nativeQuery = true)
     int completeVisitedReservations(@Param("completedAt") OffsetDateTime completedAt);
 
 

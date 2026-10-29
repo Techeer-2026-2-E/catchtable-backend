@@ -19,6 +19,7 @@ import com.catchtable.store.repository.StoreRepository;
 import com.catchtable.store.repository.StoreTableRepository;
 import jakarta.persistence.EntityManager;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
@@ -44,6 +45,7 @@ public class ReservationService {
     private final ApplicationEventPublisher eventPublisher;
     private final Clock clock;
     private final ReservationRefundService refundService;
+    private final ObjectProvider<ReservationDepositTermsReader> depositTermsReader;
 
     public ReservationResponse getReservation(Long memberId, Long reservationId) {
         return ReservationResponse.from(reservationRepository.findByIdAndMember_Id(reservationId, memberId)
@@ -109,12 +111,17 @@ public class ReservationService {
         }
         Store store = storeRepository.findByIdForShare(request.storeId())
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "매장을 찾을 수 없습니다."));
+        ReservationDepositTermsReader.Terms depositTerms = readDepositTerms(store);
 
         // 설정 변경을 기다렸다면, 잠금을 얻은 시각으로 예약 마감 여부를 다시 판단한다.
         OffsetDateTime now = OffsetDateTime.now(clock);
         availabilityService.validateBookable(store, request.reservationStartAt(), now);
         OffsetDateTime reservationEndAt = request.reservationStartAt()
                 .plusMinutes(store.getReservationDurationMinutes());
+
+        if (!hold && depositTerms.depositEnabled()) {
+            throw new BusinessException(ErrorCode.RESERVATION_PAYMENT_REQUIRED);
+        }
 
         // 주기 정리 전에도 만료 선점을 반환하고 재배정한다.
         reservationRepository.expireHolds(store.getId(), now);
@@ -131,15 +138,34 @@ public class ReservationService {
 
         // 조회 직후 발생한 동시 예약도 DB의 시간 중복 제약에서 최종 차단한다.
         try {
-            Reservation reservation = hold
-                    ? Reservation.held(member, store, table.getId(), request.reservationStartAt(),
-                            reservationEndAt, request.partySize(), now)
-                    : Reservation.confirmed(member, store, table.getId(), request.reservationStartAt(),
-                            reservationEndAt, request.partySize(), now);
+            Reservation reservation;
+            if (hold && depositTerms.depositEnabled()) {
+                reservation = Reservation.held(member, store, table.getId(), request.reservationStartAt(),
+                        reservationEndAt, request.partySize(), now, depositTerms.amount(), depositTerms.refundPolicy());
+            } else if (hold) {
+                reservation = Reservation.held(member, store, table.getId(), request.reservationStartAt(),
+                        reservationEndAt, request.partySize(), now);
+            } else {
+                reservation = Reservation.confirmed(member, store, table.getId(), request.reservationStartAt(),
+                        reservationEndAt, request.partySize(), now);
+            }
             return reservationRepository.saveAndFlush(reservation);
         } catch (DataIntegrityViolationException exception) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "예약 가능한 테이블이 없습니다.", exception);
         }
+    }
+
+    private ReservationDepositTermsReader.Terms readDepositTerms(Store lockedStore) {
+        try {
+            ReservationDepositTermsReader reader = depositTermsReader.getIfAvailable();
+            // 어댑터 연결 전에는 승인된 기존 무료 예약·일반 선점 동작을 유지한다.
+            if (reader == null) return new ReservationDepositTermsReader.Terms(false, 0, null);
+            ReservationDepositTermsReader.Terms terms = reader.read(lockedStore);
+            if (terms != null) return terms;
+        } catch (RuntimeException exception) {
+            throw new BusinessException(ErrorCode.RESERVATION_DEPOSIT_TERMS_UNAVAILABLE);
+        }
+        throw new BusinessException(ErrorCode.RESERVATION_DEPOSIT_TERMS_UNAVAILABLE);
     }
 
     @Transactional
@@ -153,6 +179,7 @@ public class ReservationService {
         }
         OffsetDateTime now = OffsetDateTime.now(clock);
         try{
+            refundService.requireNoInFlight(reservation);
             reservation.cancelByCustomer(now);
         }
         catch(IllegalStateException exception)

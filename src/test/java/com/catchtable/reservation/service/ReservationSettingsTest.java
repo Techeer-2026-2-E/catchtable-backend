@@ -74,6 +74,7 @@ class ReservationSettingsTest {
 
     @Autowired private JdbcTemplate jdbc;
     @Autowired private ReservationService reservations;
+    @Autowired private ReservationRefundExecutionService refundExecution;
     @Autowired private OwnerReservationService ownerReservations;
     @Autowired private ReservationAvailabilityService availability;
     @Autowired private StoreTableService tables;
@@ -130,7 +131,7 @@ class ReservationSettingsTest {
 
     @Test
     void holdApiKeepsTheServerDeadlineAndProtectsItsOwnerAndTable() throws Exception {
-        var mvc = MockMvcBuilders.standaloneSetup(new ReservationController(reservations))
+        var mvc = MockMvcBuilders.standaloneSetup(new ReservationController(reservations, refundExecution))
                 .setCustomArgumentResolvers(new LoginMemberArgumentResolver())
                 .setControllerAdvice(new GlobalExceptionHandler()).build();
         var request = new CreateReservationRequest(storeId, start, 4);
@@ -508,7 +509,7 @@ class ReservationSettingsTest {
 
     @Test
     void explicitHoldReleaseIsOwnedIdempotentAndNeverCancelsAConfirmedReservation() throws Exception {
-        var mvc = MockMvcBuilders.standaloneSetup(new ReservationController(reservations))
+        var mvc = MockMvcBuilders.standaloneSetup(new ReservationController(reservations, refundExecution))
                 .setCustomArgumentResolvers(new LoginMemberArgumentResolver())
                 .setControllerAdvice(new GlobalExceptionHandler()).build();
         var hold = reservations.createHold(customerId, new CreateReservationRequest(storeId, start, 4));
@@ -554,7 +555,7 @@ class ReservationSettingsTest {
         Long id = reserve();
         recordDepositSnapshot(id);
         var original = reservationRepository.findById(id).orElseThrow();
-        var mvc = MockMvcBuilders.standaloneSetup(new OwnerReservationController(ownerReservations))
+        var mvc = MockMvcBuilders.standaloneSetup(new OwnerReservationController(ownerReservations, refundExecution))
                 .setCustomArgumentResolvers(new LoginMemberArgumentResolver())
                 .setControllerAdvice(new GlobalExceptionHandler()).build();
         String path = "/api/owner/reservations/" + id;

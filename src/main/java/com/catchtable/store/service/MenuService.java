@@ -30,6 +30,8 @@ public class MenuService {
         Store store=storeRepository.findById(storeId)
                 .orElseThrow(()->new BusinessException(ErrorCode.STORE_NOT_FOUND));
 
+        store.validateManaged();
+
         Menu menu=Menu.builder()
                 .store(store)
                 .name(request.name())
@@ -45,6 +47,7 @@ public class MenuService {
         Menu menu=menuRepository.findByIdAndStoreId(menuId, storeId)
                 .orElseThrow(()->new BusinessException(ErrorCode.MENU_NOT_FOUND));
 
+        menu.getStore().validateManaged();
         menu.changeInfo(request.name(), request.price(), request.description());
         return MenuResponse.from(menu);
     }

@@ -10,6 +10,7 @@ import com.catchtable.payment.repository.PaymentRefundRepository;
 import com.catchtable.reservation.dto.RefundPreviewResponse;
 import com.catchtable.reservation.entity.CancellationActor;
 import com.catchtable.reservation.entity.Reservation;
+import com.catchtable.reservation.repository.ReservationRefundRequestRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
@@ -27,6 +28,7 @@ public class ReservationRefundService {
     private final PaymentRepository paymentRepository;
     private final PaymentRefundRepository paymentRefundRepository;
     private final ReservationRefundCalculator refundCalculator;
+    private final ReservationRefundRequestRepository requests;
 
     public RefundPreviewResponse preview(Reservation reservation, OffsetDateTime now) {
         return calculate(reservation, paymentRepository.findAllByReservation_Id(reservation.getId()),
@@ -37,14 +39,24 @@ public class ReservationRefundService {
     public void requireRefundCompleted(Reservation reservation, CancellationActor actor, OffsetDateTime now) {
         var payments = paymentRepository.findAllByReservationIdForUpdate(reservation.getId());
         var refund = calculate(reservation, payments, actor, now);
-        // shortcut: 양수 환불 실행은 최초 요청 고정·진행 중 변경 동결 계약(사용자4B) 후 연결한다.
         if (refund.refundableAmount() > 0) {
             throw new BusinessException(ErrorCode.REFUND_NOT_COMPLETED);
         }
     }
 
-    private RefundPreviewResponse calculate(Reservation reservation, List<Payment> payments,
+    public void requireNoInFlight(Reservation reservation) {
+        reservation.requireNoRefundInProgress();
+        if (requests.existsByReservationIdAndStatusIn(reservation.getId(),
+                EnumSet.of(PaymentRefundStatus.REQUESTED, PaymentRefundStatus.UNKNOWN))
+                || requests.hasCommonInFlight(reservation.getId(),
+                        EnumSet.of(PaymentRefundStatus.REQUESTED, PaymentRefundStatus.UNKNOWN))) {
+            throw new BusinessException(ErrorCode.REFUND_DATA_NOT_READY);
+        }
+    }
+
+    public RefundPreviewResponse calculate(Reservation reservation, List<Payment> payments,
                                             CancellationActor actor, OffsetDateTime now) {
+        reservation.requireNoRefundInProgress();
         if (payments.stream().anyMatch(payment -> paymentRefundRepository.existsByPaymentIdAndStatusIn(
                 payment.getId(), EnumSet.of(PaymentRefundStatus.REQUESTED, PaymentRefundStatus.UNKNOWN)))) {
             throw new BusinessException(ErrorCode.REFUND_DATA_NOT_READY);
@@ -69,7 +81,9 @@ public class ReservationRefundService {
         }
         var payment = approved.getFirst();
         if (!payment.getMember().getId().equals(reservation.getMember().getId()) || payment.getAmount() != amount
-                || payment.getRefundedAmount() < 0 || payment.getRefundedAmount() > amount) {
+                || payment.getRefundedAmount() < 0 || payment.getRefundedAmount() > amount
+                || (reservation.getApprovalPaymentId() != null && !reservation.matchesPaymentApproval(
+                        payment.getId(), payment.getOrderId(), payment.getPaymentKey()))) {
             throw new BusinessException(ErrorCode.REFUND_DATA_NOT_READY);
         }
         var calculation = refundCalculator.calculate(amount, payment.getRefundedAmount(), policy,
