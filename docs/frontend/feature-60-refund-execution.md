@@ -23,6 +23,14 @@
 
 #68에서 실제 취소 실행·결과 저장·응답 유실 복구를 공통 결제 상태·멱등성·결과 재확인 계약과 맞춘다. 기능61 계산과 환불 실행의 완료 범위를 구분한다.
 
+## 2026-10-29 재확인 후속 검토 메모
+
+기준 dev `7da9c1db77dac1327b565e8d1f36bd3961ea57c6`와 별도 미머지 후보를 구분한다. 기존 취소 보호 [PR #150](https://github.com/Techeer-2026-2-E/catchtable-backend/pull/150)은 Draft이고, 공통 결과 재확인 [PR #179](https://github.com/Techeer-2026-2-E/catchtable-backend/pull/179)와 별도 [기능60 통합 테스트 #181](https://github.com/Techeer-2026-2-E/catchtable-backend/issues/181)은 후속 검토 범위다. #181은 기존 보호를 검증하는 테스트이며 새 환불 실행을 구현하지 않는다.
+
+REQUESTED/UNKNOWN의 기존 환불 결과를 조회하는 동안 추가 환불 예상액이0원이어도 예상액·고객/점주 취소는 `409 REFUND_DATA_NOT_READY`이며 예약·자리·SSE를 보존한다. 검증된 기존 환불 결과가 반영되어도 돈 환불만으로 예약을 취소하지 않는다. 이후 예약 취소 요청이 허용되는 경우에만 자리와 알림을 한 번 변경한다. 취소 완료 뒤 결제를 재확인해도 예약을 다시 확정하거나 환불 필요 표식을 새로 만들지 않는다.
+
+양수 환불 실행·새 PG 취소 endpoint는 사용자4B에 따라 계속 보류한다. 상위 [#68](https://github.com/Techeer-2026-2-E/catchtable-backend/issues/68)은 열어 두며 [#67](https://github.com/Techeer-2026-2-E/catchtable-backend/issues/67)은 예상액 보호 확인의 관련 범위다. 공유 V20 적용 이력과 기존 DB upgrade, 실제 Toss·프런트/JWT·배포는 미확인이다. 이 문서 후보는 링크·기준 소스·Markdown·diff만 검사하며 앱 테스트 증거는 별도 소스 후보와 구분한다.
+
 ## 문서 검증
 
 컨트롤러·DTO·서비스와 명시한 프런트 소스를 대조했고 상대 링크와 git diff --check를 확인했다. 문서만 변경하므로 앱 테스트를 새로 실행한 것으로 보고하지 않는다. 프런트 저장소 수정·화면 실행·Toss 실행·배포 검증은 포함하지 않는다.
