@@ -80,3 +80,12 @@ DB_USERNAME=phase2_test DB_PASSWORD=phase2_test ./gradlew test \
 기능33의 예약금 설정 원본·점주 계약이 없어 prepare API와 유료 생성 연결을 만들지 않았다. 올바른 준비 원장이 저장된 경우만 검증했으며 유료 생성 전체 E2E는 미완료다. 2A는 결제 환불과 예약 취소를 분리하며 고객 취소는 남은 **정책상** 환불액이 기준이고 임의 전액 환불을 허용하지 않는다. 3A의 양수 취소 환불에만 필요한 client Idempotency-Key는 미래 계약이다. 4B에 따라 최초 요청 시각/한도 저장·진행 중 변경 동결 계약 전 양수 환불 endpoint와 PG 기반 예약 취소는 보류하며 기존 양수 환불 차단을 유지한다. 기능142 복구·실제 Toss·프런트/JWT·배포는 이번 구현·검증 범위에 없다.
 
 합본 첫 실행에서는539개 중 기존 WaitingQueueNotifierTest의7개가 새 컨텍스트 시작 시 PostgreSQL 기본100연결 한도(`too many clients already`)로 실패했다. 새 Clock/Toss mock 승인 테스트의 독립 Spring 컨텍스트를 `DirtiesContext(AFTER_CLASS)`로 테스트 종료 시 반환하도록 보완했다. 운영 설정·DB 한도·기존 테스트는 바꾸지 않으며 테스트를 제외하지 않는다. 실패 전체 로그/XML은 `approved-followup/aggregate-first-attempt`에 보존하고 최종 clean build 결과를 별도로 기록한다.
+
+
+## 2026-10-29 후속 — 승인 테스트 Clock 경합 수정
+
+CI 정리만 반영한 #150 `eb83d3a9695d59502a4bcb707589cf41093ca44f`의 [실패 실행](https://github.com/Techeer-2026-2-E/catchtable-backend/actions/runs/40805972509)에서 `failureAfterExpiryUnfencesAndExpiresWithoutConfirmingOrRefunding`이 `Clock.getZone`의 Instant→ZoneId 형변환으로 실패했다. 앱 소스는 기존 공개 head와 같았으며 실패를 재시도만으로 덮지 않았다.
+
+기존 Mockito Clock의 `when(clock.instant())`와 `thenAnswer` 사이에 다른 스레드가 `getZone`을 읽으면 같은 오류가 나는 것을 Mockito 5.11.0 최소 harness로 결정적으로 재현했다. 실제 예약 스케줄러도 같은 Clock을 읽으므로 테스트 setup의 재스텁이 안전하지 않았다. 기존 고정 Clock 테스트의 `@TestConfiguration`·`@Primary` 패턴을 사용해, 테스트 내부의 원자적 시각 참조와 고정 시간대를 읽는 실제 Clock으로 교체했다. 기존 경계 시각·동시 승인·AFTER_COMMIT 검증과 `@DirtiesContext(AFTER_CLASS)`를 유지했다. 운영 Clock·스케줄러·풀·앱 설정은 변경하지 않았다.
+
+새 disposable PostgreSQL16 localhost:54941, DB `phase2_targeted`, 기본 max_connections=100에서 `./gradlew test --tests '*ReservationPaymentServiceTest' --no-daemon` 32개가 통과했고, `--rerun-tasks`를 추가한 별도 두 실행도 각각 같은32개가 실패·오류·건너뜀0이었다. 세 실행은 겹치는 테스트이므로 합산하지 않는다. Toss는 기존 mock이며 빈 secret과 loopback base URL로 실제 외부 결제를 막았다. 전체 합본 빌드·새 source CI는 별도 증거로 관리한다. 이 fixture 수정에는 #179 공통 소스와 기능10 재확인 로직 수정을 포함하지 않는다.
