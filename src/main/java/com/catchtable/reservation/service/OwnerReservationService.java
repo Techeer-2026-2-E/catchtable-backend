@@ -9,6 +9,7 @@ import com.catchtable.notification.dto.NotificationType;
 import com.catchtable.reservation.dto.OwnerReservationResponse;
 import com.catchtable.reservation.dto.OwnerReservationUpdateRequest;
 import com.catchtable.reservation.entity.Reservation;
+import com.catchtable.reservation.entity.CancellationActor;
 import com.catchtable.reservation.entity.ReservationStatus;
 import com.catchtable.reservation.repository.ReservationRepository;
 import com.catchtable.store.entity.Store;
@@ -43,6 +44,7 @@ public class OwnerReservationService {
     private final StoreTableRepository tableRepository;
     private final ReservationAvailabilityService availabilityService;
     private final Clock clock;
+    private final ReservationRefundService refundService;
 
     @Transactional
     public OwnerReservationResponse updateReservation(Long ownerId, Long reservationId,
@@ -62,6 +64,7 @@ public class OwnerReservationService {
         Store store = storeRepository.findByIdForShare(storeId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.STORE_NOT_FOUND));
         Reservation reservation = findForUpdate(ownerId, reservationId);
+        refundService.requireNoInFlight(reservation);
         OffsetDateTime now = OffsetDateTime.now(clock);
         try {
             reservation.validateModifiable();
@@ -124,11 +127,14 @@ public class OwnerReservationService {
         if (reservation.getStatus() == ReservationStatus.CANCELLED) {
             return OwnerReservationResponse.from(reservation, OffsetDateTime.now(clock));
         }
+        refundService.requireNoInFlight(reservation);
+        OffsetDateTime now = OffsetDateTime.now(clock);
         try {
-            reservation.cancelByOwner(OffsetDateTime.now(), reason);
+            reservation.cancelByOwner(now, reason);
         } catch (IllegalStateException exception) {
             throw conflict(exception);
         }
+        refundService.requireRefundCompleted(reservation, CancellationActor.OWNER, now);
         eventPublisher.publishEvent(new CustomerNotificationEvent(
                 reservation.getMember().getId(),
                 NotificationType.RESERVATION_CANCELED,
@@ -141,8 +147,9 @@ public class OwnerReservationService {
     @Transactional
     public OwnerReservationResponse confirmVisit(Long ownerId, Long reservationId) {
         Reservation reservation = findForUpdate(ownerId, reservationId);
+        refundService.requireNoInFlight(reservation);
         try {
-            reservation.confirmVisit(OffsetDateTime.now(), ownerId);
+            reservation.confirmVisit(OffsetDateTime.now(clock), ownerId);
         } catch (IllegalStateException exception) {
             throw conflict(exception);
         }
@@ -152,9 +159,10 @@ public class OwnerReservationService {
     @Transactional
     public OwnerReservationResponse markNoShow(Long ownerId, Long reservationId, String reason) {
         Reservation reservation = findForUpdate(ownerId, reservationId);
+        refundService.requireNoInFlight(reservation);
         try {
             reservation.markNoShow(
-                    OffsetDateTime.now(),
+                    OffsetDateTime.now(clock),
                     ownerId,
                     reservation.getStore().getArrivalGraceMinutes(),
                     reason

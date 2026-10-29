@@ -99,6 +99,14 @@ public class PaymentService {
         return PaymentResponse.from(payment);
     }
 
+    // 환불 필요 표시 (예약 확정 없이 확인된 승인)
+    @Transactional
+    public PaymentResponse requireRefund(Long paymentId, String reason) {
+        Payment payment = lock(paymentId);
+        save(payment.requireRefund(reason, OffsetDateTime.now(clock)));
+        return PaymentResponse.from(payment);
+    }
+
     private Payment lock(Long paymentId) {
         return paymentRepository.findByIdForUpdate(paymentId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.PAYMENT_NOT_FOUND));
