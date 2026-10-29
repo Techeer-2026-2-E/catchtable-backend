@@ -2,9 +2,12 @@ package com.catchtable.store.controller;
 
 
 import com.catchtable.store.dto.CategoryResponse;
+import com.catchtable.store.dto.NearbyStoreCondition;
+import com.catchtable.store.dto.NearbyStoreListResponse;
 import com.catchtable.store.dto.StoreDetailResponse;
 import com.catchtable.store.dto.StoreSearchCondition;
 import com.catchtable.store.dto.StoreSummaryResponse;
+import com.catchtable.store.service.NearbyStoreService;
 import com.catchtable.store.service.StoreService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -23,6 +26,7 @@ import java.util.List;
 public class UserStoreController {
 
     private final StoreService service;
+    private final NearbyStoreService nearbyStoreService;
 
     @GetMapping("/categories")
     public ResponseEntity<List<CategoryResponse>> getCategories()
@@ -34,6 +38,12 @@ public class UserStoreController {
     public ResponseEntity<List<StoreSummaryResponse>> searchStores(@Valid @ModelAttribute StoreSearchCondition condition)
     {
         return ResponseEntity.ok(service.searchStores(condition));
+    }
+
+    @GetMapping("/stores/home")
+    public ResponseEntity<NearbyStoreListResponse> getNearbyStores(@Valid @ModelAttribute NearbyStoreCondition condition)
+    {
+        return ResponseEntity.ok(nearbyStoreService.getNearbyStores(condition));
     }
 
     @GetMapping("/stores/{storeId}")
