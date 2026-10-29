@@ -1,5 +1,90 @@
 # 기능10 — 예약금 가결제 프런트 연동
 
+## 2026-10-29 현재 계약 — 저장된 유료 선점의 결제 준비
+
+- 문서 이슈: [#196](https://github.com/Techeer-2026-2-E/catchtable-backend/issues/196), 기능 이슈: [#195](https://github.com/Techeer-2026-2-E/catchtable-backend/issues/195), 상위 [#65](https://github.com/Techeer-2026-2-E/catchtable-backend/issues/65)
+- 정본: [기능10](https://app.notion.com/p/3d548d76fa32819386a3e858c26b2c1b), [prepare API](https://app.notion.com/p/0ba48d76fa328309ab3a018b1b5fed0f), [confirm API](https://app.notion.com/p/39b48d76fa328319a4a181bc187e8970)
+- 문서 기준 dev: `9da5d70d0afa296dad25fc689413c04c76a89272`. 해당 dev 문서의 이전 기록을 보존하고 준비 API의 현행 후보 계약을 추가했다.
+- 구현 후보: [Draft PR #198](https://github.com/Techeer-2026-2-E/catchtable-backend/pull/198), head `f81bcaa95de0244d76ff4a2d40e9d89165d06c55`. 검증한 앱·테스트 기준은 `3080466a18aa18d6f7fb334771b80273b6731c1b`이며 이후 커밋은 work-log만 추가·정정해 앱·테스트·빌드 입력 트리는 같다. 소스는 **dev 대상 Draft·미머지**다. 문서 머지는 dev의 API 제공·소스 머지·배포 완료를 뜻하지 않는다. [해당 소스 head CI](https://github.com/Techeer-2026-2-E/catchtable-backend/actions/runs/40826793631)는 SUCCESS다.
+
+### 대상과 선행 조건
+
+`POST /api/user/payments/prepare`는 신뢰할 수 있는 서버 경로가 이미 저장한 유료 선점만 대상으로 한다. 양수 `depositAmountSnapshot`, 유효한 `refundPolicySnapshot`, 미입장 `PENDING_PAYMENT`, 원래 `requestedAt + 5분` 만료시각과 그 시각 전이라는 조건이 필요하다. 기능33의 매장 설정과 실제 유료 선점 공개 생성은 연결되지 않았다. 현재 공개 무료 선점은 스냅샷이 없으므로 prepare로 유료 전환되지 않는다. 현재 매장 설정이나 임의 기본 금액·정책으로 과거 원본을 채우지 않는다. 아래 10000원은 예시이며 기본값이 아니다.
+
+요청은 `Content-Type: application/json`, 숫자 `X-Member-Id`와 CUSTOMER 회원으로 처리한다. JWT 연동 완료를 뜻하지 않는다. 본인 선점만 허용하고 다른 고객 선점은 없는 선점과 같은 404다.
+
+```http
+POST /api/user/payments/prepare
+Content-Type: application/json
+X-Member-Id: 101
+
+{"holdId":202}
+```
+
+`holdId`는 양수 정수이며 현재 모델에서 `reservationId`와 같은 값이다. 본문에는 이 필드만 정의되어 있다. 금액·정책·orderId·expiresAt·회원 정보를 추가하더라도 기존 Jackson 규칙으로 무시되어 서버 원본을 덮어쓰지 못한다. 인원수로 금액을 곱하지 않는다.
+
+### 성공과 재요청
+
+새 주문은 **201**, 같은 유효 선점의 기존 READY 재사용은 **200**이다. 응답은 같은 최상위 형식이며 `payment` 래퍼가 없다.
+
+```json
+{
+  "paymentId": 303,
+  "reservationId": 202,
+  "holdId": 202,
+  "orderId": "ct-00000000-0000-4000-8000-000000000000",
+  "orderName": "예약금",
+  "amount": 10000,
+  "status": "READY",
+  "expiresAt": "2030-01-20T03:04:00Z",
+  "serverTime": "2030-01-20T12:00:00+09:00",
+  "remainingSeconds": 240
+}
+```
+
+서버는 64자 이내의 유일한 orderId(`ct-` + UUID, 39자), 100자 이내 주문명, 최초 스냅샷 금액을 저장한다. 준비 응답의 reservationId/holdId는 같은 선점 ID다. 승인 전 reservationId를 null로 내리는 기존 결제 조회의 PaymentResponse와 준비 DTO를 혼동하지 않는다.
+
+재요청·동시 요청은 같은 READY의 paymentId·orderId·주문명·최초 금액·원래 만료시각을 그대로 반환한다. 새 주문이나 최초 이력을 추가하지 않고 결제/예약 행도 갱신하지 않는다. 새 주문의 최초 이력은 `READY → READY`, `USER`, `결제 준비` 1건이다. 준비는 SSE와 외부 PG 호출을 만들지 않는다.
+
+expiresAt/serverTime은 오프셋이 포함된 같은 시간축으로 비교한다. DB에서 읽은 expiresAt은 예시처럼 UTC일 수 있다. remainingSeconds는 서버 시각 기준 남은 초를 내림하고 0 이상으로 제한한다. 만료 1µs 전에는 0초와 READY가 반환될 수 있지만 원래 만료 정각부터 신규·재사용 모두 거절된다. 조회나 준비로 5분을 연장하지 않는다.
+
+### 충돌과 오류
+
+| HTTP / code | 의미와 프런트 처리 |
+| --- | --- |
+| 400 `INVALID_INPUT` | holdId 누락·null·0·음수·잘못된 JSON/타입 |
+| 401 `UNAUTHORIZED` | X-Member-Id 누락·잘못된 숫자 |
+| 403 `FORBIDDEN_MEMBER_TYPE` | CUSTOMER가 아닌 회원 |
+| 404 `MEMBER_NOT_FOUND` | 존재하지 않는 회원 |
+| 404 `RESERVATION_NOT_FOUND` | 없는 선점 또는 다른 고객의 선점 |
+| 409 `PAYMENT_MISMATCH` | 무료/누락/잘못된 스냅샷·바뀐 5분 원본·회원/금액/승인 전 바인딩이 맞지 않는 READY·여러 결제 행. 서버가 원본을 추정하거나 복구하지 않음 |
+| 409 `INVALID_PAYMENT_STATUS` | 만료·미래 요청시각·입장·PENDING_PAYMENT 이외 예약 또는 기존 FAILED/CANCELED. 새 재결제 정책 없음 |
+| 409 `PAYMENT_STATUS_CHECK_REQUIRED` | 승인 시작·격리·TIMEOUT·DONE·PARTIAL_REFUNDED·REFUNDED. **기존 결제 상태를 조회**하고 새 주문·추가 결제를 만들지 않음 |
+| 409 `REFUND_DATA_NOT_READY` | 기존 환불 동결. 동결을 풀거나 새 주문을 만들지 않음 |
+
+승인 진행·결과 불명·완료의 409 메시지는 “진행하거나 완료한 결제가 있습니다. 기존 결제 상태를 조회해 주세요.”다. 알고 있는 paymentId로 `GET /api/user/payments/{paymentId}`를 확인한다. ID를 잃었다면 `GET /api/user/payments`로 조회하며, 결과 불명에 대한 기존 `POST /api/user/payments/{paymentId}/sync`와 재확인 계약을 따른다. prepare는 기존 승인 키·상태·격리 정보를 지우거나 PG를 재호출하지 않는다. 여러 모순된 결제 행은 우선 PAYMENT_MISMATCH로 거절한다.
+
+### 승인·재확인·환불과의 연결
+
+prepare가 반환한 orderId/amount로 기존 `POST /api/user/payments/confirm`을 호출한다. 승인 시작은 원래 5분 안에 영속 저장하고 외부 PG 호출은 바깥 트랜잭션과 행 잠금 없이 진행한다. 같은 요청의 검증된 DONE만 원래 테이블·시간을 한 번 확정한다. 유효한 시작 기록이 있으면 최초 만료 뒤의 같은 DONE도 가능하다. READY/TIMEOUT/FAILED만으로 예약을 확정하지 않고 종료 예약을 되살리지 않는다. 알림은 기존 커밋 후 계약을 유지한다.
+
+이 통합 후보는 기존 [PR #192](https://github.com/Techeer-2026-2-E/catchtable-backend/pull/192)의 승인·재확인·환불 보호를 정상 merge했다. 최초 유효 환불 요청과 한도 저장·환불 중 변경 동결이 승인된 [#188](https://github.com/Techeer-2026-2-E/catchtable-backend/issues/188) 이후의 계약을 따른다. 준비 API가 돈만 환불하는 경로와 예약 취소를 합치지는 않는다. [기능60](feature-60-refund-execution.md)·[기능61](feature-61-refund-preview.md)와 각각의 소스 상태를 확인한다. 아래의 이전 4B 보류 기록은 당시 상태다.
+
+### 검증과 남은 연결
+
+전용 PostgreSQL 16, 기본 max_connections=100, Java 21에서 새 prepare54개와 관련 회귀424개가 통과했다. 새 빈 DB의 최종 `./gradlew clean build --no-daemon`은 **66클래스 708개, 실패/오류/건너뜀0**, bootJar 생성 성공이다. 실행별 중복 수나 과거 #192의 628개를 더한 값이 아니다. [작업 기록](https://github.com/Techeer-2026-2-E/catchtable-backend/blob/f81bcaa95de0244d76ff4a2d40e9d89165d06c55/work-log/195-payment-prepare-snapshot.md), [구현](https://github.com/Techeer-2026-2-E/catchtable-backend/blob/f81bcaa95de0244d76ff4a2d40e9d89165d06c55/src/main/java/com/catchtable/payment/service/PaymentPrepareService.java), [DTO](https://github.com/Techeer-2026-2-E/catchtable-backend/blob/f81bcaa95de0244d76ff4a2d40e9d89165d06c55/src/main/java/com/catchtable/payment/dto/PaymentPrepareResponse.java)를 기준으로 한다. 소스 게시와 정확한 head의 CI 결과는 별도 증거다.
+
+금액 위변조 무효, READY 원본 재사용, 동시 prepare1건, 정확한 만료 경계, 승인/만료 경합, 준비→기존 confirm DONE→환불/취소를 검증했다. 마지막 흐름은 **신뢰된 저장 유료 fixture부터의 fake 검증**이며 실제 유료 선점 생성부터의 E2E가 아니다. 실제 Toss·프런트 화면/코드·JWT·배포는 검증하지 않았다. 이 문서의 링크·계약·diff 검사와 문서 PR CI는 소스 PR 검증을 대신하지 않는다.
+
+기능33 설정·실제 유료 생성 연결과 공유 V20 적용 이력·rollout은 남아 있다. 25개 기존 마이그레이션을 그대로 유지했다. V20 없는 populated V22 DB는 예상대로 Flyway 업그레이드가 차단되며 빈 DB 성공으로 이를 해결했다고 표시하지 않는다. repair/rename/outOfOrder/ignore를 적용하지 않는다. 기능 소스의 Draft 게시·정확한 head CI·머지와 문서 PR은 별개이며 #195/#65를 이 문서만으로 닫지 않는다.
+
+---
+
+## 이전 계약·검증 기록
+
+다음은 기준 dev 문서의 기록을 그대로 보존한 것이다. 아래 “현재/미구현/결정 대기” 및 과거 테스트 수는 각 기록 당시의 상태이며, 준비의 현행 후보 계약은 위 절을 따른다.
+
+
 - 확인일: 2026-10-27
 - 문서 작업 이슈: [#122](https://github.com/Techeer-2026-2-E/catchtable-backend/issues/122)
 - 명세: [기능10](https://app.notion.com/3d548d76fa32819386a3e858c26b2c1b)
