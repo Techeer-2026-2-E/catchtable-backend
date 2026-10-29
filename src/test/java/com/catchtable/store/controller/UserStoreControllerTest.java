@@ -10,7 +10,9 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.transaction.annotation.Transactional;
 
+import static org.hamcrest.Matchers.contains;
 import static org.hamcrest.Matchers.hasSize;
+import static org.hamcrest.Matchers.nullValue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -107,6 +109,27 @@ class UserStoreControllerTest {
         mockMvc.perform(get("/api/user/stores/{storeId}", storeId))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.menus", hasSize(0)));
+    }
+
+    @Test
+    @DisplayName("매장 목록에 매장 사진 주소를 내려준다")
+    void listIncludesImageUrl() throws Exception {
+        jdbcTemplate.update("UPDATE store SET image_url = ? WHERE id = ?",
+                "https://example.com/store.jpg", storeId);
+
+        // 테스트 DB에 공공데이터가 있어도 섞이지 않게 내 매장만 골라서 확인한다
+        mockMvc.perform(get("/api/user/stores"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[?(@.id == " + storeId + ")].imageUrl",
+                        contains("https://example.com/store.jpg")));
+    }
+
+    @Test
+    @DisplayName("사진이 없는 매장은 목록에서 imageUrl이 null이다")
+    void listImageUrlIsNullWhenMissing() throws Exception {
+        mockMvc.perform(get("/api/user/stores"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[?(@.id == " + storeId + ")].imageUrl", contains(nullValue())));
     }
 
     @Test
