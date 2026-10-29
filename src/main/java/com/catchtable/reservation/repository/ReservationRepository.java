@@ -18,6 +18,8 @@ import java.util.Optional;
 // 상태 변경용 ForUpdate 조회는 같은 예약의 취소·입장·노쇼 요청을 순서대로 처리하기 위해 행을 잠근다.
 public interface ReservationRepository extends JpaRepository<Reservation, Long> {
 
+    boolean existsByApprovalPaymentKeyAndIdNot(String approvalPaymentKey, Long id);
+
     // 정리 전 선점도 가져온 뒤 서비스에서 조회 시각 기준 상태로 최종 필터링한다.
     @EntityGraph(attributePaths = {"member", "store"})
     @Query("""
@@ -70,12 +72,17 @@ public interface ReservationRepository extends JpaRepository<Reservation, Long> 
             @Param("memberId") Long memberId
     );
 
+    // 기능63 재확인용 (회원 조건 없이 예약 행 잠금)
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select r from Reservation r where r.id = :id")
+    Optional<Reservation> findByIdForUpdate(@Param("id") Long id);
+
     @Query("""
             select r from Reservation r
             where r.store.id = :storeId and r.reservationEndAt > :now
               and (r.status = com.catchtable.reservation.entity.ReservationStatus.CONFIRMED
                 or (r.status = com.catchtable.reservation.entity.ReservationStatus.PENDING_PAYMENT
-                    and r.holdExpiresAt > :now))
+                    and (r.holdExpiresAt > :now or r.approvalPaymentId is not null or r.approvalQuarantined = true)))
             """)
     List<Reservation> findActiveForStore(@Param("storeId") Long storeId, @Param("now") OffsetDateTime now);
 
@@ -84,7 +91,7 @@ public interface ReservationRepository extends JpaRepository<Reservation, Long> 
             where r.tableId = :tableId
               and (r.status = com.catchtable.reservation.entity.ReservationStatus.CONFIRMED
                 or (r.status = com.catchtable.reservation.entity.ReservationStatus.PENDING_PAYMENT
-                    and r.holdExpiresAt > :now))
+                    and (r.holdExpiresAt > :now or r.approvalPaymentId is not null or r.approvalQuarantined = true)))
               and r.reservationEndAt > :now
               and (:inactive = true or r.partySize < :minCapacity or r.partySize > :capacity)
             """)
@@ -102,6 +109,7 @@ public interface ReservationRepository extends JpaRepository<Reservation, Long> 
             WITH expiring AS (
                 SELECT id FROM reservation
                 WHERE status = 'PENDING_PAYMENT' AND hold_expires_at <= :now
+                  AND approval_payment_id IS NULL AND NOT approval_quarantined
                   AND (CAST(:storeId AS BIGINT) IS NULL OR store_id = :storeId)
                 ORDER BY id
                 FOR UPDATE SKIP LOCKED

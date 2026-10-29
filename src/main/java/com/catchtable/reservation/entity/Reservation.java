@@ -1,6 +1,8 @@
 package com.catchtable.reservation.entity;
 
 import com.catchtable.global.common.BaseTimeEntity;
+import com.catchtable.global.exception.BusinessException;
+import com.catchtable.global.exception.ErrorCode;
 import com.catchtable.member.entity.Member;
 import com.catchtable.store.entity.Store;
 import jakarta.persistence.Column;
@@ -53,6 +55,13 @@ public class Reservation extends BaseTimeEntity {
     @Column(name = "party_size", nullable = false)
     private int partySize;
 
+    @Column(name = "deposit_amount_snapshot", updatable = false)
+    private Long depositAmountSnapshot;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "refund_policy_snapshot", length = 20, updatable = false)
+    private RefundPolicy refundPolicySnapshot;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
     private ReservationStatus status;
@@ -65,6 +74,21 @@ public class Reservation extends BaseTimeEntity {
 
     @Column(name = "hold_expires_at")
     private OffsetDateTime holdExpiresAt;
+
+    @Column(name = "approval_started_at")
+    private OffsetDateTime approvalStartedAt;
+
+    @Column(name = "approval_payment_id")
+    private Long approvalPaymentId;
+
+    @Column(name = "approval_order_id", length = 64)
+    private String approvalOrderId;
+
+    @Column(name = "approval_payment_key", length = 200)
+    private String approvalPaymentKey;
+
+    @Column(name = "approval_quarantined", nullable = false)
+    private boolean approvalQuarantined;
 
     @Column(name = "cancelled_at")
     private OffsetDateTime cancelledAt;
@@ -143,6 +167,7 @@ public class Reservation extends BaseTimeEntity {
         );
         reservation.status = ReservationStatus.CONFIRMED;
         reservation.confirmedAt = confirmedAt;
+        reservation.depositAmountSnapshot = 0L;
         return reservation;
     }
 
@@ -164,9 +189,26 @@ public class Reservation extends BaseTimeEntity {
         return reservation;
     }
 
+    /** 매장 정책 원본을 확인한 생성 호출부에서만 최초 예약금 조건을 전달한다. */
+    public static Reservation held(
+            Member member, Store store, Long tableId,
+            OffsetDateTime reservationStartAt, OffsetDateTime reservationEndAt,
+            int partySize, OffsetDateTime requestedAt, long depositAmount, RefundPolicy refundPolicy
+    ) {
+        if (depositAmount <= 0 || refundPolicy == null) {
+            throw new IllegalArgumentException("예약금과 환불 정책이 올바르지 않습니다.");
+        }
+        Reservation reservation = held(member, store, tableId, reservationStartAt, reservationEndAt,
+                partySize, requestedAt);
+        reservation.depositAmountSnapshot = depositAmount;
+        reservation.refundPolicySnapshot = refundPolicy;
+        return reservation;
+    }
+
     public ReservationStatus getStatusAt(OffsetDateTime now) {
         Objects.requireNonNull(now);
-        if (status == ReservationStatus.PENDING_PAYMENT && !holdExpiresAt.isAfter(now)) {
+        if (status == ReservationStatus.PENDING_PAYMENT && approvalPaymentId == null && !approvalQuarantined
+                && !holdExpiresAt.isAfter(now)) {
             return ReservationStatus.EXPIRED;
         }
         return status;
@@ -177,6 +219,9 @@ public class Reservation extends BaseTimeEntity {
     }
 
     public void releaseHold(OffsetDateTime now) {
+        if (approvalPaymentId != null || approvalQuarantined) {
+            throw new IllegalStateException("승인 결과 확인 전에는 선점을 해제할 수 없습니다.");
+        }
         expireHold(now);
         if (status == ReservationStatus.EXPIRED || status == ReservationStatus.CANCELLED) {
             return;
@@ -188,6 +233,59 @@ public class Reservation extends BaseTimeEntity {
         cancelledAt = now;
         cancellationActor = CancellationActor.CUSTOMER;
         cancellationReason = "결제 전 선점 취소";
+    }
+
+    public boolean matchesPaymentApproval(Long paymentId, String orderId, String paymentKey) {
+        return Objects.equals(approvalPaymentId, paymentId)
+                && Objects.equals(approvalOrderId, orderId)
+                && Objects.equals(approvalPaymentKey, paymentKey);
+    }
+
+    public void beginPaymentApproval(Long paymentId, String orderId, String paymentKey, OffsetDateTime now) {
+        if (approvalQuarantined) {
+            throw new BusinessException(ErrorCode.PAYMENT_RECONCILIATION_REQUIRED);
+        }
+        if (approvalPaymentId != null) {
+            if (!matchesPaymentApproval(paymentId, orderId, paymentKey)) {
+                throw new BusinessException(ErrorCode.PAYMENT_MISMATCH);
+            }
+            return;
+        }
+        if (getStatusAt(now) != ReservationStatus.PENDING_PAYMENT) {
+            throw new BusinessException(ErrorCode.INVALID_PAYMENT_STATUS);
+        }
+        approvalStartedAt = now.truncatedTo(ChronoUnit.MICROS);
+        approvalPaymentId = Objects.requireNonNull(paymentId);
+        approvalOrderId = Objects.requireNonNull(orderId);
+        approvalPaymentKey = Objects.requireNonNull(paymentKey);
+    }
+
+    public boolean confirmPayment(Long paymentId, String orderId, String paymentKey, OffsetDateTime now) {
+        if (approvalStartedAt == null || !approvalStartedAt.isBefore(holdExpiresAt)
+                || !matchesPaymentApproval(paymentId, orderId, paymentKey)) {
+            throw new BusinessException(ErrorCode.PAYMENT_RECONCILIATION_REQUIRED);
+        }
+        if (status == ReservationStatus.CONFIRMED) {
+            return false;
+        }
+        if (status != ReservationStatus.PENDING_PAYMENT) {
+            throw new BusinessException(ErrorCode.PAYMENT_RECONCILIATION_REQUIRED);
+        }
+        status = ReservationStatus.CONFIRMED;
+        confirmedAt = now;
+        return true;
+    }
+
+    public void clearPaymentApproval() {
+        approvalStartedAt = null;
+        approvalPaymentId = null;
+        approvalOrderId = null;
+        approvalPaymentKey = null;
+    }
+
+    // 기능63 재확인 후 격리 해제 (최종 결과 확인 시에만)
+    public void clearApprovalQuarantine() {
+        approvalQuarantined = false;
     }
 
     public void validateModifiable() {
