@@ -9,7 +9,8 @@ public record StoreSummaryResponse(
         StoreCategory category,
         String categoryName,
         String address,
-        boolean waitingAvailable
+        boolean waitingAvailable,
+        String imageUrl
 ) {
     public static StoreSummaryResponse of(Store store) {
         return new StoreSummaryResponse(
@@ -18,7 +19,8 @@ public record StoreSummaryResponse(
                 store.getCategory(),
                 store.getCategory().getDescription(),
                 store.getAddress(),
-                store.isWaitingAvailable()
+                store.isWaitingAvailable(),
+                store.getImageUrl()
         );
     }
 }

@@ -17,10 +17,10 @@ public class NearbyStoreRepository {
     private static final double EARTH_RADIUS_METERS = 6_371_000.0;
 
     private static final String FIND_NEARBY_SQL = """
-            SELECT id, name, category, address, waiting_available, distance_m
+            SELECT id, name, category, address, waiting_available, image_url, distance_m
             FROM (
-                SELECT id, name, category, address, waiting_available,
-                       2 * :earthRadius * asin(least(1.0, sqrt(
+                SELECT id, name, category, address, waiting_available, image_url,
+                       2 *:earthRadius * asin(least(1.0, sqrt(
                            power(sin(radians(latitude - :lat) / 2), 2)
                            + cos(radians(:lat)) * cos(radians(latitude))
                              * power(sin(radians(longitude - :lng) / 2), 2)))) AS distance_m
@@ -65,6 +65,7 @@ public class NearbyStoreRepository {
                     category.getDescription(),
                     rs.getString("address"),
                     rs.getBoolean("waiting_available"),
+                    rs.getString("image_url"),
                     (int) Math.round(rs.getDouble("distance_m")));
         });
     }
