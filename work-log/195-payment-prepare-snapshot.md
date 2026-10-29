@@ -34,7 +34,7 @@ Java 21.0.12.1과 이번 작업만의 PostgreSQL 16.15 컨테이너 `issue195-pr
 | --- | --- | --- |
 | 첫 prepare 실행 | `./gradlew test --tests '*PaymentPrepareServiceTest' --no-daemon`, `prepare_targeted` | 54개 중 2실패. UTC로 정규화된 만료시각과 +09:00 문자열/리스트를 비교한 테스트 기대값 문제. instant 비교로 수정. 전체 실패 로그·XML 보존 |
 | 수정 후 prepare | 같은 명령·DB | 54개, 실패/오류/건너뜀 0 |
-| 결제·승인·재확인·환불·취소·선점·설정·무료 예약 회귀 | `./gradlew test`에 16개 `--tests` 필터와 `--no-daemon`; 전체 인자는 외부 `logs/03-regressions/command.json` | 29클래스 424개, 실패/오류/건너뜀 0. 앞선 실행과 중복되므로 합산하지 않음 |
+| 결제·승인·재확인·환불·취소·선점·설정·무료 예약 회귀 | `./gradlew test`에 12개 `--tests` 필터와 `--no-daemon`; 전체 인자는 외부 `logs/03-regressions/command.json` | 29클래스 424개, 실패/오류/건너뜀 0. 앞선 실행과 중복되므로 합산하지 않음 |
 | 최종 전체 검증 | 같은 컨테이너의 새 `prepare_final` DB(실행 전 public 테이블 0개), `./gradlew clean build --no-daemon` | 66클래스 **708개**, 실패/오류/건너뜀 **0**, bootJar 성공 |
 | 원본 마이그레이션 | 25개 파일 전후 SHA-256 비교 | 모두 동일. V20/V25/V26 유지, 새 마이그레이션 없음 |
 | V20 없는 populated V22 | 전체 빌드의 `ReservationRefundMigrationTest.populatedV22WithoutV20StillRejectsUpgradeBeforeAnyNewSchemaChange` | 예상 Flyway 실패를 확인하고 기존 행·V22 이력·스키마 보존. repair/outOfOrder/ignore 사용 안 함 |
