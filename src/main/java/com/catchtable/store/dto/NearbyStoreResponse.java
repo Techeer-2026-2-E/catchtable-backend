@@ -9,6 +9,7 @@ public record NearbyStoreResponse(
         String categoryName,
         String address,
         boolean waitingAvailable,
+        String imageUrl,
         int distanceMeters
 ) {
 }

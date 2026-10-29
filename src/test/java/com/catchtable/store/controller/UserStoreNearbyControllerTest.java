@@ -19,6 +19,7 @@ import static org.hamcrest.Matchers.hasItem;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.lessThan;
 import static org.hamcrest.Matchers.not;
+import static org.hamcrest.Matchers.nullValue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -68,6 +69,20 @@ class UserStoreNearbyControllerTest {
                 .andExpect(jsonPath("$.stores[0].address", is("부산 테스트 주소")))
                 .andExpect(jsonPath("$.stores[0].waitingAvailable", is(false)))
                 .andExpect(jsonPath("$.stores[0].id").isNumber());
+    }
+
+    @Test
+    @DisplayName("매장 사진 주소를 내려주고 사진이 없으면 null이다")
+    void includesImageUrl() throws Exception {
+        insertStoreWithImage("사진 있는 매장", LAT + 0.0009, LNG, "https://example.com/store.jpg");
+        insertStore("사진 없는 매장", LAT + 0.0018, LNG);
+
+        mockMvc.perform(get(HOME))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.stores[0].name", is("사진 있는 매장")))
+                .andExpect(jsonPath("$.stores[0].imageUrl", is("https://example.com/store.jpg")))
+                .andExpect(jsonPath("$.stores[1].name", is("사진 없는 매장")))
+                .andExpect(jsonPath("$.stores[1].imageUrl").value(nullValue()));
     }
 
     @Test
@@ -186,6 +201,14 @@ class UserStoreNearbyControllerTest {
                                    reservation_duration_minutes, reservation_slot_minutes, arrival_grace_minutes)
                 VALUES (?, 'KOREAN', '부산 테스트 주소', ?, ?, 120, 30, 10)
                 """, name, latitude, longitude);
+    }
+
+    private void insertStoreWithImage(String name, double latitude, double longitude, String imageUrl) {
+        jdbcTemplate.update("""
+                INSERT INTO store (name, category, address, latitude, longitude, image_url,
+                                   reservation_duration_minutes, reservation_slot_minutes, arrival_grace_minutes)
+                VALUES (?, 'KOREAN', '부산 테스트 주소', ?, ?, ?, 120, 30, 10)
+                """, name, latitude, longitude, imageUrl);
     }
 
     private void insertStoreWithoutCoordinate(String name) {
