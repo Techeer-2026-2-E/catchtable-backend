@@ -6,9 +6,11 @@ import com.catchtable.member.entity.Member;
 import com.catchtable.notification.dto.CustomerNotificationEvent;
 import com.catchtable.notification.dto.NotificationType;
 import com.catchtable.reservation.dto.CreateReservationRequest;
+import com.catchtable.reservation.dto.RefundPreviewResponse;
 import com.catchtable.reservation.dto.ReservationHoldResponse;
 import com.catchtable.reservation.dto.ReservationResponse;
 import com.catchtable.reservation.entity.Reservation;
+import com.catchtable.reservation.entity.CancellationActor;
 import com.catchtable.reservation.entity.ReservationStatus;
 import com.catchtable.reservation.repository.ReservationRepository;
 import com.catchtable.store.entity.Store;
@@ -23,6 +25,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.annotation.Isolation;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.time.Clock;
@@ -40,10 +43,25 @@ public class ReservationService {
     private final EntityManager entityManager;
     private final ApplicationEventPublisher eventPublisher;
     private final Clock clock;
+    private final ReservationRefundService refundService;
 
     public ReservationResponse getReservation(Long memberId, Long reservationId) {
         return ReservationResponse.from(reservationRepository.findByIdAndMember_Id(reservationId, memberId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.RESERVATION_NOT_FOUND)), OffsetDateTime.now(clock));
+    }
+
+    // 예약 변경과 누적 환불액을 같은 DB 스냅샷에서 읽는다. 조회는 어떤 상태도 바꾸지 않는다.
+    @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
+    public RefundPreviewResponse getRefundPreview(Long memberId, Long reservationId) {
+        Reservation reservation = reservationRepository.findByIdAndMember_Id(reservationId, memberId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.RESERVATION_NOT_FOUND));
+        OffsetDateTime now = OffsetDateTime.now(clock);
+        if (reservation.getStatus() != ReservationStatus.CONFIRMED || reservation.getCheckedInAt() != null
+                || !now.isBefore(reservation.getReservationStartAt())) {
+            throw new BusinessException(ErrorCode.RESERVATION_NOT_CANCELLABLE);
+        }
+
+        return refundService.preview(reservation, now);
     }
 
     @Transactional
@@ -133,13 +151,16 @@ public class ReservationService {
         {
             return ReservationResponse.from(reservation, OffsetDateTime.now(clock));
         }
+        OffsetDateTime now = OffsetDateTime.now(clock);
         try{
-            reservation.cancelByCustomer(OffsetDateTime.now(clock));
+            refundService.requireNoInFlight(reservation);
+            reservation.cancelByCustomer(now);
         }
         catch(IllegalStateException exception)
         {
             throw new BusinessException(ErrorCode.RESERVATION_NOT_CANCELLABLE);
         }
+        refundService.requireRefundCompleted(reservation, CancellationActor.CUSTOMER, now);
         eventPublisher.publishEvent(new CustomerNotificationEvent(
                 memberId,
                 NotificationType.RESERVATION_CANCELED,

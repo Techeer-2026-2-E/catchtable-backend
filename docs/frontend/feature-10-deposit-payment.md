@@ -148,3 +148,7 @@ confirm은 기존 `PaymentResponse` 형식이고, 공통 후보의 sync·상세�
 - 실제 답변2A/3A/4B에 따라 돈만 환불하는 경로와 예약 취소를 구분하며 양수 취소 환불의 client Idempotency-Key는 미래 계약이다. 최초 요청시각/한도 저장·환불 중 변경 동결이 합의되기 전 양수 환불 endpoint·PG 기반 예약 취소는 보류한다. [기능60](feature-60-refund-execution.md)·[기능61](feature-61-refund-preview.md)의 기존 차단을 유지한다.
 
 V20은 공유 적용 이력이 미확인이므로 원본을 보존했고 V23은 적용 전략 자리로 남겼다. V24의 새 승인 보호를 빈 DB에서 검증해도 V20 없는 populated V22 DB의 upgrade 차단은 해결되지 않는다. 복구·웹훅·예약금 설정·실제 Toss·프런트/JWT·배포는 별도 범위다. 이 문서 변경 자체는 소스·링크·Markdown·diff만 검증하며 앱 테스트/실제 CI 완료 증거를 대신하지 않는다.
+
+## 2026-10-29 후속 — 기능63 결과 재확인
+
+앞선 기록은 보존한다. 앞선 "최초 만료시각 뒤 DONE 확정" 결정 대기는 work-log 65의 결정 5A대로 같은 최초 승인 시도의 보호가 있으면 확정한다. [기능63 결과 재확인](feature-58-payment-status.md#결과-재확인-기능63)이 `sync`·웹훅·자동 재확인으로 `TIMEOUT`·승인 진행 건을 Toss 조회 결과로 확정·반환하고, 보호 없는 늦은 승인은 확정 없이 `refundRequired`로 표시한다. 예약금 설정·prepare·실제 Toss·프런트는 여전히 범위 밖이다.

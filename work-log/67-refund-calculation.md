@@ -40,3 +40,48 @@
 ## 남은 점
 
 정책 스냅샷과 누적 환불액의 원본, 본인 예약 권한 검증을 포함한 예상액 API, [기능60 환불 실행](https://github.com/Techeer-2026-2-E/catchtable-backend/issues/68)은 공통 결제 계약 후 연결한다. #67 전체는 아직 완료가 아니므로 이번 PR로 자동 종료하지 않는다. Toss·프런트 실제 화면·배포 검증은 수행하지 않았다.
+
+## 2026-10-28 — 환불 예상액 조회 연결
+
+사용자는 본인 예약 중 시작 전·미입장·`CONFIRMED` 예약만 조회하도록 결정했다. 취소·완료·노쇼·선점 및 시작 시각과 같거나 이후인 예약은 `409 RESERVATION_NOT_CANCELLABLE`이다. 이전 Notion API의 취소된 건 조회 제안은 이번 범위에 적용하지 않는다. 기존 계산기의 정책·원 미만 버림·기환불액 차감은 변경하지 않았다.
+
+### 실제 변경
+
+- `GET /api/user/reservations/{reservationId}/refund-preview`, 기존 `@LoginMember`의 `X-Member-Id` 계약을 사용한다. 없는 예약과 다른 고객의 예약은 모두 `404 RESERVATION_NOT_FOUND`다.
+- 예약의 최초 `depositAmountSnapshot`·`refundPolicySnapshot`, 현재 예약 시작 시각, 서버 Clock, 공통 Payment의 승인 원장과 누적 환불액으로 계산한다. 읽기 전용 `REPEATABLE_READ` 트랜잭션으로 예약과 결제를 같은 DB 시점에서 읽는다.
+- 기존 무료 즉시 확정은 `holdExpiresAt == null`이고 결제 행이 없는 경로였다. 이런 기존 무료 예약과 명시적 0원 스냅샷은 금액 0·정책 없음·`paymentId=null`을 반환한다. 선점 출신이거나 결제 행이 있는 원본 누락 건은 무료로 간주하지 않는다.
+- 유료 스냅샷 누락, 승인 원장 없음·여러 건, 진행/결과 불명 결제, 금액·회원 불일치는 `409 REFUND_DATA_NOT_READY`다. 현재 매장 정책으로 채우지 않는다.
+- 응답은 `reservationId`, `paymentId`, `currency`, `paidAmount`, `alreadyRefundedAmount`, `policyType`, `reservationStartAt`, `calculatedAt`, `refundRate`, `refundableAmount`, `nonRefundableAmount`, `policyDescription`이다. `refundableAmount`는 이번 추가 환불 가능액, `nonRefundableAmount`는 미환불 잔액 중 환불 불가액이다. 무료 응답의 비율은 0, 정책은 null이다.
+- 조회는 예약 취소·자리 반환·Payment 상태 변경·외부 Toss 요청·알림을 실행하지 않는다. 실제 취소 시점에는 다시 계산해야 한다.
+
+### 기반과 소유권
+
+공통 결제 [PR #144](https://github.com/Techeer-2026-2-E/catchtable-backend/pull/144)의 `c1534ed65145a4af2b5e3b813a65649f3705d93f`를 읽어 사용했다. 기능58 엔티티·상태·클라이언트·실패/결과 불명 처리를 재구현하지 않았으며, 기존 PaymentRepository에 예약별 조회 메서드만 추가했다. 기능10 스냅샷과 V19 → V20 적용 순서가 선행한다. 기능62 요청 멱등성·기능63 재확인과 기능60 실제 환불은 포함하지 않는다.
+
+### 검증
+
+새 전용 PostgreSQL16 컨테이너 `catchtable-phase2-astra-20261028`, `127.0.0.1:49498`, DB `catchtable_phase2_test`에서 `DB_HOST=127.0.0.1 DB_PORT=49498 DB_NAME=catchtable_phase2_test DB_USERNAME=catchtable DB_PASSWORD=catchtable ./gradlew build --no-daemon`을 실행했다. 47클래스 441개 테스트, 실패·오류·건너뜀0이며 bootJar를 생성했다. 신규 `ReservationRefundPreviewTest` 30개는 HTTP 소유권·헤더, 시작 시각·상태, 한국 자정, 원 미만 버림·누적액, 변경 후 방문일, 기존 무료·신규 무료·원본 누락 및 반복 조회의 무변경을 검증했다. `git diff --check`를 통과했다.
+
+유료 생성 흐름은 기능33 설정과 기능10 호출부 연결 대기이므로 이 검증의 유료 데이터는 테스트 fixture다. 실제 결제 승인으로 만든 예약에서 프런트까지 연동한 결과가 아니다. CI·실제 Toss·프런트 실행·배포는 미확인이다. 기능61 HTTP 조회 자체는 구현했지만 선행 기능 미병합과 유료 원본 생성 연결이 남아 #67을 닫지 않는다.
+
+
+## 2026-10-29 후속 — 환불 진행 기록과 예상액 경계
+
+- 기준: `dev@555e0aabd243b52e5007e55460d2aae398952f27`과 공통 기능62 `358040e`를 별도 로컬 검증 브랜치에 merge했다. 기존 공개 PR #146 head와 base는 변경하지 않았다.
+- `payment_refund`의 `REQUESTED`·`UNKNOWN`이 있으면 예상액을 확정된 잔액처럼 표시하지 않고 기존 `409 REFUND_DATA_NOT_READY`로 응답한다. 정책상 추가액0원이어도 동일하다. 공통 환불 기록·원장·예약을 변경하거나 외부 결제를 부르지 않는다.
+- 새 PostgreSQL16 컨테이너 `phase2-sol-max-20261029-pg16`, 전용 DB `phase2_snapshot`, `DB_PORT=54936`에서 `./gradlew test --tests com.catchtable.reservation.service.ReservationRefundPreviewTest --tests com.catchtable.payment.service.PaymentRefundServiceTest --tests com.catchtable.payment.service.PaymentApprovalServiceTest`: 51개 통과, 실패·건너뜀0. 전체 로그·명령·XML은 작업자 인계 산출물 `preview-inflight-targeted/`에 보관했다.
+- V20은 기존 Draft의 파일을 그대로 사용해 새 빈 테스트 DB에 적용했다. 공유·영속 DB의 V20 적용 여부와 V21/V22 이후 upgrade는 미확인이다. 마이그레이션 순서 결정 전 이 로컬 결과를 공개 PR 적용 가능 판정으로 쓰지 않는다.
+- 환불 실행 HTTP, 기능63 재확인·웹훅·자동 보정, 프런트 연동·실제 Toss·배포·새 CI 실행은 이번 변경 범위가 아니다.
+## 2026-10-29 실제 결정 후속
+
+기능10의 정상 confirm/영속 승인 보호와 V24, dev `7d320491a6ed9107ac3149ed8cfaa1bb1dad45bb`, CI 선행 [#164](https://github.com/Techeer-2026-2-E/catchtable-backend/pull/164)를 부모에서 정상 merge했다. 기존 공개 #146 head `9af6392e16b8b3e2e957cafb78938be00234b88d`와 REQUESTED/UNKNOWN 예상액409 보강을 보존한다. 예상액 조회는 외부 승인·환불을 실행하지 않는다.
+
+사용자2A의 예약 취소는 남은 **정책상** 환불액이 기준이며 임의 전액 환불을 뜻하지 않는다. 3A의 양수 취소 환불용 client Idempotency-Key는 미래 계약이고, 4B에 따라 최초 요청시각/한도 저장·진행 중 변경 동결 합의 전 실행 endpoint와 PG 기반 예약 취소를 보류한다. 5A는 기능10의 late DONE 확정이며 조회 자격(본인·시작 전·미입장 CONFIRMED)은 바뀌지 않는다.
+
+새 disposable PostgreSQL16 `phase2-approved-20261029-pg16`, `127.0.0.1:54937/phase2_preview_approved`에서 아래51개가 실패/오류/건너뜀0으로 통과했다. 로그·XML은 로컬 `approved-followup/preview-targeted`에 보존한다. README의 과거 계산기만 구현됐다는 현재 설명을 실제 refund-preview 경로에 맞췄다.
+
+```sh
+DB_HOST=127.0.0.1 DB_PORT=54937 DB_NAME=phase2_preview_approved DB_USERNAME=phase2_test DB_PASSWORD=phase2_test ./gradlew test --tests 'com.catchtable.reservation.service.ReservationRefundPreviewTest' --tests 'com.catchtable.payment.service.PaymentApprovalServiceTest' --tests 'com.catchtable.payment.service.PaymentRefundServiceTest' --no-daemon
+```
+
+기능10 부모 정렬 후 base retarget·실제 게시/CI는 coordinator가 수행한다. 공개 이력 rewrite는 하지 않는다. V20 공유 이력·upgrade 차단은 [기능10 기록](65-deposit-snapshot.md)을 따른다. Toss·프런트·배포는 이 검사에 포함하지 않는다.

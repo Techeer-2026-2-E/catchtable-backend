@@ -68,7 +68,8 @@ public interface StoreTableRepository extends JpaRepository<StoreTable, Long> {
                   FROM reservation r
                   WHERE r.table_id = st.id
                     AND r.status NOT IN ('CANCELLED', 'EXPIRED')
-                    AND (r.status <> 'PENDING_PAYMENT' OR r.hold_expires_at > :now)
+                    AND (r.status <> 'PENDING_PAYMENT' OR r.hold_expires_at > :now
+                         OR r.approval_payment_id IS NOT NULL OR r.approval_quarantined)
                     AND tstzrange(r.reservation_start_at, r.reservation_end_at, '[)')
                         && tstzrange(CAST(:reservationStartAt AS TIMESTAMPTZ),
                                      CAST(:reservationEndAt AS TIMESTAMPTZ), '[)')

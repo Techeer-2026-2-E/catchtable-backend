@@ -7,7 +7,7 @@
 
 ## 목적과 현재 범위
 
-결제 시도마다 하나의 현재 상태와 상태 변경 이력을 남기는 공통 결제 모델, Toss 클라이언트, 고객 결제 조회 API를 제공한다. 승인·환불 중복 요청 방지(기능62, [#141](https://github.com/Techeer-2026-2-E/catchtable-backend/issues/141))는 서비스까지 구현했다. prepare·confirm·cancel HTTP API, 예약 확정·환불 연결(#65·#68), 결과 재확인·웹훅(기능63)은 포함하지 않는다.
+결제 시도마다 하나의 현재 상태와 상태 변경 이력을 남기는 공통 결제 모델, Toss 클라이언트, 고객 결제 조회 API를 제공한다. 승인·환불 중복 요청 방지(기능62, [#141](https://github.com/Techeer-2026-2-E/catchtable-backend/issues/141))는 서비스까지 구현했다. 결과 재확인·웹훅·자동 재확인(기능63, [#142](https://github.com/Techeer-2026-2-E/catchtable-backend/issues/142))은 아래 "결과 재확인"에 있다. prepare·cancel HTTP API와 양수 환불 실행 연결(#68)은 포함하지 않는다.
 
 ## 상태값과 허용 전이
 
@@ -34,7 +34,7 @@
 - `GET /api/user/payments?page=0&size=10`: 내 결제 목록, 최신순. 리뷰 목록과 같은 형식 `{ payments, page, size, hasNext }`. `page` 0 이상(기본 0), `size` 1~50(기본 10), 범위 밖은 `400 INVALID_INPUT`.
 - `GET /api/user/payments/{paymentId}`: 상세. 목록 항목 필드에 `refunds`(요청순)를 더한다.
 - 모두 `X-Member-Id` 헤더. 없으면 `401 UNAUTHORIZED`, 고객이 아니면 `403 FORBIDDEN_MEMBER_TYPE`, 남의 결제나 없는 결제는 `404 PAYMENT_NOT_FOUND`.
-- 목록 항목: `paymentId`, `reservationId`, `holdId`, `orderId`, `orderName`, `amount`, `status`, `method`, `approvedAt`, `canceledAmount`, `receiptUrl`.
+- 목록 항목: `paymentId`, `reservationId`, `holdId`, `orderId`, `orderName`, `amount`, `status`, `method`, `approvedAt`, `canceledAmount`, `receiptUrl`, `refundRequired`(예약 확정 없이 확인된 승인, 환불 대상. 2026-10-29 추가).
 - `refunds` 항목: `refundId`, `refundAmount`, `status`(`REQUESTED`, `COMPLETED`, `NOT_REQUIRED`, `FAILED`, `UNKNOWN`), `cancelReason`, `refundedAt`(확정 전 `null`).
 - 2026-10-28 변경: 목록이 배열에서 페이징 객체로 바뀌었다. 프런트 `paymentApi.ts`의 목록 응답 타입 갱신이 필요하다.
 
@@ -119,7 +119,7 @@ Toss 호출 중에는 DB 행 잠금을 잡지 않는다. Toss 중복 처리는 `
 - 새 키: 같은 결제에 `REQUESTED`·`UNKNOWN` 환불이 있으면 `409 PAYMENT_RECONCILIATION_REQUIRED`(DB 부분 유니크 인덱스도 1건만 허용). `DONE`·`PARTIAL_REFUNDED`가 아니면 `409 PAYMENT_NOT_REFUNDABLE`.
 - Toss 성공 후에만 `applyTossPayment(TOSS_CANCEL)`로 누적 환불액·결제 상태를 확정한다. Toss 4xx는 `FAILED` 저장 후 `409 PAYMENT_REFUND_FAILED`. 결과 불명은 `UNKNOWN` 저장 후 `409 PAYMENT_RECONCILIATION_REQUIRED`.
 - 남의 결제·없는 결제: `404 PAYMENT_NOT_FOUND`. 승인·환불 서비스는 회원 유형을 따로 검사하지 않는다(점주는 본인 결제가 없어 404).
-- Toss 멱등키는 15일간 유효하다. 15일이 지난 `UNKNOWN`을 같은 키로 재시도하면 Toss가 새 요청으로 처리할 수 있으므로, 기능63 재확인(조회)을 먼저 해야 한다.
+- Toss 멱등키는 15일간 유효하다. 15일이 지난 `UNKNOWN`을 같은 키로 재시도하면 Toss가 새 요청으로 처리할 수 있으므로, 기능63 재확인(조회)을 먼저 해야 한다. 기능63에서 조회 후 15일 안에만 재시도하도록 구현했다.
 
 Notion "결제 취소·환불" P2 초안과 다른 점:
 
@@ -131,13 +131,35 @@ Notion "결제 취소·환불" P2 초안과 다른 점:
 | 결제 내역 | 페이징 (형식 미정) | `{ payments, page, size, hasNext }` | 프런트 타입 갱신 |
 | 결제 상세 취소 이력 | 필드 미정 | `refunds` | 프런트 타입 갱신 |
 
+## 결과 재확인 (기능63)
+
+응답 유실·콜백 지연·처리 중단 뒤 Toss 원장을 서버에서 다시 조회해 결제·예약·선점을 맞춘다. 리다이렉트 성공 화면이나 웹훅 본문만으로 상태를 바꾸지 않는다. 재확인을 반복해도 결과·이력·알림은 같다.
+
+- `POST /api/user/payments/{paymentId}/sync`: 고객 재확인. `X-Member-Id` 필수, 응답은 결제 상세(`GET /{paymentId}`와 같은 형식). 없으면 `401 UNAUTHORIZED`, 고객이 아니면 `403 FORBIDDEN_MEMBER_TYPE`, 남의 결제는 `404 PAYMENT_NOT_FOUND`(Toss 호출 없음). Toss 조회가 실패하면 상태를 그대로 두고 200으로 현재 상세를 반환한다(`TIMEOUT`이면 아직 불명).
+- `POST /api/user/webhooks/payments`: Toss 웹훅. 본문에서 `orderId`(없으면 `paymentKey`)만 꺼내 결제를 찾고 Toss를 다시 조회한다. `PAYMENT_STATUS_CHANGED`는 `data.orderId`, 가상계좌 `DEPOSIT_CALLBACK`은 최상위 `orderId`. 서명 검증은 하지 않는다. 모르는 결제·잘못된 본문·처리 실패도 200(재전송 방지), 실패는 로그만 남긴다.
+- 자동 재확인: `payment.reconcile-interval-ms`(기본 60000) 간격, 한 번에 `payment.reconcile-batch-size`(기본 50)건, 건별 별도 커밋. 대상은 `TIMEOUT` 결제, 승인 시작 기록이 있는 `PENDING_PAYMENT` 예약의 결제, 격리 예약의 승인·불명 결제, `REQUESTED`·`UNKNOWN` 환불. `toss.secret-key`가 비어 있으면(로컬·테스트) 스케줄러가 꺼진다.
+- Toss 조회는 `READY`·`TIMEOUT` 결제와 진행 중 환불에만 한다. 그 외 최종 상태는 Toss를 부르지 않고 예약 쪽만 맞춘다. Toss 대시보드에서 직접 한 취소는 반영하지 않는다.
+- 트랜잭션 밖에서만 호출한다(안이면 `IllegalStateException`). Toss 조회 중 DB 잠금 없음, 반영은 `applyTossPayment(TOSS_QUERY)`와 예약→결제 행 잠금.
+
+예약 쪽 반영 (#145 승인 시작 보호 기준):
+
+| Toss 결과 | 예약 상태 | 처리 |
+| --- | --- | --- |
+| 승인(`DONE`) | 같은 최초 승인 시도의 보호 있음 | 예약 확정 1회(`RESERVATION_CONFIRMED` 알림 1회). 원래 선점 기한이 지났어도 확정(결정 5A) |
+| 승인 | 보호 없음·격리·확정된 적 없음 | 확정하지 않음. 보호·격리를 풀고 자리 반환(`EXPIRED`/`CANCELLED`). 결제는 `refundRequired=true` + 상태 이력 "환불 필요" 1건 |
+| 실패(`ABORTED`)·만료(`EXPIRED`) | 보호·격리 있음 | 결제 `FAILED`·`CANCELED`, 보호·격리 해제 후 자리 반환 |
+| 승인 전(`READY`·`IN_PROGRESS`)·조회 실패 | — | 그대로 유지. 선점 기한이 지나도 만료하지 않음(다음 재확인 대상) |
+
+- 늦은 승인을 자동 환불하지 않는다. 양수 환불 실행은 팀 결정(4B) 전까지 열지 않고, `refundRequired`로 대상만 표시한다.
+- 승인 시작 15일이 지난 미확정 건도 재승인하지 않고 조회 결과로만 정리한다.
+- 진행 중 환불(`REQUESTED`·`UNKNOWN`): Toss 누적 취소액이 기존 누적액 + 이번 환불액 이상이면 `COMPLETED`로 확정한다. 아니면 요청 15일 안에는 같은 멱등키로 재시도(기능62 같은 키 경로), 지나면 `FAILED`(`IDEMPOTENCY_KEY_EXPIRED`)로 둔다.
+
 ## 남은 연결
 
-- 예약 상태와 결제 상태 연결(#65·#68): 결제 승인·환불을 트랜잭션 밖에서 먼저 호출하고, 그 결과로 예약 확정·취소를 별도 트랜잭션에서 처리한다. 외부 결제와 예약 변경은 한 트랜잭션으로 묶을 수 없다. 승인 후 예약 확정이 실패하면(선점 만료 등) 결제는 `DONE`으로 남겨 환불 대상으로 두고, 기능63([#142](https://github.com/Techeer-2026-2-E/catchtable-backend/issues/142))에서 처리한다. 이번 변경은 결제 측 규칙(예약당 진행 중 결제 1건, 승인·환불 금액 일관성)만 보장한다.
-- 선점 자동 만료(`expireHolds`)는 아직 결제 상태를 보지 않는다. `READY`·`TIMEOUT` 결제가 있는 선점을 만료·반환하지 않도록 기능63과 함께 연결해야 한다.
-- confirm·cancel HTTP 컨트롤러는 #65·#68에서 만든다. 승인·환불 서비스(기능62)는 아직 호출하는 곳이 없다.
-- 웹훅 중복 처리와 `TIMEOUT`·`UNKNOWN`·남은 `REQUESTED`의 재확인은 기능63([#142](https://github.com/Techeer-2026-2-E/catchtable-backend/issues/142))에서 한다.
-- 예약금·환불 정책 스냅샷 컬럼은 아직 없다. 결제 금액은 `Payment.ready` 인자로 받는다.
+- 예약 상태와 결제 상태 연결(#65·#68): 결제 승인·환불을 트랜잭션 밖에서 먼저 호출하고, 그 결과로 예약 확정·취소를 별도 트랜잭션에서 처리한다. 외부 결제와 예약 변경은 한 트랜잭션으로 묶을 수 없다. 승인 후 예약 확정이 실패한 결제는 기능63 재확인이 `refundRequired`로 표시한다(2026-10-29).
+- 선점 만료는 #145의 승인 시작 보호로 `READY`·`TIMEOUT` 승인 진행 건을 만료하지 않는다(2026-10-29, 기능63 테스트로 동시 실행 확인).
+- cancel HTTP 컨트롤러와 `refundRequired` 결제의 실제 환불 실행은 #68·팀 결정 4B 뒤에 연결한다. 환불 서비스(기능62)는 기능63 재시도 외에 호출하는 곳이 없다.
+- 예약금·환불 정책 스냅샷은 #145(V20)에서 추가한다. 결제 금액은 `Payment.ready` 인자로 받는다.
 
 ## 문서 검증
 
