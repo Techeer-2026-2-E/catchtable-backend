@@ -88,3 +88,11 @@
 스냅샷 V20은 Draft에 있고 dev는 V21·V22까지 적용되는 구조다. 과거의 단순 “V19→V20 선행” 설명만으로 upgrade 가능성을 판단하지 않는다. 영속 V20 이력과 적용 전략 확인 후 기능10·61의 base를 함께 정리해야 한다. 기능33 설정과 [기능63 #142](https://github.com/Techeer-2026-2-E/catchtable-backend/issues/142)의 재확인·웹훅은 별도 선행/담당 범위다.
 
 로컬 소스는 관련51개 테스트(실패·건너뜀0)로 확인했다. 이번 문서 변경은 코드·링크·Markdown·`git diff --check`만 확인했으며 새 CI·실제 Toss·프런트 화면·배포는 검증하지 않았다.
+
+## 2026-10-29 실제 결정 반영 — 예상액과 환불 실행 분리
+
+앞선 결정 대기 문구는 당시 기록이다. [후속 소스](https://github.com/Techeer-2026-2-E/catchtable-backend/blob/57fabf6c58fc8151eb050db0620fa18a96215986/src/main/java/com/catchtable/reservation/service/ReservationService.java)의 `GET /api/user/reservations/{reservationId}/refund-preview`는 `X-Member-Id`, 본인·시작 전·미입장 CONFIRMED만 허용한다. REQUESTED/UNKNOWN은 추가 예상액이0이어도 `409 REFUND_DATA_NOT_READY`이며 다른 회원404·상태/시각409, 응답 `refundableAmount` 등 기존 계약을 유지한다. 조회는 외부 환불·예약 변경을 실행하지 않는다.
+
+실제 답변2A에서 예약 취소의 기준은 남은 **정책상** 환불액이며 임의 전액 환불이 아니다. 최초 금액·정책, 현재 변경된 방문일의 KST 날짜, 원 미만 버림, 기환불 차감·0 하한을 유지한다. 3A의 양수 취소 환불용 client Idempotency-Key는 미래 실행 계약이다. 4B에 따라 최초 요청시각/한도 저장·환불 중 변경 동결 합의 전 양수 실행 endpoint·PG 기반 예약 취소를 보류한다. 예상액200으로 실행 허용·환불 성공을 표시하지 않는다. [기능60 경계](feature-60-refund-execution.md)를 함께 따른다.
+
+5A는 [기능10](feature-10-deposit-payment.md)의 유효한 승인 시작 후 late DONE을 같은 자리에 확정하는 결정이며 예상액 조회 자격을 넓히지 않는다. 기능 [Draft PR #146](https://github.com/Techeer-2026-2-E/catchtable-backend/pull/146)은 정렬한 기능10 부모 기준 검토용이고 V20 공유 이력·populated V22 upgrade는 미해결이다. 기능33 설정과 기능142 복구·프런트·실제 Toss·배포는 별도다. 이 문서 변경은 고정 소스·링크·Markdown·diff만 검사한다.

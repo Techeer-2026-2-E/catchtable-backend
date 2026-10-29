@@ -22,6 +22,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.Clock;
 import java.time.OffsetDateTime;
+import java.util.List;
 
 @Service
 @RequiredArgsConstructor
@@ -116,13 +117,9 @@ public class ReservationPaymentService {
             if (!attempt.paymentKey().equals(payment.getPaymentKey())) {
                 throw new BusinessException(ErrorCode.PAYMENT_RECONCILIATION_REQUIRED);
             }
-            if (reservation.confirmPayment(attempt.paymentId(), attempt.orderId(), attempt.paymentKey(), now)) {
-                events.publishEvent(new CustomerNotificationEvent(memberId, NotificationType.RESERVATION_CONFIRMED,
-                        reservation.getId(), "예약이 확정되었습니다"));
-            }
+            confirmReservation(reservation, attempt.paymentId(), attempt.orderId(), attempt.paymentKey(), now);
         } else if (isVerifiedFailure(payment)) {
-            reservation.clearPaymentApproval();
-            reservation.releaseHold(now);
+            releaseApproval(reservation, now);
         } else if (payment.getStatus() != PaymentStatus.READY && payment.getStatus() != PaymentStatus.TIMEOUT) {
             throw new BusinessException(ErrorCode.PAYMENT_RECONCILIATION_REQUIRED);
         }
@@ -135,9 +132,79 @@ public class ReservationPaymentService {
                 .orElseThrow(() -> new BusinessException(ErrorCode.PAYMENT_NOT_FOUND));
         if (reservation.matchesPaymentApproval(attempt.paymentId(), attempt.orderId(), attempt.paymentKey())
                 && isVerifiedFailure(payment)) {
-            reservation.clearPaymentApproval();
-            reservation.releaseHold(OffsetDateTime.now(clock));
+            releaseApproval(reservation, OffsetDateTime.now(clock));
         }
+    }
+
+    // 기능63 재확인 결과의 예약 반영 (예약→결제 잠금, 반복해도 같은 결과)
+    public Settlement settle(Long paymentId) {
+        return transactions.execute(status -> {
+            Long reservationId = payments.findReservationIdById(paymentId)
+                    .orElseThrow(() -> new BusinessException(ErrorCode.PAYMENT_NOT_FOUND));
+            Reservation reservation = reservations.findByIdForUpdate(reservationId)
+                    .orElseThrow(() -> new BusinessException(ErrorCode.PAYMENT_NOT_FOUND));
+            Payment payment = payments.findByIdForUpdate(paymentId)
+                    .orElseThrow(() -> new BusinessException(ErrorCode.PAYMENT_NOT_FOUND));
+            return settle(reservation, payment, OffsetDateTime.now(clock));
+        });
+    }
+
+    private Settlement settle(Reservation reservation, Payment payment, OffsetDateTime now) {
+        PaymentStatus paymentStatus = payment.getStatus();
+        if (paymentStatus == PaymentStatus.READY || paymentStatus == PaymentStatus.TIMEOUT) {
+            return Settlement.KEPT;
+        }
+        if (reservation.isApprovalQuarantined()) {
+            // 같은 예약의 다른 미확인 결제가 있으면 격리 유지
+            if (payments.existsByReservationIdAndIdNotAndStatusIn(reservation.getId(), payment.getId(),
+                    List.of(PaymentStatus.READY, PaymentStatus.TIMEOUT, PaymentStatus.DONE,
+                            PaymentStatus.PARTIAL_REFUNDED))) {
+                return Settlement.KEPT;
+            }
+            reservation.clearApprovalQuarantine();
+            reservation.releaseHold(now);
+            return paymentStatus.isApproved() ? Settlement.LATE_SUCCESS : Settlement.RELEASED;
+        }
+        boolean attempt = payment.getId().equals(reservation.getApprovalPaymentId());
+        if (attempt && paymentStatus.isApproved()) {
+            validatePayment(reservation, payment, new Attempt(payment.getId(), reservation.getId(),
+                    reservation.getApprovalOrderId(), reservation.getApprovalPaymentKey()), payment.getAmount());
+        }
+        if (attempt && isVerifiedFailure(payment)) {
+            releaseApproval(reservation, now);
+            return Settlement.RELEASED;
+        }
+        if (attempt && paymentStatus == PaymentStatus.DONE
+                && (reservation.getStatus() == ReservationStatus.PENDING_PAYMENT
+                    || reservation.getStatus() == ReservationStatus.CONFIRMED)) {
+            confirmReservation(reservation, payment.getId(), payment.getOrderId(), payment.getPaymentKey(), now);
+            return Settlement.CONFIRMED;
+        }
+        // 확정된 적 없는 예약의 승인: 확정 대신 자리 반환, 환불 대상
+        if (paymentStatus.isApproved() && reservation.getConfirmedAt() == null) {
+            if (attempt) {
+                reservation.clearPaymentApproval();
+            }
+            if (reservation.getApprovalPaymentId() == null
+                    && reservation.getStatus() == ReservationStatus.PENDING_PAYMENT) {
+                reservation.releaseHold(now);
+            }
+            return Settlement.LATE_SUCCESS;
+        }
+        return Settlement.KEPT;
+    }
+
+    private void confirmReservation(Reservation reservation, Long paymentId, String orderId, String paymentKey,
+                                    OffsetDateTime now) {
+        if (reservation.confirmPayment(paymentId, orderId, paymentKey, now)) {
+            events.publishEvent(new CustomerNotificationEvent(reservation.getMember().getId(),
+                    NotificationType.RESERVATION_CONFIRMED, reservation.getId(), "예약이 확정되었습니다"));
+        }
+    }
+
+    private void releaseApproval(Reservation reservation, OffsetDateTime now) {
+        reservation.clearPaymentApproval();
+        reservation.releaseHold(now);
     }
 
     private void validatePayment(Reservation reservation, Payment payment, Attempt attempt, long amount) {
@@ -178,5 +245,13 @@ public class ReservationPaymentService {
     }
 
     private record Attempt(Long paymentId, Long reservationId, String orderId, String paymentKey) {
+    }
+
+    // 재확인 반영 결과
+    public enum Settlement {
+        CONFIRMED,     // 예약 확정 (이미 확정 포함)
+        RELEASED,      // 확인된 실패, 자리 반환
+        KEPT,          // 변경 없음 (결과 불명 등)
+        LATE_SUCCESS   // 보호 없는 승인, 환불 대상
     }
 }

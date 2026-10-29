@@ -27,3 +27,7 @@
 ## 문서 검증
 
 컨트롤러·DTO·서비스와 명시한 프런트 소스를 대조했고 상대 링크와 git diff --check를 확인했다. 문서만 변경하므로 앱 테스트를 새로 실행한 것으로 보고하지 않는다. 프런트 저장소 수정·화면 실행·Toss 실행·배포 검증은 포함하지 않는다.
+
+## 2026-10-29 승인 보호 연동 후속
+
+기본 선점은 최초5분이고 조회로 늘어나지 않는다. 유효한 기한 안에 시작을 저장한 승인 진행/결과 불명은 원래 자리와 PENDING_PAYMENT를 보존한다. [승인 보호 소스](https://github.com/Techeer-2026-2-E/catchtable-backend/blob/c3f971013ae5cfbb7072bb3b3d8691ebe5d3b939/src/main/java/com/catchtable/reservation/entity/Reservation.java)의 검토 계약이며 준비 API·기능33 유료 설정은 미연결이다. [기능10](feature-10-deposit-payment.md)과 [기능54](feature-54-hold-countdown.md)를 따른다. 소스 Draft·미머지 및 V20 upgrade 차단을 문서 게시로 해소하지 않는다. 기존 #60 완료 이슈를 다시 여는 작업이 아니며 프런트 코드는 변경하지 않았다.
