@@ -40,7 +40,9 @@ public class ReservationPolicyService {
 
     private Store findStore(Long storeId)
     {
-        return storeRepository.findById(storeId)
-                .orElseThrow(()-> new BusinessException(ErrorCode.STORE_NOT_FOUND));
+        Store store = storeRepository.findById(storeId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.STORE_NOT_FOUND));
+        store.validateManaged();
+        return store;
     }
 }
