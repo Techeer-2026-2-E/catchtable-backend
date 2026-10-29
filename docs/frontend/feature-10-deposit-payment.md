@@ -1,5 +1,40 @@
 # 기능10 — 예약금 가결제 프런트 연동
 
+## 2026-10-29 후속 — 예약금 원본 소비와 유료 선점 생성 준비
+
+관련: [소스 이슈 #201](https://github.com/Techeer-2026-2-E/catchtable-backend/issues/201), [소스 PR #203](https://github.com/Techeer-2026-2-E/catchtable-backend/pull/203), [문서 이슈 #202](https://github.com/Techeer-2026-2-E/catchtable-backend/issues/202), [기능10 정본](https://app.notion.com/p/3d548d76fa32819386a3e858c26b2c1b). 소스는 dev 대상 일반 PR·미머지이며 dev 제공·배포 완료를 뜻하지 않는다. 기존 기능 소스 PR들도 Ready for review로 전환했고, 아래 과거 Draft 표시는 전환 전 기록이다.
+
+### 현재 기본 실행과 설정 공급 연결 후의 동작
+
+**기능33의 실제 설정 공급자는 아직 없다.** 사용자 결정에 따라 공급자가 없는 기본 실행은 기존 무료 즉시확정과 일반 선점 API를 유지한다. 실제 매장이 유료라고 추정하거나 임의 금액·환불 정책을 저장하지 않는다. 준혁 담당 매장 설정·DB·설정 API와 프런트 코드는 이 작업에서 구현하지 않았다.
+
+예약 측은 `ReservationDepositTermsReader`가 신뢰된 원본을 제공할 때 기존 매장 공유 잠금과 테이블 배정 안에서 처리한다. 요청 본문에 예약금 사용 여부·금액·환불 정책을 추가해도 원본을 바꿀 수 없다. 기존 요청/응답 DTO와 회원 식별 계약도 유지한다.
+
+| 서버 원본 상태 | 즉시확정 `POST /api/user/reservations` | 선점 `POST /api/user/reservations/holds` |
+| --- | --- | --- |
+| 공급자 미연결 | 기존 무료 예약 확정, 목 고객1·201·CONFIRMED | 기존 일반 선점, X-Member-Id·201·PENDING_PAYMENT, 금액/정책 미확인 |
+| 공급자가 명시한 무료 | 기존 무료 예약 확정 | 기존 일반 선점 유지, 유료 스냅샷을 만들지 않음 |
+| 유효 유료 원본 | 409 `RESERVATION_PAYMENT_REQUIRED`, 예약·선점·주문·SSE 생성 없음 | 201, 양수 최초 금액·정책과 원래5분을 원자적으로 저장 |
+| 연결된 공급자의 null·오류·잘못된 원본 | 409 `RESERVATION_DEPOSIT_TERMS_UNAVAILABLE` | 같은409, 무료나 임의 금액으로 대체하지 않음 |
+
+유료 즉시확정 거절 메시지는 “예약금 결제가 필요합니다. 선점 생성 → 결제 준비 → 승인 경로를 이용해 주세요.”다. 이 요청을 자동으로 선점으로 바꾸지 않으며 만료 선점 정리도 수행하지 않는다. 기존 입력·매장/회원 조회·예약 가능 시간 검사에 따른 오류는 유지한다.
+
+유료 흐름은 `선점 생성 → prepare → 결제 승인 → 예약 확정`이다. 생성만으로 결제 주문이나 PG 요청을 만들지 않는다. prepare의 신규201/READY 재사용200, 최초 금액/만료 보존과 진행·불명·완료409는 아래 기존 계약을 따른다. 원본이 없는 일반 선점은 prepare로 유료 전환되지 않는다.
+
+### 원본 공급자가 지켜야 할 계약
+
+`read(Store lockedStore)`는 이미 FOR SHARE로 잠긴 매장의 원본을 같은 트랜잭션에서 읽는다. 설정 쓰기도 같은 매장 잠금과 직렬화해야 한다. 외부 통신과 상태 변경은 하지 않는다. 유료 조건은 양수 금액과 기존 FLEXIBLE/STANDARD/STRICT 정책, 명시적 무료 조건은0원·정책null이다. 이는 예약 측 소비 형식이며 실제 기능33 저장 필드를 정한 것이 아니다.
+
+최초 스냅샷은 생성 뒤 설정이 바뀌어도 유지한다. 금액은 예약 건당 값이며 인원수를 곱하지 않는다. 공급자가 등록되어 있다면 조회 실패·잘못된 원본을 공급자 미연결 상태로 바꾸지 않는다.
+
+### 검증과 남은 범위
+
+테스트 전용 공급자로 공개 홀드 API부터 prepare·승인·예약 변경·부분 환불·고객/점주 취소를 검증했다. 신규2클래스37개와 관련14클래스280개가 통과했고, 새 전용 PostgreSQL16 빈 DB의 `./gradlew clean build --no-daemon`은 **68클래스758개·실패/오류/건너뜀0** 및 bootJar 성공이다. 실행별 결과는 중복되므로 합산하지 않는다. 최초 고정ID fixture SQL과 Timestamp 비교 단언 실패를 수정하고 전체 결과를 재확인했다.
+
+검증한 앱·테스트 커밋은 `c76174034f1c4dcfcd1df6eb579e9580c088f353`이며 최종 소스 head는 `647aaa748e63c43d083c0cf84f4beac063cb5fc2`다. 이후 변경은 work-log뿐이며 검증한 입력333개가 동일하다. [작업 기록](https://github.com/Techeer-2026-2-E/catchtable-backend/blob/647aaa748e63c43d083c0cf84f4beac063cb5fc2/work-log/201-paid-hold-consumer.md)에 범위·명령·검증 근거를 남겼다. 테스트용 공급자가 운영 JAR에 포함되지 않음을 확인했고, [정확한 소스 head CI](https://github.com/Techeer-2026-2-E/catchtable-backend/actions/runs/40841773519)는 SUCCESS다. 이 문서 PR CI는 별도로 확인한다.
+
+실제 매장 설정 공급 연결과 그 원본으로의 전체 흐름 확인, 공유 V20 적용 이력·적용 방식, 실제 Toss·프런트/JWT·배포는 남아 있다. 기존25개 migration을 유지했고 V20 없는 populated V22 업그레이드 차단을 우회하지 않았다. 이번 테스트용 원본 소비 검증을 실제 기능33 연동 완료로 표시하지 않는다.
+
 ## 2026-10-29 현재 계약 — 저장된 유료 선점의 결제 준비
 
 - 문서 이슈: [#196](https://github.com/Techeer-2026-2-E/catchtable-backend/issues/196), 기능 이슈: [#195](https://github.com/Techeer-2026-2-E/catchtable-backend/issues/195), 상위 [#65](https://github.com/Techeer-2026-2-E/catchtable-backend/issues/65)
