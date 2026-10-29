@@ -71,6 +71,13 @@ public class Payment extends BaseTimeEntity {
     @Column(name = "failure_message", length = 510)
     private String failureMessage;
 
+    // 환불 필요 표시 (예약 확정 없는 승인)
+    @Column(name = "refund_required_at")
+    private OffsetDateTime refundRequiredAt;
+
+    @Column(name = "refund_required_reason", length = 300)
+    private String refundRequiredReason;
+
     @Version
     @Column(nullable = false)
     private long version;
@@ -159,6 +166,20 @@ public class Payment extends BaseTimeEntity {
                 "누적 환불 %d원: %s".formatted(totalRefundedAmount, detail), now);
         refundedAmount = totalRefundedAmount;
         return history;
+    }
+
+    // 환불 필요 표시 (처음 1회만 이력, 상태 유지)
+    public PaymentStatusHistory requireRefund(String reason, OffsetDateTime now) {
+        String detail = validateDetail(reason);
+        if (!status.isApproved()) {
+            throw new BusinessException(ErrorCode.INVALID_PAYMENT_STATUS);
+        }
+        if (refundRequiredAt != null) {
+            return null;
+        }
+        refundRequiredAt = now;
+        refundRequiredReason = detail;
+        return PaymentStatusHistory.record(this, status, PaymentStatusSource.SYSTEM, "환불 필요: " + detail, now);
     }
 
     private PaymentStatusHistory change(PaymentStatus next, PaymentStatusSource source, String detail,
