@@ -104,3 +104,6 @@ CI 정리만 반영한 #150 `eb83d3a9695d59502a4bcb707589cf41093ca44f`의 [실�
 새 disposable PostgreSQL16 localhost:54941, DB `phase2_targeted`, 기본 max_connections=100에서 `./gradlew test --tests '*ReservationPaymentServiceTest' --no-daemon` 32개가 통과했고, `--rerun-tasks`를 추가한 별도 두 실행도 각각 같은32개가 실패·오류·건너뜀0이었다. 세 실행은 겹치는 테스트이므로 합산하지 않는다. Toss는 기존 mock이며 빈 secret과 loopback base URL로 실제 외부 결제를 막았다. 전체 합본 빌드·새 source CI는 별도 증거로 관리한다. 이 fixture 수정에는 #179 공통 소스와 기능10 재확인 로직 수정을 포함하지 않는다.
 
 관련 후속 이슈: [#180 예약 재확인 경계](https://github.com/Techeer-2026-2-E/catchtable-backend/issues/180), 상위 [#65](https://github.com/Techeer-2026-2-E/catchtable-backend/issues/65)는 남은 유료 생성/prepare 범위로 유지한다.
+
+
+최종 통합 확인: dev `7da9c1db77dac1327b565e8d1f36bd3961ea57c6`와 기존 네 feature head, #179 및 #180/#181 후속을 정상 merge한 합본 `49bc29a1cc6afb649645a48bf45f936e30bbc0e1`을 새 빈 DB `phase2_combined_verified`에서 `./gradlew clean build --no-daemon`으로 검증했다. 61클래스584개가 실패·오류·건너뜀0이며 bootJar SHA-256은 `c27885ed8d3da697a11f32ed2f12b769f6e3232e1600f91b30b1559f38c6d3fd`다. 기본100연결을 유지했고 Toss mock/fake만 사용했다. 프런트 연동 메모는 별도의 기능10 문서 전용 후보로 분리하며 이 소스 후보에는 기존 #179 문서 외에 새 docs/frontend 차이를 남기지 않는다. 실제 source CI·프런트 연동·배포 완료를 뜻하지 않는다.
