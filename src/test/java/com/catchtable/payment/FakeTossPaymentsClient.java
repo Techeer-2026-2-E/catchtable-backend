@@ -24,6 +24,8 @@ public class FakeTossPaymentsClient implements TossPaymentsClient {
 
     private final Map<String, TossPaymentResponse> resultByKey = new ConcurrentHashMap<>();
     private final Map<String, Registered> payments = new ConcurrentHashMap<>();
+    private final Map<String, TossPaymentResponse> queried = new ConcurrentHashMap<>();
+    private final AtomicInteger queries = new AtomicInteger();
     private final ConcurrentLinkedQueue<RuntimeException> failures = new ConcurrentLinkedQueue<>();
     private final List<String> confirmKeys = new CopyOnWriteArrayList<>();
     private final List<String> cancelKeys = new CopyOnWriteArrayList<>();
@@ -33,6 +35,8 @@ public class FakeTossPaymentsClient implements TossPaymentsClient {
     public void reset() {
         resultByKey.clear();
         payments.clear();
+        queried.clear();
+        queries.set(0);
         failures.clear();
         confirmKeys.clear();
         cancelKeys.clear();
@@ -43,6 +47,22 @@ public class FakeTossPaymentsClient implements TossPaymentsClient {
     // 승인된 결제 등록 (테스트 데이터로 만든 결제)
     public void register(String paymentKey, String orderId, long totalAmount, long canceledAmount) {
         payments.put(paymentKey, new Registered(orderId, totalAmount, new AtomicLong(canceledAmount)));
+    }
+
+    // 조회 응답 지정 (승인 전·실패 상태 등, orderId·paymentKey 둘 다로 조회 가능)
+    public void query(String orderId, String paymentKey, String status, long totalAmount) {
+        TossPaymentResponse response = new TossPaymentResponse(paymentKey, orderId, "예약금", status, "카드",
+                totalAmount, totalAmount, status.equals("DONE") ? APPROVED_AT : null,
+                new TossPaymentResponse.Receipt("https://receipt"), null);
+        queried.put(orderId, response);
+        if (paymentKey != null) {
+            queried.put(paymentKey, response);
+        }
+    }
+
+    // 조회 호출 횟수
+    public int queries() {
+        return queries.get();
     }
 
     // 다음 호출 1회 실패 (처리 안 됨)
@@ -90,12 +110,30 @@ public class FakeTossPaymentsClient implements TossPaymentsClient {
 
     @Override
     public TossPaymentResponse getByPaymentKey(String paymentKey) {
-        return response(paymentKey, payments.get(paymentKey));
+        queries.incrementAndGet();
+        pause();
+        throwIfFailing();
+        Registered payment = payments.get(paymentKey);
+        return payment != null ? response(paymentKey, payment) : found(queried.get(paymentKey));
     }
 
     @Override
     public TossPaymentResponse getByOrderId(String orderId) {
-        throw new UnsupportedOperationException();
+        queries.incrementAndGet();
+        pause();
+        throwIfFailing();
+        return payments.entrySet().stream()
+                .filter(entry -> entry.getValue().orderId().equals(orderId))
+                .map(entry -> response(entry.getKey(), entry.getValue()))
+                .findFirst()
+                .orElseGet(() -> found(queried.get(orderId)));
+    }
+
+    private static TossPaymentResponse found(TossPaymentResponse response) {
+        if (response == null) {
+            throw new TossPaymentsException(404, "NOT_FOUND_PAYMENT", "존재하지 않는 결제");
+        }
+        return response;
     }
 
     @Override

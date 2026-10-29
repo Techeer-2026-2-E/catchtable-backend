@@ -17,7 +17,8 @@ public record PaymentResponse(
         String method,
         OffsetDateTime approvedAt,
         long canceledAmount,    // 누적 환불액
-        String receiptUrl
+        String receiptUrl,
+        boolean refundRequired  // 예약 확정 없는 승인, 환불 대상
 ) {
     public static PaymentResponse from(Payment payment) {
         Long reservationId = payment.getReservation().getId();
@@ -32,6 +33,7 @@ public record PaymentResponse(
                 payment.getMethod(),
                 payment.getApprovedAt(),
                 payment.getRefundedAmount(),
-                payment.getReceiptUrl());
+                payment.getReceiptUrl(),
+                payment.getRefundRequiredAt() != null);
     }
 }

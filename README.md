@@ -51,9 +51,11 @@ docker compose exec -T postgres psql -U catchtable -d catchtable < scripts/local
 - 선점은 `PENDING_PAYMENT` 예약 자체다. `holdId`와 `reservationId`가 같고, 생성 시각부터 5분인 `expiresAt`과 `serverTime`, `remainingSeconds`를 반환한다. 조회·재접속으로 기한이 연장되지 않는다. 명시적 해제는 `CANCELLED`, 시간 만료는 `EXPIRED`다. 반환된 테이블은 다시 예약할 수 있고 무료 예약은 즉시 확정된다.
 - 예약 변경: `PATCH /api/owner/reservations/{reservationId}`, `X-Member-Id`와 본문 `{"reservationStartAt":"2026-10-20T18:00:00+09:00","partySize":4}`. 한 필드만 보내도 된다. 새 조건에 맞는 테이블 확보와 예약 변경이 함께 커밋되며, 실패하면 기존 예약을 유지한다. 성공하면 고객에게 `RESERVATION_CHANGED` SSE를 보낸다.
 
-예약 변경은 미입장 확정 예약에 한정한다. 인원만 변경하면 기존 시작·종료 시각을 유지하고, 시간을 변경하면 매장 정책을 만족하는 미래 시각이어야 한다. 두 경우 모두 수용 가능한 빈 테이블을 확보해야 변경되며, 실패하면 기존 예약을 유지한다. 판단과 검증은 [기능37 작업 기록](work-log/66-post-start-reservation-change.md)에 남겼다. 결제 승인·결과 재확인·환불은 아직 연결하지 않았으며, 공통 결제 계약이 정해지면 승인 중/결과 불명인 선점의 자동 만료와 명시적 해제를 함께 연동해야 한다.
+예약 변경은 미입장 확정 예약에 한정한다. 인원만 변경하면 기존 시작·종료 시각을 유지하고, 시간을 변경하면 매장 정책을 만족하는 미래 시각이어야 한다. 두 경우 모두 수용 가능한 빈 테이블을 확보해야 변경되며, 실패하면 기존 예약을 유지한다. 판단과 검증은 [기능37 작업 기록](work-log/66-post-start-reservation-change.md)에 남겼다. 승인 진행·결과 불명인 선점은 원래 자리를 보존하며 자동 만료·명시적 해제·다른 예약의 재배정을 차단한다. 결과 재확인·웹훅·복구는 기능142, 양수 환불 실행 연결은 별도 보류 범위다.
 
 마이그레이션은 `V12`(웨이팅 종료 이력), `V13`(호출 도착 제한시간), `V14`(웨이팅 호출), `V15`(예약 선점) 순서다. 예약 선점은 새로 반영된 호출 기능과 번호가 겹치지 않도록 기존 V13에서 V15로 옮겼다.
+
+예약의 최초 예약금액·환불 정책 보관은 `V20`과 생성 시 입력하는 스냅샷 필드로 준비했다. 무료 즉시 확정은 금액 0·정책 없음으로 기록한다. 기존 행·정책 미연결 선점은 금액을 추정하지 않으며, 유료 스냅샷 생성 경계는 매장 설정 원본을 확인한 호출부가 금액·정책을 함께 전달해야 한다. 현재 선점 HTTP 생성은 아직 이 경계를 호출하지 않는다. `POST /api/user/payments/confirm`은 이미 저장된 올바른 주문·유료 스냅샷을 대상으로 `X-Member-Id`와 `{orderId,paymentKey,amount}`를 검증한다. 원래5분 내 시작을 `V24`에 기록하고 트랜잭션 밖 공통 승인 후 `DONE`만 같은 자리에 한 번 확정한다. `READY`·결과 불명은 자리 보존·409, 확인된 실패는 기존 해제 경로로 반환한다. prepare API는 없다. V20의 공유 적용 이력과 V22 이후 적용 전략은 미확정이며 원본 V20을 보존했다. 따라서 이 소스는 배포·기존 DB upgrade 준비 완료가 아니다. [기능10 작업 기록](work-log/65-deposit-snapshot.md)에 검증과 경계를 남겼다.
 
 ## 점주 예약 취소 알림
 
@@ -61,6 +63,8 @@ docker compose exec -T postgres psql -U catchtable -d catchtable < scripts/local
 
 클라이언트는 알림 수신 또는 SSE의 `connect` 이벤트 수신 후 `GET /api/user/reservations/{reservationId}`를 호출해 최신 상태와 취소 사유를 갱신한다. 기존 P1 고객 API처럼 `X-Member-Id` 헤더를 사용하며 본인 예약만 조회할 수 있다.
 
+고객·점주 예약 취소는 최초 예약금 조건과 승인 원장을 확인한다. 무료·정책상 추가 환불 0원·필요 환불이 이미 확인된 경우에만 예약 취소와 자리 반환을 커밋한다. 추가 환불이 남으면 `409 REFUND_NOT_COMPLETED`, 원본·결과를 신뢰할 수 없으면 `409 REFUND_DATA_NOT_READY`이며 기존 예약·자리를 유지한다. 실제 Toss 환불은 아직 호출하지 않는다. [기능60 취소 경계 작업 기록](work-log/68-refund-before-cancellation.md)에 잠금 순서와 남은 공통 계약을 남겼다.
+
 ## 취소 시점별 환불금 계산
 
-기능61의 환불 계산기는 예약 당시 금액·정책과 변경 후 방문일을 기준으로 원 미만을 버린 뒤 기환불액을 차감한다. 점주 취소는 원결제액을 총 환불 한도로 사용한다. 현재는 계산 로직만 구현했으며, 환불 예상액 HTTP API와 실제 Toss 취소는 공통 결제 계약 후 연결한다. [기능61 작업 기록](work-log/67-refund-calculation.md)에 판단·검증·연동 조건을 남겼다.
+기능61의 환불 계산기는 예약 당시 금액·정책과 변경 후 방문일을 기준으로 원 미만을 버린 뒤 기환불액을 차감한다. 점주 취소는 원결제액을 총 환불 한도로 사용한다. `GET /api/user/reservations/{reservationId}/refund-preview`는 본인·시작 전·미입장 확정 예약의 추가 예상액을 제공한다. REQUESTED/UNKNOWN은409로 차단하며 실제 환불은 실행하지 않는다. [기능61 작업 기록](work-log/67-refund-calculation.md)에 판단·검증·연동 조건을 남겼다.

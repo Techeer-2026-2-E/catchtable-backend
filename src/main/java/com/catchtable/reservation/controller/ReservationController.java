@@ -2,9 +2,11 @@ package com.catchtable.reservation.controller;
 
 import com.catchtable.global.auth.LoginMember;
 import com.catchtable.reservation.dto.CreateReservationRequest;
+import com.catchtable.reservation.dto.RefundPreviewResponse;
 import com.catchtable.reservation.dto.ReservationHoldResponse;
 import com.catchtable.reservation.dto.ReservationResponse;
 import com.catchtable.reservation.service.ReservationService;
+import com.catchtable.reservation.service.ReservationRefundExecutionService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -20,11 +22,17 @@ public class ReservationController {
     private static final long MOCK_CUSTOMER_ID = 1L;
 
     private final ReservationService reservationService;
+    private final ReservationRefundExecutionService refundExecution;
 
     /** 알림 수신 또는 SSE 재접속 후 본인 예약의 최신 상태와 취소 사유를 조회한다. */
     @GetMapping("/{reservationId}")
     public ReservationResponse getReservation(@LoginMember Long memberId, @PathVariable Long reservationId) {
         return reservationService.getReservation(memberId, reservationId);
+    }
+
+    @GetMapping("/{reservationId}/refund-preview")
+    public RefundPreviewResponse getRefundPreview(@LoginMember Long memberId, @PathVariable Long reservationId) {
+        return reservationService.getRefundPreview(memberId, reservationId);
     }
 
     /** 생성 시 가용 여부를 다시 확인하고 바로 확정(201)한다. 그 사이 테이블이 소진되면 409를 반환한다. */
@@ -60,10 +68,12 @@ public class ReservationController {
     @PostMapping("/{reservationId}/cancel")
     public ReservationResponse cancelReservation(
             @LoginMember Long memberId,
-            @PathVariable Long reservationId
+            @PathVariable Long reservationId,
+            @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey
     )
     {
-        return reservationService.cancelReservation(memberId, reservationId);
+        return idempotencyKey == null ? reservationService.cancelReservation(memberId, reservationId)
+                : refundExecution.cancelCustomer(memberId, reservationId, idempotencyKey);
     }
 
 }

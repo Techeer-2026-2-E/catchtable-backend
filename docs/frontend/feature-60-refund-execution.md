@@ -146,3 +146,7 @@ REQUESTED/UNKNOWN의 기존 환불 결과를 조회하는 동안 추가 환불 �
 4B에 따라 최초 유효 요청시각·한도 저장과 처리 중 일정/인원 변경·입장·노쇼·다른 취소 동결이 합의될 때까지 양수 환불 endpoint와 PG 기반 예약 취소는 **구현·공개하지 않는다**. `POST /api/user/payments/{paymentId}/cancel`은 없다. [후속 소스](https://github.com/Techeer-2026-2-E/catchtable-backend/blob/610539b5faa18395df89a379937028033bffe41b/src/main/java/com/catchtable/reservation/service/ReservationRefundService.java)와 [고객 취소](https://github.com/Techeer-2026-2-E/catchtable-backend/blob/610539b5faa18395df89a379937028033bffe41b/src/main/java/com/catchtable/reservation/service/ReservationService.java)는 기존 무료·추가0원·필요 환불 확인 후 취소만 유지한다. 양수가 남으면 `409 REFUND_NOT_COMPLETED`, REQUESTED/UNKNOWN 또는 불신 원장은 `409 REFUND_DATA_NOT_READY`이며 예약·자리·SSE를 보존한다. 고객/점주 route·기존 식별/사유 계약은 위 절과 같다.
 
 5A의 [기능10 승인 확정](feature-10-deposit-payment.md)은 환불 실행 허용을 뜻하지 않는다. 공통 서비스 재사용·기능142 복구도 이 경계를 넘지 않는다. 기능 [Draft PR #150](https://github.com/Techeer-2026-2-E/catchtable-backend/pull/150)은 미머지 검토용이며 V20 공유 이력·populated V22 upgrade 차단은 그대로다. 기능60 전체 완료·실제 환불·화면·배포로 표시하지 않는다. 이 문서 변경 자체는 고정 소스·링크·Markdown·diff만 검사한다.
+
+## 2026-10-29 후속 — 기능63 환불 복구
+
+앞선 기록은 보존한다. 남은 `REQUESTED`·`UNKNOWN`은 [기능63 결과 재확인](feature-58-payment-status.md#결과-재확인-기능63)이 Toss 누적 취소액으로 반영 여부를 확인한다. 반영됐으면 `COMPLETED`, 아니면 요청 15일 안에는 같은 키 재시도, 지나면 `FAILED`(`IDEMPOTENCY_KEY_EXPIRED`)다. 늦은 승인은 `refundRequired` 표시만 하며 양수 환불 endpoint는 4B 결정 전까지 열지 않는다.
