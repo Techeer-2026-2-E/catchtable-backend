@@ -80,3 +80,16 @@ DB_USERNAME=phase2_test DB_PASSWORD=phase2_test ./gradlew test \
 기능33의 예약금 설정 원본·점주 계약이 없어 prepare API와 유료 생성 연결을 만들지 않았다. 올바른 준비 원장이 저장된 경우만 검증했으며 유료 생성 전체 E2E는 미완료다. 2A는 결제 환불과 예약 취소를 분리하며 고객 취소는 남은 **정책상** 환불액이 기준이고 임의 전액 환불을 허용하지 않는다. 3A의 양수 취소 환불에만 필요한 client Idempotency-Key는 미래 계약이다. 4B에 따라 최초 요청 시각/한도 저장·진행 중 변경 동결 계약 전 양수 환불 endpoint와 PG 기반 예약 취소는 보류하며 기존 양수 환불 차단을 유지한다. 기능142 복구·실제 Toss·프런트/JWT·배포는 이번 구현·검증 범위에 없다.
 
 합본 첫 실행에서는539개 중 기존 WaitingQueueNotifierTest의7개가 새 컨텍스트 시작 시 PostgreSQL 기본100연결 한도(`too many clients already`)로 실패했다. 새 Clock/Toss mock 승인 테스트의 독립 Spring 컨텍스트를 `DirtiesContext(AFTER_CLASS)`로 테스트 종료 시 반환하도록 보완했다. 운영 설정·DB 한도·기존 테스트는 바꾸지 않으며 테스트를 제외하지 않는다. 실패 전체 로그/XML은 `approved-followup/aggregate-first-attempt`에 보존하고 최종 clean build 결과를 별도로 기록한다.
+
+
+## 2026-10-29 후속 — 기능63 정산 경로의 예약 경계
+
+[#179](https://github.com/Techeer-2026-2-E/catchtable-backend/pull/179)의 `0c376957f6ad6d14166113dcdd91b6cc3b0fb774`와 기존 #145를 정상 merge한 별도 기능10 후속 후보다. #145/#147/#146/#150에는 이 후속 소스를 섞지 않는다. [기능10 명세](https://app.notion.com/p/3d548d76fa32819386a3e858c26b2c1b)의 동일 최초 요청·스냅샷 검증과 종료 예약 보존을 재확인 진입점에도 적용한다.
+
+기존 `confirm`은 결제 회원·주문·키·금액과 최초 예약 스냅샷을 검사하지만 새 `settle`은 생략했다. 회귀 테스트에서 다른 key/order의 DONE은 기존 보호를 지웠고, amount/member가 다른 DONE은 예약을 확정했다. 같은 승인으로 이미 확정한 뒤 CANCELLED/COMPLETED/NO_SHOW가 된 예약과 미확정 terminal hold도 재확인 시 409를 반복했다. 기존 테스트에 추가한 14건 중 9건이 수정 전에 실패했다.
+
+예약 서비스에서 기존 `validatePayment`를 재사용하고 DONE 확정을 PENDING_PAYMENT/CONFIRMED에 한정했다. 불일치는 409 PAYMENT_MISMATCH와 기존 자리·연결을 보존한다. 이미 확정한 종료 예약은 현재 상태·확정시각·이력·알림을 유지한다. 확정된 적 없는 CANCELLED/EXPIRED는 되살리지 않고 #179의 기존 LATE_SUCCESS/refundRequired 경로로 보낸다. 공통 승인·재확인·환불 서비스와 결제 엔티티·마이그레이션은 변경하지 않았다.
+
+새 disposable PostgreSQL16 `phase2-reconcile-20261029-pg16`, localhost:54941, DB `phase2_targeted`, 기본 max_connections=100에서 `./gradlew test --tests '*ReservationPaymentServiceTest' --tests '*PaymentReconcile*Test' --no-daemon`을 실행했다. 예약 승인46개와 재확인26개, 총72개가 실패·오류·건너뜀0으로 통과했다. 기존 Toss mock/fake와 Clock을 재사용했고 빈 Toss 키·loopback base URL로 실제 결제 스케줄러/외부 호출을 막았다. 추가 검증은 조회 중 DB 행 잠금 부재, 원래 기한 후 동일 슬롯 보호, 실패 경계의 반환/재배정/재요청, 다른 결과가 불명일 때 과거 전액 환불의 격리 유지, sync/detail의 평탄한 PaymentResponse+refunds JSON과 refundRequired를 포함한다.
+
+전체 합본 검증과 V20 없는 populated V22의 업그레이드 차단은 별도 증거다. 이 후속으로 유료 생성/prepare, 양수 환불 실행(4B), 공유 V20 rollout, 실제 Toss·프런트/JWT·배포를 완료한 것으로 보고하지 않는다.
