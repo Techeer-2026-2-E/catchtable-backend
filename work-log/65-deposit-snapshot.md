@@ -93,3 +93,14 @@ DB_USERNAME=phase2_test DB_PASSWORD=phase2_test ./gradlew test \
 새 disposable PostgreSQL16 `phase2-reconcile-20261029-pg16`, localhost:54941, DB `phase2_targeted`, 기본 max_connections=100에서 `./gradlew test --tests '*ReservationPaymentServiceTest' --tests '*PaymentReconcile*Test' --no-daemon`을 실행했다. 예약 승인46개와 재확인26개, 총72개가 실패·오류·건너뜀0으로 통과했다. 기존 Toss mock/fake와 Clock을 재사용했고 빈 Toss 키·loopback base URL로 실제 결제 스케줄러/외부 호출을 막았다. 추가 검증은 조회 중 DB 행 잠금 부재, 원래 기한 후 동일 슬롯 보호, 실패 경계의 반환/재배정/재요청, 다른 결과가 불명일 때 과거 전액 환불의 격리 유지, sync/detail의 평탄한 PaymentResponse+refunds JSON과 refundRequired를 포함한다.
 
 전체 합본 검증과 V20 없는 populated V22의 업그레이드 차단은 별도 증거다. 이 후속으로 유료 생성/prepare, 양수 환불 실행(4B), 공유 V20 rollout, 실제 Toss·프런트/JWT·배포를 완료한 것으로 보고하지 않는다.
+
+
+## 2026-10-29 후속 — 승인 테스트 Clock 경합 수정
+
+CI 정리만 반영한 #150 `eb83d3a9695d59502a4bcb707589cf41093ca44f`의 [실패 실행](https://github.com/Techeer-2026-2-E/catchtable-backend/actions/runs/40805972509)에서 `failureAfterExpiryUnfencesAndExpiresWithoutConfirmingOrRefunding`이 `Clock.getZone`의 Instant→ZoneId 형변환으로 실패했다. 앱 소스는 기존 공개 head와 같았으며 실패를 재시도만으로 덮지 않았다.
+
+기존 Mockito Clock의 `when(clock.instant())`와 `thenAnswer` 사이에 다른 스레드가 `getZone`을 읽으면 같은 오류가 나는 것을 Mockito 5.11.0 최소 harness로 결정적으로 재현했다. 실제 예약 스케줄러도 같은 Clock을 읽으므로 테스트 setup의 재스텁이 안전하지 않았다. 기존 고정 Clock 테스트의 `@TestConfiguration`·`@Primary` 패턴을 사용해, 테스트 내부의 원자적 시각 참조와 고정 시간대를 읽는 실제 Clock으로 교체했다. 기존 경계 시각·동시 승인·AFTER_COMMIT 검증과 `@DirtiesContext(AFTER_CLASS)`를 유지했다. 운영 Clock·스케줄러·풀·앱 설정은 변경하지 않았다.
+
+새 disposable PostgreSQL16 localhost:54941, DB `phase2_targeted`, 기본 max_connections=100에서 `./gradlew test --tests '*ReservationPaymentServiceTest' --no-daemon` 32개가 통과했고, `--rerun-tasks`를 추가한 별도 두 실행도 각각 같은32개가 실패·오류·건너뜀0이었다. 세 실행은 겹치는 테스트이므로 합산하지 않는다. Toss는 기존 mock이며 빈 secret과 loopback base URL로 실제 외부 결제를 막았다. 전체 합본 빌드·새 source CI는 별도 증거로 관리한다. 이 fixture 수정에는 #179 공통 소스와 기능10 재확인 로직 수정을 포함하지 않는다.
+
+관련 후속 이슈: [#180 예약 재확인 경계](https://github.com/Techeer-2026-2-E/catchtable-backend/issues/180), 상위 [#65](https://github.com/Techeer-2026-2-E/catchtable-backend/issues/65)는 남은 유료 생성/prepare 범위로 유지한다.
