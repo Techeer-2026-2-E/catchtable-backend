@@ -99,6 +99,13 @@ public class Payment extends BaseTimeEntity {
         return new Payment(member, reservation, orderId, orderName, amount);
     }
 
+    public PaymentStatusHistory initialHistory(OffsetDateTime now) {
+        if (status != PaymentStatus.READY) {
+            throw new BusinessException(ErrorCode.INVALID_PAYMENT_STATUS);
+        }
+        return PaymentStatusHistory.record(this, status, PaymentStatusSource.USER, "결제 준비", now);
+    }
+
     // 승인 (같은 paymentKey 재요청은 null)
     public PaymentStatusHistory approve(String paymentKey, String method, OffsetDateTime approvedAt, String receiptUrl,
                                         PaymentStatusSource source, OffsetDateTime now) {

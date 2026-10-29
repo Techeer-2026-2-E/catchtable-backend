@@ -32,6 +32,8 @@ public enum ErrorCode {
     RESERVATION_NOT_FOUND(HttpStatus.NOT_FOUND, "예약을 찾을 수 없습니다."),
     RESERVATION_NOT_MODIFIABLE(HttpStatus.CONFLICT, "변경할 수 없는 예약입니다."),
     RESERVATION_NOT_CANCELLABLE(HttpStatus.CONFLICT, "취소할 수 없는 예약입니다."),
+    RESERVATION_PAYMENT_REQUIRED(HttpStatus.CONFLICT, "예약금 결제가 필요합니다. 선점 생성 → 결제 준비 → 승인 경로를 이용해 주세요."),
+    RESERVATION_DEPOSIT_TERMS_UNAVAILABLE(HttpStatus.CONFLICT, "매장의 예약금 조건을 확인할 수 없습니다. 잠시 후 다시 시도해 주세요."),
     REFUND_DATA_NOT_READY(HttpStatus.CONFLICT, "결제 내역과 환불 정책을 확인한 후 계산할 수 있습니다."),
     REFUND_NOT_COMPLETED(HttpStatus.CONFLICT, "환불 완료를 확인한 후 예약을 취소할 수 있습니다."),
     FORBIDDEN_MEMBER_TYPE(HttpStatus.FORBIDDEN, "이 기능을 사용할 수 없는 회원 유형입니다."),
@@ -58,6 +60,7 @@ public enum ErrorCode {
     PAYMENT_KEY_ALREADY_USED(HttpStatus.CONFLICT, "이미 다른 결제에 사용된 결제 키입니다."),
     IDEMPOTENCY_CONFLICT(HttpStatus.CONFLICT, "같은 멱등키로 다른 요청을 보낼 수 없습니다."),
     PAYMENT_RECONCILIATION_REQUIRED(HttpStatus.CONFLICT, "결제 결과 확인이 필요합니다. 확인 후 같은 요청으로 다시 시도해 주세요."),
+    PAYMENT_STATUS_CHECK_REQUIRED(HttpStatus.CONFLICT, "진행하거나 완료한 결제가 있습니다. 기존 결제 상태를 조회해 주세요."),
     PAYMENT_NOT_REFUNDABLE(HttpStatus.CONFLICT, "환불할 수 없는 결제 상태입니다."),
     PAYMENT_REFUND_FAILED(HttpStatus.CONFLICT, "결제사에서 환불을 거절했습니다.");
 

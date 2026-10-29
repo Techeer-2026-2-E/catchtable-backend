@@ -34,6 +34,7 @@ public class ReservationPaymentService {
     private final TransactionTemplate transactions;
     private final ApplicationEventPublisher events;
     private final Clock clock;
+    private final ReservationRefundSettlementService refundSettlement;
 
     // 시작 기록 커밋 → 잠금 없는 공통 승인 → 현재 시도 재검사·예약 확정 커밋.
     public PaymentResponse confirm(Long memberId, PaymentConfirmRequest request) {
@@ -143,9 +144,13 @@ public class ReservationPaymentService {
                     .orElseThrow(() -> new BusinessException(ErrorCode.PAYMENT_NOT_FOUND));
             Reservation reservation = reservations.findByIdForUpdate(reservationId)
                     .orElseThrow(() -> new BusinessException(ErrorCode.PAYMENT_NOT_FOUND));
-            Payment payment = payments.findByIdForUpdate(paymentId)
+            var lockedPayments = payments.findAllByReservationIdForUpdate(reservationId);
+            Payment payment = lockedPayments.stream().filter(found -> found.getId().equals(paymentId)).findFirst()
                     .orElseThrow(() -> new BusinessException(ErrorCode.PAYMENT_NOT_FOUND));
-            return settle(reservation, payment, OffsetDateTime.now(clock));
+            OffsetDateTime now = OffsetDateTime.now(clock);
+            Settlement result = settle(reservation, payment, now);
+            refundSettlement.settle(reservation, lockedPayments, now);
+            return result;
         });
     }
 
@@ -166,12 +171,17 @@ public class ReservationPaymentService {
             return paymentStatus.isApproved() ? Settlement.LATE_SUCCESS : Settlement.RELEASED;
         }
         boolean attempt = payment.getId().equals(reservation.getApprovalPaymentId());
+        if (attempt && paymentStatus.isApproved()) {
+            validatePayment(reservation, payment, new Attempt(payment.getId(), reservation.getId(),
+                    reservation.getApprovalOrderId(), reservation.getApprovalPaymentKey()), payment.getAmount());
+        }
         if (attempt && isVerifiedFailure(payment)) {
             releaseApproval(reservation, now);
             return Settlement.RELEASED;
         }
         if (attempt && paymentStatus == PaymentStatus.DONE
-                && reservation.matchesPaymentApproval(payment.getId(), payment.getOrderId(), payment.getPaymentKey())) {
+                && (reservation.getStatus() == ReservationStatus.PENDING_PAYMENT
+                    || reservation.getStatus() == ReservationStatus.CONFIRMED)) {
             confirmReservation(reservation, payment.getId(), payment.getOrderId(), payment.getPaymentKey(), now);
             return Settlement.CONFIRMED;
         }
