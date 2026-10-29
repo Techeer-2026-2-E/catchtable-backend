@@ -6,6 +6,8 @@ import com.catchtable.reservation.dto.OwnerReservationResponse;
 import com.catchtable.reservation.dto.OwnerReservationUpdateRequest;
 import com.catchtable.reservation.entity.ReservationStatus;
 import com.catchtable.reservation.service.OwnerReservationService;
+import com.catchtable.reservation.service.ReservationRefundExecutionService;
+import org.springframework.web.bind.annotation.RequestHeader;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.format.annotation.DateTimeFormat;
@@ -30,6 +32,7 @@ public class OwnerReservationController {
     private static final long MOCK_OWNER_ID = 2L;
 
     private final OwnerReservationService ownerReservationService;
+    private final ReservationRefundExecutionService refundExecution;
 
     @PatchMapping("/reservations/{reservationId}")
     public OwnerReservationResponse updateReservation(
@@ -58,9 +61,12 @@ public class OwnerReservationController {
     @PostMapping("/reservations/{reservationId}/cancel")
     public OwnerReservationResponse cancelReservation(
             @PathVariable Long reservationId,
+            @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
             @Valid @RequestBody OwnerReservationActionRequest request
     ) {
-        return ownerReservationService.cancelReservation(MOCK_OWNER_ID, reservationId, request.reason());
+        return idempotencyKey == null
+                ? ownerReservationService.cancelReservation(MOCK_OWNER_ID, reservationId, request.reason())
+                : refundExecution.cancelOwner(MOCK_OWNER_ID, reservationId, idempotencyKey, request.reason());
     }
 
     /** 방문 확인 직후에는 확정 상태이고, 이용 종료 시각이 지나면 주기 작업에서 완료 처리한다. */

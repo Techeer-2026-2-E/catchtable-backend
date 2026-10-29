@@ -82,6 +82,19 @@ DB_USERNAME=phase2_test DB_PASSWORD=phase2_test ./gradlew test \
 합본 첫 실행에서는539개 중 기존 WaitingQueueNotifierTest의7개가 새 컨텍스트 시작 시 PostgreSQL 기본100연결 한도(`too many clients already`)로 실패했다. 새 Clock/Toss mock 승인 테스트의 독립 Spring 컨텍스트를 `DirtiesContext(AFTER_CLASS)`로 테스트 종료 시 반환하도록 보완했다. 운영 설정·DB 한도·기존 테스트는 바꾸지 않으며 테스트를 제외하지 않는다. 실패 전체 로그/XML은 `approved-followup/aggregate-first-attempt`에 보존하고 최종 clean build 결과를 별도로 기록한다.
 
 
+## 2026-10-29 후속 — 기능63 정산 경로의 예약 경계
+
+[#179](https://github.com/Techeer-2026-2-E/catchtable-backend/pull/179)의 `0c376957f6ad6d14166113dcdd91b6cc3b0fb774`와 기존 #145를 정상 merge한 별도 기능10 후속 후보다. #145/#147/#146/#150에는 이 후속 소스를 섞지 않는다. [기능10 명세](https://app.notion.com/p/3d548d76fa32819386a3e858c26b2c1b)의 동일 최초 요청·스냅샷 검증과 종료 예약 보존을 재확인 진입점에도 적용한다.
+
+기존 `confirm`은 결제 회원·주문·키·금액과 최초 예약 스냅샷을 검사하지만 새 `settle`은 생략했다. 회귀 테스트에서 다른 key/order의 DONE은 기존 보호를 지웠고, amount/member가 다른 DONE은 예약을 확정했다. 같은 승인으로 이미 확정한 뒤 CANCELLED/COMPLETED/NO_SHOW가 된 예약과 미확정 terminal hold도 재확인 시 409를 반복했다. 기존 테스트에 추가한 14건 중 9건이 수정 전에 실패했다.
+
+예약 서비스에서 기존 `validatePayment`를 재사용하고 DONE 확정을 PENDING_PAYMENT/CONFIRMED에 한정했다. 불일치는 409 PAYMENT_MISMATCH와 기존 자리·연결을 보존한다. 이미 확정한 종료 예약은 현재 상태·확정시각·이력·알림을 유지한다. 확정된 적 없는 CANCELLED/EXPIRED는 되살리지 않고 #179의 기존 LATE_SUCCESS/refundRequired 경로로 보낸다. 공통 승인·재확인·환불 서비스와 결제 엔티티·마이그레이션은 변경하지 않았다.
+
+새 disposable PostgreSQL16 `phase2-reconcile-20261029-pg16`, localhost:54941, DB `phase2_targeted`, 기본 max_connections=100에서 `./gradlew test --tests '*ReservationPaymentServiceTest' --tests '*PaymentReconcile*Test' --no-daemon`을 실행했다. 예약 승인46개와 재확인26개, 총72개가 실패·오류·건너뜀0으로 통과했다. 기존 Toss mock/fake와 Clock을 재사용했고 빈 Toss 키·loopback base URL로 실제 결제 스케줄러/외부 호출을 막았다. 추가 검증은 조회 중 DB 행 잠금 부재, 원래 기한 후 동일 슬롯 보호, 실패 경계의 반환/재배정/재요청, 다른 결과가 불명일 때 과거 전액 환불의 격리 유지, sync/detail의 평탄한 PaymentResponse+refunds JSON과 refundRequired를 포함한다.
+
+전체 합본 검증과 V20 없는 populated V22의 업그레이드 차단은 별도 증거다. 이 후속으로 유료 생성/prepare, 양수 환불 실행(4B), 공유 V20 rollout, 실제 Toss·프런트/JWT·배포를 완료한 것으로 보고하지 않는다.
+
+
 ## 2026-10-29 후속 — 승인 테스트 Clock 경합 수정
 
 CI 정리만 반영한 #150 `eb83d3a9695d59502a4bcb707589cf41093ca44f`의 [실패 실행](https://github.com/Techeer-2026-2-E/catchtable-backend/actions/runs/40805972509)에서 `failureAfterExpiryUnfencesAndExpiresWithoutConfirmingOrRefunding`이 `Clock.getZone`의 Instant→ZoneId 형변환으로 실패했다. 앱 소스는 기존 공개 head와 같았으며 실패를 재시도만으로 덮지 않았다.
@@ -89,3 +102,8 @@ CI 정리만 반영한 #150 `eb83d3a9695d59502a4bcb707589cf41093ca44f`의 [실�
 기존 Mockito Clock의 `when(clock.instant())`와 `thenAnswer` 사이에 다른 스레드가 `getZone`을 읽으면 같은 오류가 나는 것을 Mockito 5.11.0 최소 harness로 결정적으로 재현했다. 실제 예약 스케줄러도 같은 Clock을 읽으므로 테스트 setup의 재스텁이 안전하지 않았다. 기존 고정 Clock 테스트의 `@TestConfiguration`·`@Primary` 패턴을 사용해, 테스트 내부의 원자적 시각 참조와 고정 시간대를 읽는 실제 Clock으로 교체했다. 기존 경계 시각·동시 승인·AFTER_COMMIT 검증과 `@DirtiesContext(AFTER_CLASS)`를 유지했다. 운영 Clock·스케줄러·풀·앱 설정은 변경하지 않았다.
 
 새 disposable PostgreSQL16 localhost:54941, DB `phase2_targeted`, 기본 max_connections=100에서 `./gradlew test --tests '*ReservationPaymentServiceTest' --no-daemon` 32개가 통과했고, `--rerun-tasks`를 추가한 별도 두 실행도 각각 같은32개가 실패·오류·건너뜀0이었다. 세 실행은 겹치는 테스트이므로 합산하지 않는다. Toss는 기존 mock이며 빈 secret과 loopback base URL로 실제 외부 결제를 막았다. 전체 합본 빌드·새 source CI는 별도 증거로 관리한다. 이 fixture 수정에는 #179 공통 소스와 기능10 재확인 로직 수정을 포함하지 않는다.
+
+관련 후속 이슈: [#180 예약 재확인 경계](https://github.com/Techeer-2026-2-E/catchtable-backend/issues/180), 상위 [#65](https://github.com/Techeer-2026-2-E/catchtable-backend/issues/65)는 남은 유료 생성/prepare 범위로 유지한다.
+
+
+최종 통합 확인: dev `7da9c1db77dac1327b565e8d1f36bd3961ea57c6`와 기존 네 feature head, #179 및 #180/#181 후속을 정상 merge한 합본 `49bc29a1cc6afb649645a48bf45f936e30bbc0e1`을 새 빈 DB `phase2_combined_verified`에서 `./gradlew clean build --no-daemon`으로 검증했다. 61클래스584개가 실패·오류·건너뜀0이며 bootJar SHA-256은 `c27885ed8d3da697a11f32ed2f12b769f6e3232e1600f91b30b1559f38c6d3fd`다. 기본100연결을 유지했고 Toss mock/fake만 사용했다. 프런트 연동 메모는 별도의 기능10 문서 전용 후보로 분리하며 이 소스 후보에는 기존 #179 문서 외에 새 docs/frontend 차이를 남기지 않는다. 실제 source CI·프런트 연동·배포 완료를 뜻하지 않는다.
