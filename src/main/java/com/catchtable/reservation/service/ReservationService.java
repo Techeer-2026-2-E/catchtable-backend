@@ -5,10 +5,16 @@ import com.catchtable.global.exception.ErrorCode;
 import com.catchtable.member.entity.Member;
 import com.catchtable.notification.dto.CustomerNotificationEvent;
 import com.catchtable.notification.dto.NotificationType;
+import com.catchtable.payment.entity.PaymentStatus;
+import com.catchtable.payment.entity.PaymentRefundStatus;
+import com.catchtable.payment.repository.PaymentRepository;
+import com.catchtable.payment.repository.PaymentRefundRepository;
 import com.catchtable.reservation.dto.CreateReservationRequest;
+import com.catchtable.reservation.dto.RefundPreviewResponse;
 import com.catchtable.reservation.dto.ReservationHoldResponse;
 import com.catchtable.reservation.dto.ReservationResponse;
 import com.catchtable.reservation.entity.Reservation;
+import com.catchtable.reservation.entity.CancellationActor;
 import com.catchtable.reservation.entity.ReservationStatus;
 import com.catchtable.reservation.repository.ReservationRepository;
 import com.catchtable.store.entity.Store;
@@ -23,10 +29,12 @@ import org.springframework.http.HttpStatus;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.annotation.Isolation;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.time.Clock;
 import java.time.OffsetDateTime;
+import java.util.EnumSet;
 
 @Service
 @RequiredArgsConstructor
@@ -40,10 +48,60 @@ public class ReservationService {
     private final EntityManager entityManager;
     private final ApplicationEventPublisher eventPublisher;
     private final Clock clock;
+    private final PaymentRepository paymentRepository;
+    private final PaymentRefundRepository paymentRefundRepository;
+    private final ReservationRefundCalculator refundCalculator;
 
     public ReservationResponse getReservation(Long memberId, Long reservationId) {
         return ReservationResponse.from(reservationRepository.findByIdAndMember_Id(reservationId, memberId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.RESERVATION_NOT_FOUND)), OffsetDateTime.now(clock));
+    }
+
+    // 예약 변경과 누적 환불액을 같은 DB 스냅샷에서 읽는다. 조회는 어떤 상태도 바꾸지 않는다.
+    @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
+    public RefundPreviewResponse getRefundPreview(Long memberId, Long reservationId) {
+        Reservation reservation = reservationRepository.findByIdAndMember_Id(reservationId, memberId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.RESERVATION_NOT_FOUND));
+        OffsetDateTime now = OffsetDateTime.now(clock);
+        if (reservation.getStatus() != ReservationStatus.CONFIRMED || reservation.getCheckedInAt() != null
+                || !now.isBefore(reservation.getReservationStartAt())) {
+            throw new BusinessException(ErrorCode.RESERVATION_NOT_CANCELLABLE);
+        }
+
+        var payments = paymentRepository.findAllByReservation_Id(reservationId);
+        if (payments.stream().anyMatch(payment -> paymentRefundRepository.existsByPaymentIdAndStatusIn(
+                payment.getId(), EnumSet.of(PaymentRefundStatus.REQUESTED, PaymentRefundStatus.UNKNOWN)))) {
+            throw new BusinessException(ErrorCode.REFUND_DATA_NOT_READY);
+        }
+        Long amount = reservation.getDepositAmountSnapshot();
+        var policy = reservation.getRefundPolicySnapshot();
+        // 기존 즉시 확정은 선점을 거치지 않은 무료 경로다. 결제 행이 있으면 무료로 추정하지 않는다.
+        boolean legacyFree = amount == null && reservation.getHoldExpiresAt() == null;
+        if ((legacyFree || Long.valueOf(0).equals(amount)) && policy == null && payments.isEmpty()) {
+            return new RefundPreviewResponse(reservationId, null, "KRW", 0, 0, null,
+                    reservation.getReservationStartAt(), now, 0, 0, 0, "예약금 미사용 예약");
+        }
+        if (amount == null || amount <= 0 || policy == null
+                || payments.stream().anyMatch(payment -> payment.getStatus() == PaymentStatus.READY
+                    || payment.getStatus() == PaymentStatus.TIMEOUT)) {
+            throw new BusinessException(ErrorCode.REFUND_DATA_NOT_READY);
+        }
+        var approved = payments.stream().filter(payment -> payment.getStatus().isApproved()).toList();
+        if (approved.size() != 1) {
+            throw new BusinessException(ErrorCode.REFUND_DATA_NOT_READY);
+        }
+        var payment = approved.getFirst();
+        if (!payment.getMember().getId().equals(memberId) || payment.getAmount() != amount
+                || payment.getRefundedAmount() < 0 || payment.getRefundedAmount() > amount) {
+            throw new BusinessException(ErrorCode.REFUND_DATA_NOT_READY);
+        }
+        var calculation = refundCalculator.calculate(amount, payment.getRefundedAmount(), policy,
+                reservation.getReservationStartAt(), now, CancellationActor.CUSTOMER, false);
+        return new RefundPreviewResponse(reservationId, payment.getId(), "KRW", amount,
+                payment.getRefundedAmount(), policy, reservation.getReservationStartAt(), now,
+                calculation.refundRate(), calculation.refundAmount(),
+                amount - payment.getRefundedAmount() - calculation.refundAmount(),
+                calculation.policyDescription());
     }
 
     @Transactional
