@@ -5,10 +5,6 @@ import com.catchtable.global.exception.ErrorCode;
 import com.catchtable.member.entity.Member;
 import com.catchtable.notification.dto.CustomerNotificationEvent;
 import com.catchtable.notification.dto.NotificationType;
-import com.catchtable.payment.entity.PaymentStatus;
-import com.catchtable.payment.entity.PaymentRefundStatus;
-import com.catchtable.payment.repository.PaymentRepository;
-import com.catchtable.payment.repository.PaymentRefundRepository;
 import com.catchtable.reservation.dto.CreateReservationRequest;
 import com.catchtable.reservation.dto.RefundPreviewResponse;
 import com.catchtable.reservation.dto.ReservationHoldResponse;
@@ -34,7 +30,6 @@ import org.springframework.web.server.ResponseStatusException;
 
 import java.time.Clock;
 import java.time.OffsetDateTime;
-import java.util.EnumSet;
 
 @Service
 @RequiredArgsConstructor
@@ -48,9 +43,7 @@ public class ReservationService {
     private final EntityManager entityManager;
     private final ApplicationEventPublisher eventPublisher;
     private final Clock clock;
-    private final PaymentRepository paymentRepository;
-    private final PaymentRefundRepository paymentRefundRepository;
-    private final ReservationRefundCalculator refundCalculator;
+    private final ReservationRefundService refundService;
 
     public ReservationResponse getReservation(Long memberId, Long reservationId) {
         return ReservationResponse.from(reservationRepository.findByIdAndMember_Id(reservationId, memberId)
@@ -68,40 +61,7 @@ public class ReservationService {
             throw new BusinessException(ErrorCode.RESERVATION_NOT_CANCELLABLE);
         }
 
-        var payments = paymentRepository.findAllByReservation_Id(reservationId);
-        if (payments.stream().anyMatch(payment -> paymentRefundRepository.existsByPaymentIdAndStatusIn(
-                payment.getId(), EnumSet.of(PaymentRefundStatus.REQUESTED, PaymentRefundStatus.UNKNOWN)))) {
-            throw new BusinessException(ErrorCode.REFUND_DATA_NOT_READY);
-        }
-        Long amount = reservation.getDepositAmountSnapshot();
-        var policy = reservation.getRefundPolicySnapshot();
-        // 기존 즉시 확정은 선점을 거치지 않은 무료 경로다. 결제 행이 있으면 무료로 추정하지 않는다.
-        boolean legacyFree = amount == null && reservation.getHoldExpiresAt() == null;
-        if ((legacyFree || Long.valueOf(0).equals(amount)) && policy == null && payments.isEmpty()) {
-            return new RefundPreviewResponse(reservationId, null, "KRW", 0, 0, null,
-                    reservation.getReservationStartAt(), now, 0, 0, 0, "예약금 미사용 예약");
-        }
-        if (amount == null || amount <= 0 || policy == null
-                || payments.stream().anyMatch(payment -> payment.getStatus() == PaymentStatus.READY
-                    || payment.getStatus() == PaymentStatus.TIMEOUT)) {
-            throw new BusinessException(ErrorCode.REFUND_DATA_NOT_READY);
-        }
-        var approved = payments.stream().filter(payment -> payment.getStatus().isApproved()).toList();
-        if (approved.size() != 1) {
-            throw new BusinessException(ErrorCode.REFUND_DATA_NOT_READY);
-        }
-        var payment = approved.getFirst();
-        if (!payment.getMember().getId().equals(memberId) || payment.getAmount() != amount
-                || payment.getRefundedAmount() < 0 || payment.getRefundedAmount() > amount) {
-            throw new BusinessException(ErrorCode.REFUND_DATA_NOT_READY);
-        }
-        var calculation = refundCalculator.calculate(amount, payment.getRefundedAmount(), policy,
-                reservation.getReservationStartAt(), now, CancellationActor.CUSTOMER, false);
-        return new RefundPreviewResponse(reservationId, payment.getId(), "KRW", amount,
-                payment.getRefundedAmount(), policy, reservation.getReservationStartAt(), now,
-                calculation.refundRate(), calculation.refundAmount(),
-                amount - payment.getRefundedAmount() - calculation.refundAmount(),
-                calculation.policyDescription());
+        return refundService.preview(reservation, now);
     }
 
     @Transactional
@@ -191,13 +151,15 @@ public class ReservationService {
         {
             return ReservationResponse.from(reservation, OffsetDateTime.now(clock));
         }
+        OffsetDateTime now = OffsetDateTime.now(clock);
         try{
-            reservation.cancelByCustomer(OffsetDateTime.now(clock));
+            reservation.cancelByCustomer(now);
         }
         catch(IllegalStateException exception)
         {
             throw new BusinessException(ErrorCode.RESERVATION_NOT_CANCELLABLE);
         }
+        refundService.requireRefundCompleted(reservation, CancellationActor.CUSTOMER, now);
         eventPublisher.publishEvent(new CustomerNotificationEvent(
                 memberId,
                 NotificationType.RESERVATION_CANCELED,
