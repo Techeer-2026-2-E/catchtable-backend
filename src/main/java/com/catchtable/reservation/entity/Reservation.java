@@ -283,6 +283,11 @@ public class Reservation extends BaseTimeEntity {
         approvalPaymentKey = null;
     }
 
+    // 기능63 재확인 후 격리 해제 (최종 결과 확인 시에만)
+    public void clearApprovalQuarantine() {
+        approvalQuarantined = false;
+    }
+
     public void validateModifiable() {
         if (status != ReservationStatus.CONFIRMED || checkedInAt != null) {
             throw new IllegalStateException("변경할 수 없는 예약입니다.");
