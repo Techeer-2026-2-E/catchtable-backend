@@ -113,6 +113,52 @@ class OwnerSalesControllerTest {
     }
 
     @Test
+    @DisplayName("나중에 환불되면 승인일이 속한 과거 기간의 누적 환불액이 바뀐다")
+    void laterRefundUpdatesTheOriginalApprovalPeriod() throws Exception {
+        Long paymentId = payment(storeId, "DONE", 0, "2030-01-19T10:00:00+09:00");
+
+        sales(ownerId, storeId, "2030-01-19", "2030-01-19")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.approvedAmount").value(AMOUNT))
+                .andExpect(jsonPath("$.refundedAmount").value(0))
+                .andExpect(jsonPath("$.netAmount").value(AMOUNT));
+
+        Long refundId = data.completedRefund(paymentId, 4_000, 4_000, "고객 취소");
+        OffsetDateTime refundedAt = OffsetDateTime.parse("2030-02-01T10:00:00+09:00");
+        jdbc.update("UPDATE payment_refund SET requested_at = ?, completed_at = ? WHERE id = ?",
+                refundedAt, refundedAt, refundId);
+        jdbc.update("UPDATE payment SET status = 'PARTIAL_REFUNDED', refunded_amount = 4000 WHERE id = ?",
+                paymentId);
+
+        sales(ownerId, storeId, "2030-01-19", "2030-01-19")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.approvedAmount").value(AMOUNT))
+                .andExpect(jsonPath("$.refundedAmount").value(4_000))
+                .andExpect(jsonPath("$.netAmount").value(AMOUNT - 4_000));
+        sales(ownerId, storeId, "2030-02-01", "2030-02-01")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.approvedAmount").value(0))
+                .andExpect(jsonPath("$.refundedAmount").value(0))
+                .andExpect(jsonPath("$.netAmount").value(0));
+    }
+
+    @Test
+    @DisplayName("예약 미확정으로 환불 필요가 표시된 DONE도 승인액에 포함한다")
+    void includesRefundRequiredApprovalWithoutConfirmedReservation() throws Exception {
+        Long paymentId = payment(storeId, "DONE", 0, "2030-01-19T10:00:00+09:00");
+        jdbc.update("UPDATE reservation SET status = 'EXPIRED' WHERE id = "
+                + "(SELECT reservation_id FROM payment WHERE id = ?)", paymentId);
+        jdbc.update("UPDATE payment SET refund_required_at = ?, refund_required_reason = ? WHERE id = ?",
+                OffsetDateTime.parse("2030-01-19T10:01:00+09:00"), "선점 만료 후 승인 확인", paymentId);
+
+        sales(ownerId, storeId, "2030-01-19", "2030-01-19")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.approvedAmount").value(AMOUNT))
+                .andExpect(jsonPath("$.refundedAmount").value(0))
+                .andExpect(jsonPath("$.netAmount").value(AMOUNT));
+    }
+
+    @Test
     @DisplayName("다른 매장의 결제는 합계에 들어가지 않는다")
     void excludesOtherStorePayments() throws Exception {
         Long otherStoreId = data.store(data.member("OWNER"));
