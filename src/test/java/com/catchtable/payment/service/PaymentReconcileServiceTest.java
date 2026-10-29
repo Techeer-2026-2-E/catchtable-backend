@@ -16,6 +16,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.Clock;
@@ -32,6 +33,7 @@ import static org.mockito.Mockito.when;
 
 // 트랜잭션 없음 (단계별 실제 커밋), 고정 Clock, UUID 데이터는 매 테스트 후 정리
 @SpringBootTest
+@DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 @AutoConfigureMockMvc
 @Import({FakeTossPaymentsClient.Config.class, ConfirmedEventCounter.Config.class})
 class PaymentReconcileServiceTest {

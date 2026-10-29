@@ -29,7 +29,11 @@ import org.junit.jupiter.params.provider.CsvSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Import;
+import org.springframework.context.annotation.Primary;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.web.servlet.MockMvc;
@@ -39,6 +43,7 @@ import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.time.Clock;
+import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
 import java.util.List;
@@ -58,6 +63,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 @SpringBootTest
 @AutoConfigureMockMvc
+@Import(ReservationPaymentServiceTest.ClockFixture.class)
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 class ReservationPaymentServiceTest {
 
@@ -74,9 +80,9 @@ class ReservationPaymentServiceTest {
     @Autowired private BusinessHourService hours;
     @Autowired private SseEmitterRepository emitters;
     @MockBean private TossPaymentsClient toss;
-    @MockBean private Clock clock;
+    @Autowired private MutableClock clock;
 
-    private final AtomicReference<OffsetDateTime> now = new AtomicReference<>();
+    private AtomicReference<OffsetDateTime> now;
     private PaymentTestData data;
     private Long memberId;
     private Long ownerId;
@@ -88,9 +94,8 @@ class ReservationPaymentServiceTest {
 
     @BeforeEach
     void setUp() {
+        now = clock.current;
         now.set(NOW);
-        when(clock.getZone()).thenReturn(ZoneId.of("Asia/Seoul"));
-        when(clock.instant()).thenAnswer(call -> now.get().toInstant());
         data = new PaymentTestData(jdbc);
         memberId = data.member("CUSTOMER");
         ownerId = data.member("OWNER");
@@ -544,6 +549,35 @@ class ReservationPaymentServiceTest {
     private TossPaymentResponse response(String status) {
         return new TossPaymentResponse("pk-test", orderId, "예약금", status, "카드", 10000, 10000,
                 NOW, new TossPaymentResponse.Receipt("https://receipt"), null);
+    }
+
+    @TestConfiguration
+    static class ClockFixture {
+        @Bean
+        @Primary
+        MutableClock testClock() {
+            return new MutableClock(new AtomicReference<>(NOW), ZoneId.of("Asia/Seoul"));
+        }
+    }
+
+    // 실행 중인 스케줄러와 테스트가 같은 Clock을 읽어도 Mockito 재설정과 경합하지 않는다.
+    static final class MutableClock extends Clock {
+        private final AtomicReference<OffsetDateTime> current;
+        private final ZoneId zone;
+
+        MutableClock(AtomicReference<OffsetDateTime> current, ZoneId zone) {
+            this.current = current;
+            this.zone = zone;
+        }
+
+        @Override
+        public ZoneId getZone() { return zone; }
+
+        @Override
+        public Clock withZone(ZoneId zone) { return new MutableClock(current, zone); }
+
+        @Override
+        public Instant instant() { return current.get().toInstant(); }
     }
 
     private void assertFailure(Runnable action, ErrorCode code) {

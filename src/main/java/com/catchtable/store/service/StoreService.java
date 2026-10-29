@@ -13,6 +13,10 @@ import com.catchtable.store.repository.MenuRepository;
 import com.catchtable.store.repository.StoreRepository;
 import com.catchtable.store.repository.StoreTableRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Slice;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -60,11 +64,34 @@ public class StoreService {
                 .toList();
     }
 
-    public List<StoreSummaryResponse> searchStores(StoreSearchCondition condition)
+    public StoreListResponse searchStores(StoreSearchCondition condition)
     {
+        return condition.hasFilter()
+                ? searchWithFilter(condition)
+                : listPage(condition);
+    }
+
+    // 필터가 없으면 DB에서 해당 페이지만 읽는다
+    private StoreListResponse listPage(StoreSearchCondition condition)
+    {
+        Pageable pageable = PageRequest.of(condition.page(), condition.size(), Sort.by("id"));
+        Slice<Store> slice = (condition.category() == null)
+                ? storeRepository.findAllBy(pageable)
+                : storeRepository.findAllByCategory(condition.category(), pageable);
+
+        List<StoreSummaryResponse> stores = slice.getContent().stream()
+                .map(StoreSummaryResponse::of)
+                .toList();
+        return new StoreListResponse(stores, condition.page(), condition.size(), slice.hasNext());
+    }
+
+    // 필터가 있으면 기존처럼 전부 읽어 거른 뒤, 요청한 페이지만 잘라낸다
+    private StoreListResponse searchWithFilter(StoreSearchCondition condition)
+    {
+        Sort byId = Sort.by("id");
         List<Store> stores = (condition.category() == null)
-                ? storeRepository.findAll()
-                : storeRepository.findAllByCategory(condition.category());
+                ? storeRepository.findAll(byId)
+                : storeRepository.findAllByCategory(condition.category(), byId);
 
         if (condition.partySize() != null) {
             stores = filterByPartySize(stores, condition.partySize());
@@ -72,9 +99,15 @@ public class StoreService {
         if (condition.hasDateTime()) {
             stores = filterByDateTime(stores, condition.date().atTime(condition.time()));
         }
-        return stores.stream()
+
+        // page가 크면 int 범위를 넘을 수 있어 long으로 계산한다
+        int from = (int) Math.min((long) condition.page() * condition.size(), stores.size());
+        int to = Math.min(from + condition.size(), stores.size());
+
+        List<StoreSummaryResponse> page = stores.subList(from, to).stream()
                 .map(StoreSummaryResponse::of)
                 .toList();
+        return new StoreListResponse(page, condition.page(), condition.size(), to < stores.size());
     }
 
     // 이 인원을 앉힐 수 있는 운영 중 테이블이 하나라도 있는 매장만 남긴다
