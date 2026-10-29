@@ -7,25 +7,33 @@ import com.catchtable.payment.PaymentTestData;
 import com.catchtable.payment.dto.RefundResult;
 import com.catchtable.payment.entity.PaymentRefundStatus;
 import com.catchtable.payment.entity.PaymentStatus;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.mock.mockito.SpyBean;
 import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.transaction.support.TransactionTemplate;
 
+import java.time.Clock;
+import java.time.Instant;
+import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.List;
 
 import static com.catchtable.payment.PaymentTestData.AMOUNT;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.doReturn;
 
 // 트랜잭션 없음 (서비스가 트랜잭션 밖 호출만 허용), UUID 데이터는 매 테스트 후 정리
 @SpringBootTest
+@DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 @Import(FakeTossPaymentsClient.Config.class)
 class PaymentRefundServiceTest {
 
@@ -35,6 +43,8 @@ class PaymentRefundServiceTest {
     @Autowired FakeTossPaymentsClient toss;
     @Autowired TransactionTemplate transactionTemplate;
     @Autowired JdbcTemplate jdbc;
+    @Autowired ObjectMapper mapper;
+    @SpyBean Clock clock;
 
     private final List<Long> members = new ArrayList<>();
     private PaymentTestData data;
@@ -71,7 +81,8 @@ class PaymentRefundServiceTest {
 
     @Test
     @DisplayName("같은 키 재요청은 Toss를 다시 부르지 않고 최초 결과를 반환한다")
-    void sameKeyReturnsFirstResult() {
+    void sameKeyReturnsFirstResult() throws Exception {
+        doReturn(Instant.parse("2026-10-28T07:27:31.123456789Z")).when(clock).instant();
         Long paymentId = approved();
 
         RefundResult first = service.refund(customerId, paymentId, "key-1", REASON, 3_000L, AMOUNT);
@@ -84,8 +95,15 @@ class PaymentRefundServiceTest {
         assertThat(first.remainingAmount()).isEqualTo(7_000);
         assertThat(first.paymentStatus()).isEqualTo(PaymentStatus.PARTIAL_REFUNDED);
         assertThat(first.currency()).isEqualTo("KRW");
-        assertThat(first.refundedAt()).isNotNull();
+        assertThat(first.refundedAt()).isEqualTo(OffsetDateTime.parse("2026-10-28T07:27:31.123456Z"));
+        OffsetDateTime stored = jdbc.queryForObject("SELECT completed_at FROM payment_refund WHERE payment_id = ?",
+                (row, index) -> row.getObject(1, OffsetDateTime.class), paymentId);
+        assertThat(stored).isAtSameInstantAs(first.refundedAt());
+        OffsetDateTime requested = jdbc.queryForObject("SELECT requested_at FROM payment_refund WHERE payment_id = ?",
+                (row, index) -> row.getObject(1, OffsetDateTime.class), paymentId);
+        assertThat(requested).isAtSameInstantAs(first.refundedAt());
         assertSameResult(repeated, first);
+        assertThat(mapper.writeValueAsString(repeated)).isEqualTo(mapper.writeValueAsString(first));
         assertThat(toss.cancelKeys()).containsExactly("key-1");
     }
 
