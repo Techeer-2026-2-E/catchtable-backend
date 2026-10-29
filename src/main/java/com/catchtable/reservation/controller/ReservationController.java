@@ -2,6 +2,7 @@ package com.catchtable.reservation.controller;
 
 import com.catchtable.global.auth.LoginMember;
 import com.catchtable.reservation.dto.CreateReservationRequest;
+import com.catchtable.reservation.dto.RefundPreviewResponse;
 import com.catchtable.reservation.dto.ReservationHoldResponse;
 import com.catchtable.reservation.dto.ReservationResponse;
 import com.catchtable.reservation.service.ReservationService;
@@ -25,6 +26,11 @@ public class ReservationController {
     @GetMapping("/{reservationId}")
     public ReservationResponse getReservation(@LoginMember Long memberId, @PathVariable Long reservationId) {
         return reservationService.getReservation(memberId, reservationId);
+    }
+
+    @GetMapping("/{reservationId}/refund-preview")
+    public RefundPreviewResponse getRefundPreview(@LoginMember Long memberId, @PathVariable Long reservationId) {
+        return reservationService.getRefundPreview(memberId, reservationId);
     }
 
     /** 생성 시 가용 여부를 다시 확인하고 바로 확정(201)한다. 그 사이 테이블이 소진되면 409를 반환한다. */

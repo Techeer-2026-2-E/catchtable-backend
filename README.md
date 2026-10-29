@@ -63,6 +63,8 @@ docker compose exec -T postgres psql -U catchtable -d catchtable < scripts/local
 
 클라이언트는 알림 수신 또는 SSE의 `connect` 이벤트 수신 후 `GET /api/user/reservations/{reservationId}`를 호출해 최신 상태와 취소 사유를 갱신한다. 기존 P1 고객 API처럼 `X-Member-Id` 헤더를 사용하며 본인 예약만 조회할 수 있다.
 
+고객·점주 예약 취소는 최초 예약금 조건과 승인 원장을 확인한다. 무료·정책상 추가 환불 0원·필요 환불이 이미 확인된 경우에만 예약 취소와 자리 반환을 커밋한다. 추가 환불이 남으면 `409 REFUND_NOT_COMPLETED`, 원본·결과를 신뢰할 수 없으면 `409 REFUND_DATA_NOT_READY`이며 기존 예약·자리를 유지한다. 실제 Toss 환불은 아직 호출하지 않는다. [기능60 취소 경계 작업 기록](work-log/68-refund-before-cancellation.md)에 잠금 순서와 남은 공통 계약을 남겼다.
+
 ## 취소 시점별 환불금 계산
 
-기능61의 환불 계산기는 예약 당시 금액·정책과 변경 후 방문일을 기준으로 원 미만을 버린 뒤 기환불액을 차감한다. 점주 취소는 원결제액을 총 환불 한도로 사용한다. 현재는 계산 로직만 구현했으며, 환불 예상액 HTTP API와 실제 Toss 취소는 공통 결제 계약 후 연결한다. [기능61 작업 기록](work-log/67-refund-calculation.md)에 판단·검증·연동 조건을 남겼다.
+기능61의 환불 계산기는 예약 당시 금액·정책과 변경 후 방문일을 기준으로 원 미만을 버린 뒤 기환불액을 차감한다. 점주 취소는 원결제액을 총 환불 한도로 사용한다. `GET /api/user/reservations/{reservationId}/refund-preview`는 본인·시작 전·미입장 확정 예약의 추가 예상액을 제공한다. REQUESTED/UNKNOWN은409로 차단하며 실제 환불은 실행하지 않는다. [기능61 작업 기록](work-log/67-refund-calculation.md)에 판단·검증·연동 조건을 남겼다.
