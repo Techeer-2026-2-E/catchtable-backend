@@ -166,12 +166,17 @@ public class ReservationPaymentService {
             return paymentStatus.isApproved() ? Settlement.LATE_SUCCESS : Settlement.RELEASED;
         }
         boolean attempt = payment.getId().equals(reservation.getApprovalPaymentId());
+        if (attempt && paymentStatus.isApproved()) {
+            validatePayment(reservation, payment, new Attempt(payment.getId(), reservation.getId(),
+                    reservation.getApprovalOrderId(), reservation.getApprovalPaymentKey()), payment.getAmount());
+        }
         if (attempt && isVerifiedFailure(payment)) {
             releaseApproval(reservation, now);
             return Settlement.RELEASED;
         }
         if (attempt && paymentStatus == PaymentStatus.DONE
-                && reservation.matchesPaymentApproval(payment.getId(), payment.getOrderId(), payment.getPaymentKey())) {
+                && (reservation.getStatus() == ReservationStatus.PENDING_PAYMENT
+                    || reservation.getStatus() == ReservationStatus.CONFIRMED)) {
             confirmReservation(reservation, payment.getId(), payment.getOrderId(), payment.getPaymentKey(), now);
             return Settlement.CONFIRMED;
         }
