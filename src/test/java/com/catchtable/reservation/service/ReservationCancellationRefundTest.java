@@ -4,7 +4,9 @@ import com.catchtable.global.exception.BusinessException;
 import com.catchtable.global.exception.ErrorCode;
 import com.catchtable.notification.repository.SseEmitterRepository;
 import com.catchtable.payment.PaymentTestData;
+import com.catchtable.payment.client.TossPaymentResponse;
 import com.catchtable.payment.client.TossPaymentsClient;
+import com.catchtable.payment.service.PaymentReconcileService;
 import com.catchtable.store.repository.StoreTableRepository;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -22,14 +24,17 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.context.annotation.Primary;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.time.Clock;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
+import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
@@ -42,6 +47,10 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.when;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -50,6 +59,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @SpringBootTest
 @AutoConfigureMockMvc
 @Import(ReservationCancellationRefundTest.FixedClock.class)
+@DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 class ReservationCancellationRefundTest {
 
     private static final OffsetDateTime NOW = OffsetDateTime.parse("2030-01-20T12:00:00+09:00");
@@ -58,6 +68,7 @@ class ReservationCancellationRefundTest {
     @Autowired private JdbcTemplate jdbc;
     @Autowired private ReservationService customers;
     @Autowired private OwnerReservationService owners;
+    @Autowired private PaymentReconcileService reconciler;
     @Autowired private StoreTableRepository tables;
     @Autowired private SseEmitterRepository emitters;
     @Autowired private PlatformTransactionManager transactions;
@@ -83,13 +94,7 @@ class ReservationCancellationRefundTest {
     @AfterEach
     void cleanUp() {
         emitters.delete(memberId, emitter);
-        jdbc.update("DELETE FROM payment_refund WHERE payment_id IN (SELECT id FROM payment WHERE reservation_id IN (SELECT id FROM reservation WHERE store_id = ?))", storeId);
-        jdbc.update("DELETE FROM payment_status_history WHERE payment_id IN (SELECT id FROM payment WHERE reservation_id IN (SELECT id FROM reservation WHERE store_id = ?))", storeId);
-        jdbc.update("DELETE FROM payment WHERE reservation_id IN (SELECT id FROM reservation WHERE store_id = ?)", storeId);
-        jdbc.update("DELETE FROM reservation WHERE store_id = ?", storeId);
-        jdbc.update("DELETE FROM store_table WHERE store_id = ?", storeId);
-        jdbc.update("DELETE FROM store WHERE id = ?", storeId);
-        jdbc.update("DELETE FROM member WHERE id IN (?, ?)", memberId, ownerId);
+        data.deleteStore(storeId, List.of(memberId, ownerId));
     }
 
     @ParameterizedTest
@@ -246,6 +251,81 @@ class ReservationCancellationRefundTest {
             executor.shutdownNow();
             assertThat(executor.awaitTermination(5, TimeUnit.SECONDS)).isTrue();
         }
+    }
+
+    @ParameterizedTest
+    @CsvSource({"false,REQUESTED", "false,UNKNOWN", "true,REQUESTED", "true,UNKNOWN"})
+    @Timeout(20)
+    void reconciliationKeepsTheRefundFenceUntilTheVerifiedResultCommits(boolean owner, String refundStatus)
+            throws Exception {
+        Long id = reservation(10_000L, "STRICT", true);
+        Long paymentId = data.payment(memberId, id, "DONE", 0);
+        String key = data.paymentKey(paymentId);
+        data.protect(id, paymentId, key, NOW.minusMinutes(1));
+        jdbc.update("UPDATE reservation SET refund_policy_snapshot = 'STRICT' WHERE id = ?", id);
+        Long refundId = data.inFlightRefund(paymentId, "original-refund", 10000, refundStatus, NOW.minusDays(3));
+        var originalRequest = jdbc.queryForMap("SELECT idempotency_key, requested_at, requested_amount FROM payment_refund WHERE id = ?",
+                refundId);
+        CountDownLatch entered = new CountDownLatch(1);
+        CountDownLatch finish = new CountDownLatch(1);
+        when(toss.getByPaymentKey(key)).thenAnswer(call -> {
+            assertThat(TransactionSynchronizationManager.isActualTransactionActive()).isFalse();
+            new TransactionTemplate(transactions).executeWithoutResult(tx -> {
+                jdbc.queryForObject("SELECT id FROM reservation WHERE id = ? FOR UPDATE NOWAIT", Long.class, id);
+                jdbc.queryForObject("SELECT id FROM payment WHERE id = ? FOR UPDATE NOWAIT", Long.class, paymentId);
+            });
+            entered.countDown();
+            assertThat(finish.await(10, TimeUnit.SECONDS)).isTrue();
+            return new TossPaymentResponse(key, data.orderId(paymentId), "예약금", "CANCELED", "카드",
+                    10000, 0, NOW.minusDays(1), new TossPaymentResponse.Receipt("https://receipt"), null);
+        });
+        try (var executor = Executors.newSingleThreadExecutor()) {
+            var result = executor.submit(() -> reconciler.reconcile(paymentId));
+            assertThat(entered.await(10, TimeUnit.SECONDS)).isTrue();
+            try {
+                mvc.perform(get("/api/user/reservations/{id}/refund-preview", id).header("X-Member-Id", memberId))
+                        .andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("REFUND_DATA_NOT_READY"));
+                assertThatThrownBy(() -> cancel(owner, id)).isInstanceOfSatisfying(BusinessException.class,
+                        exception -> assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.REFUND_DATA_NOT_READY));
+                assertPreserved(id);
+            } finally {
+                finish.countDown();
+            }
+            result.get(10, TimeUnit.SECONDS);
+        }
+
+        assertThat(state(id)).isEqualTo("CONFIRMED");
+        assertThat(jdbc.queryForObject("SELECT status FROM payment_refund WHERE id = ?", String.class, refundId))
+                .isEqualTo("COMPLETED");
+        assertThat(jdbc.queryForMap("SELECT idempotency_key, requested_at, requested_amount FROM payment_refund WHERE id = ?",
+                refundId)).isEqualTo(originalRequest);
+        assertThat(customers.getRefundPreview(memberId, id).refundableAmount()).isZero();
+        assertThat(tables.countAvailable(storeId, 2, START, START.plusHours(1), NOW)).isZero();
+        cancel(owner, id);
+        cancel(owner, id);
+        reconciler.reconcile(paymentId);
+        assertThat(state(id)).isEqualTo("CANCELLED");
+        assertThat(tables.countAvailable(storeId, 2, START, START.plusHours(1), NOW)).isEqualTo(1);
+        verify(emitter, times(1)).send(any(SseEmitter.SseEventBuilder.class));
+        verify(toss, never()).cancel(anyString(), any(), anyString(), anyString());
+        verify(toss, times(1)).getByPaymentKey(key);
+    }
+
+    @Test
+    void reconcilingACustomerZeroEntitlementCancellationKeepsTheCompletedCancellation() throws Exception {
+        Long id = reservation(10_000L, "STRICT", true);
+        Long paymentId = data.payment(memberId, id, "DONE", 0);
+        data.protect(id, paymentId, data.paymentKey(paymentId), NOW.minusMinutes(1));
+        jdbc.update("UPDATE reservation SET refund_policy_snapshot = 'STRICT' WHERE id = ?", id);
+
+        customers.cancelReservation(memberId, id);
+        assertThat(reconciler.sync(memberId, paymentId).payment().refundRequired()).isFalse();
+        customers.cancelReservation(memberId, id);
+
+        assertThat(state(id)).isEqualTo("CANCELLED");
+        assertThat(tables.countAvailable(storeId, 2, START, START.plusHours(1), NOW)).isEqualTo(1);
+        verify(emitter, times(1)).send(any(SseEmitter.SseEventBuilder.class));
+        verifyNoInteractions(toss);
     }
 
     private Long reservation(Long amount, String policy, boolean held) {

@@ -23,6 +23,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @WebMvcTest(ReservationController.class)
 class ReservationControllerTest {
 
+    @MockBean private com.catchtable.reservation.service.ReservationRefundExecutionService refundExecution;
+
     @Autowired
     private MockMvc mockMvc;
 

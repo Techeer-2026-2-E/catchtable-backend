@@ -24,6 +24,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @WebMvcTest(OwnerReservationController.class)
 class OwnerReservationControllerTest {
 
+    @MockBean private com.catchtable.reservation.service.ReservationRefundExecutionService refundExecution;
+
     @Autowired private MockMvc mockMvc;
     @MockBean private OwnerReservationService ownerReservationService;
 

@@ -6,6 +6,7 @@ import com.catchtable.payment.entity.PaymentRefundStatus;
 import com.catchtable.payment.entity.PaymentStatus;
 
 import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 
 // 환불 응답 (Notion 결제 취소·환불 계약, 같은 키 재요청은 최초 결과)
 public record RefundResult(
@@ -32,7 +33,7 @@ public record RefundResult(
                 payment.getAmount() - total,
                 statusAt(total, payment.getAmount()),
                 refund.getStatus(),
-                refund.getCompletedAt());
+                refund.getCompletedAt() == null ? null : refund.getCompletedAt().withOffsetSameInstant(ZoneOffset.UTC));
     }
 
     private static PaymentStatus statusAt(long totalRefunded, long amount) {

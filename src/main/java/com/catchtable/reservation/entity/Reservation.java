@@ -90,6 +90,9 @@ public class Reservation extends BaseTimeEntity {
     @Column(name = "approval_quarantined", nullable = false)
     private boolean approvalQuarantined;
 
+    @Column(name = "refund_in_progress", nullable = false)
+    private boolean refundInProgress;
+
     @Column(name = "cancelled_at")
     private OffsetDateTime cancelledAt;
 
@@ -283,7 +286,13 @@ public class Reservation extends BaseTimeEntity {
         approvalPaymentKey = null;
     }
 
+    // 기능63 재확인 후 격리 해제 (최종 결과 확인 시에만)
+    public void clearApprovalQuarantine() {
+        approvalQuarantined = false;
+    }
+
     public void validateModifiable() {
+        requireNoRefundInProgress();
         if (status != ReservationStatus.CONFIRMED || checkedInAt != null) {
             throw new IllegalStateException("변경할 수 없는 예약입니다.");
         }
@@ -306,6 +315,7 @@ public class Reservation extends BaseTimeEntity {
     // 점주는 현재 구현상 시작 시각이 지나도 입장 확인 전이면 취소할 수 있다.
     public void cancelByOwner(OffsetDateTime cancelledAt, String reason) {
         Objects.requireNonNull(cancelledAt);
+        requireNoRefundInProgress();
 
         if (status == ReservationStatus.CANCELLED) {
             return;
@@ -324,6 +334,7 @@ public class Reservation extends BaseTimeEntity {
     public void cancelByCustomer(OffsetDateTime cancelledAt)
     {
         Objects.requireNonNull(cancelledAt);
+        requireNoRefundInProgress();
 
         if(status==ReservationStatus.CANCELLED)
         {
@@ -344,6 +355,7 @@ public class Reservation extends BaseTimeEntity {
     public void confirmVisit(OffsetDateTime checkedInAt, Long ownerId) {
         Objects.requireNonNull(checkedInAt);
         Objects.requireNonNull(ownerId);
+        requireNoRefundInProgress();
 
         if (this.checkedInAt != null) {
             return;
@@ -359,6 +371,7 @@ public class Reservation extends BaseTimeEntity {
     public void markNoShow(OffsetDateTime noShowAt, Long ownerId, int arrivalGraceMinutes, String reason) {
         Objects.requireNonNull(noShowAt);
         Objects.requireNonNull(ownerId);
+        requireNoRefundInProgress();
 
         if (status == ReservationStatus.NO_SHOW) {
             return;
@@ -377,5 +390,32 @@ public class Reservation extends BaseTimeEntity {
         this.noShowAt = noShowAt;
         this.noShowByMemberId = ownerId;
         this.noShowReason = reason;
+    }
+
+    public void beginRefund() {
+        requireNoRefundInProgress();
+        refundInProgress = true;
+    }
+
+    public void finishRefund() {
+        refundInProgress = false;
+    }
+
+    public void requireNoRefundInProgress() {
+        if (refundInProgress) throw new BusinessException(ErrorCode.REFUND_DATA_NOT_READY);
+    }
+
+    // 최초 유효 요청에서 검사한 취소 의도만 정산한다. 재확인 시 현재 날짜로 재검사하지 않는다.
+    public boolean cancelAfterRefund(CancellationActor actor, String reason, OffsetDateTime now) {
+        if (status == ReservationStatus.CANCELLED) return false;
+        if (!refundInProgress || status != ReservationStatus.CONFIRMED || checkedInAt != null
+                || actor == CancellationActor.SYSTEM) {
+            throw new BusinessException(ErrorCode.RESERVATION_NOT_CANCELLABLE);
+        }
+        status = ReservationStatus.CANCELLED;
+        cancelledAt = now;
+        cancellationActor = actor;
+        cancellationReason = actor == CancellationActor.OWNER ? reason : null;
+        return true;
     }
 }
