@@ -153,6 +153,7 @@ public class ReservationService {
         }
         OffsetDateTime now = OffsetDateTime.now(clock);
         try{
+            refundService.requireNoInFlight(reservation);
             reservation.cancelByCustomer(now);
         }
         catch(IllegalStateException exception)

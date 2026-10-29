@@ -39,6 +39,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @WebMvcTest({ReservationController.class, OwnerReservationController.class, StoreAvailabilityController.class})
 class ReservationControllerContractTest {
 
+    @MockBean private com.catchtable.reservation.service.ReservationRefundExecutionService refundExecution;
+
     private static final OffsetDateTime START_AT = OffsetDateTime.parse("2030-01-02T10:00:00+09:00");
 
     @Autowired
