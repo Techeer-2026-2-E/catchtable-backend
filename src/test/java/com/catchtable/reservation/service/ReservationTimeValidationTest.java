@@ -1,5 +1,7 @@
 package com.catchtable.reservation.service;
 
+import com.catchtable.member.entity.Member;
+import com.catchtable.member.entity.UserType;
 import com.catchtable.store.entity.Store;
 import com.catchtable.store.repository.StoreRepository;
 import com.catchtable.store.repository.StoreTableRepository;
@@ -22,6 +24,7 @@ class ReservationTimeValidationTest {
     private final ReservationAvailabilityService service = new ReservationAvailabilityService(
             mock(StoreRepository.class), mock(StoreTableRepository.class), businessHourService, Clock.systemUTC());
     private final Store store = Store.builder()
+            .owner(Member.builder().name("점주").phone("000").userType(UserType.OWNER).build())
             .reservationDurationMinutes(120)
             .reservationSlotMinutes(30)
             .arrivalGraceMinutes(10)

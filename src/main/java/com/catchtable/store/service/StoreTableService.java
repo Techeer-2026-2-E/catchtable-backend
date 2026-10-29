@@ -33,9 +33,9 @@ public class StoreTableService {
     // TODO: 점주 본인 매장인지 확인 (로그인 기능 만든 후 작업)
 
     public List<StoreTableResponse> getTables(Long storeId) {
-        if (!storeRepository.existsById(storeId)) {
-            throw new BusinessException(ErrorCode.STORE_NOT_FOUND);
-        }
+        storeRepository.findById(storeId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.STORE_NOT_FOUND))
+                .validateManaged();
         return storeTableRepository.findAllByStoreIdOrderByTableNumberAsc(storeId).stream()
                 .map(StoreTableResponse::from)
                 .toList();
@@ -45,6 +45,8 @@ public class StoreTableService {
     public StoreTableResponse createTable(Long storeId, StoreTableCreateRequest request) {
         Store store = storeRepository.findById(storeId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.STORE_NOT_FOUND));
+
+        store.validateManaged();
 
         if (storeTableRepository.existsByStoreIdAndTableNumber(storeId, request.tableNumber())) {
             throw new BusinessException(ErrorCode.DUPLICATE_TABLE_NUMBER);
@@ -63,6 +65,7 @@ public class StoreTableService {
     public StoreTableResponse updateTable(Long storeId, Long tableId, StoreTableUpdateRequest request) {
         StoreTable storeTable = storeTableRepository.findByIdAndStoreId(tableId, storeId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.TABLE_NOT_FOUND));
+        storeTable.getStore().validateManaged();
         if (request.tableNumber() != null && request.tableNumber() != storeTable.getTableNumber()) {
             if (storeTableRepository.existsByStoreIdAndTableNumber(storeId, request.tableNumber())) {
                 throw new BusinessException(ErrorCode.DUPLICATE_TABLE_NUMBER);

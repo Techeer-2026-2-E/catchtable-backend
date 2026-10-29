@@ -166,7 +166,7 @@ public class OwnerWaitingService {
         requireOwner(memberId);
         Store store = storeRepository.findByIdForUpdate(storeId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.STORE_NOT_FOUND));
-        if (!store.getOwner().getId().equals(memberId)) {
+        if (store.getOwner() == null || !store.getOwner().getId().equals(memberId)) {
             throw new BusinessException(ErrorCode.STORE_NOT_FOUND);
         }
         return store;
@@ -176,7 +176,7 @@ public class OwnerWaitingService {
         requireOwner(memberId);
         Store store = storeRepository.findById(storeId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.STORE_NOT_FOUND));
-        if (!store.getOwner().getId().equals(memberId)) {
+        if (store.getOwner() == null || !store.getOwner().getId().equals(memberId)) {
             throw new BusinessException(ErrorCode.STORE_NOT_FOUND);
         }
         return store;

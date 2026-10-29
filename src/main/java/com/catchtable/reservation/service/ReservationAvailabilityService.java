@@ -86,6 +86,7 @@ public class ReservationAvailabilityService {
 
     // 단건 가용 수량 조회와 예약 생성에 같은 시간·영업 규칙을 적용한다.
     public void validateBookable(Store store, OffsetDateTime startAt, OffsetDateTime now) {
+        store.validateManaged();
         if (!startAt.isAfter(now)) {
             throw badRequest("예약 시작 시각은 현재 시각 이후여야 합니다.");
         }
@@ -104,8 +105,10 @@ public class ReservationAvailabilityService {
     }
 
     private Store findStore(Long storeId) {
-        return storeRepository.findById(storeId)
+        Store store = storeRepository.findById(storeId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "매장을 찾을 수 없습니다."));
+        store.validateManaged();
+        return store;
     }
 
     private static void validatePartySize(int partySize) {
