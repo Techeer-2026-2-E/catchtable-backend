@@ -69,3 +69,6 @@ DB_HOST=127.0.0.1 DB_PORT=54937 DB_NAME=phase2_refund_approved DB_USERNAME=phase
 
 
 후속 이슈는 [#181](https://github.com/Techeer-2026-2-E/catchtable-backend/issues/181)이며 #68은 사용자4B의 실행 보류 범위로 열어 둔다. #67은 예상액 보호 확인의 관련 이슈다. 첫 합본61클래스584개 중 마지막 WaitingQueueNotifierTest 7개는 HikariPool-12의 PostgreSQL SQLSTATE53300(기본100연결)로 컨텍스트 시작에 실패했다. 새 회귀를 담은 이 취소 테스트에만 `@DirtiesContext(AFTER_CLASS)`를 추가해 own 컨텍스트·풀을 반환한다. 운영 풀/DB 한도와 waiting 테스트는 바꾸지 않고 실패 원본과 새 빈DB의 재검증을 구분해 보존한다.
+
+
+수명 수정 뒤 새 빈DB `phase2_combined_verified`의 최종 합본 `49bc29a1cc6afb649645a48bf45f936e30bbc0e1`을 `./gradlew clean build --no-daemon`으로 검증했다. 61클래스584개가 실패·오류·건너뜀0이며 실행 JAR SHA-256은 `c27885ed8d3da697a11f32ed2f12b769f6e3232e1600f91b30b1559f38c6d3fd`다. 이전 실패와 겹치는 targeted 수를 합산하지 않는다. 프런트 연동 메모는 별도 기능60 문서 전용 후보로 분리하고, 이 후보의 고유 범위는 회귀 테스트·정리와 work-log에 한정한다. 양수 환불 endpoint·공통 환불 정책을 구현한 것으로 보고하지 않는다.
