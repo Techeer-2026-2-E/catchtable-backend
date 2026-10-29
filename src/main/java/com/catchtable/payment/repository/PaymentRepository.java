@@ -8,6 +8,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.util.Optional;
+import java.util.List;
 
 public interface PaymentRepository extends JpaRepository<Payment, Long> {
 
@@ -18,6 +19,12 @@ public interface PaymentRepository extends JpaRepository<Payment, Long> {
     Slice<Payment> findSliceByMemberId(Long memberId, Pageable pageable);
 
     Optional<Payment> findByIdAndMemberId(Long id, Long memberId);
+
+    List<Payment> findAllByReservation_Id(Long reservationId);
+
+    @Query(value = "select * from payment where reservation_id = :reservationId order by id for update",
+            nativeQuery = true)
+    List<Payment> findAllByReservationIdForUpdate(@Param("reservationId") Long reservationId);
 
     Optional<Payment> findByOrderIdAndMemberId(String orderId, Long memberId);
 
