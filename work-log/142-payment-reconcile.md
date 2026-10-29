@@ -55,3 +55,11 @@
 - 웹훅 처리 중 Toss 조회가 10초를 넘으면 Toss가 재전송한다. 재처리는 같은 결과라 안전하지만 비동기 처리는 하지 않았다.
 - 실제 Toss 테스트 결제·웹훅 등록·프런트 `sync` 호출·CI·배포는 미확인.
 - 머지 순서: #145 다음.
+
+## 2026-10-30 dev 머지 준비
+
+사용자 지시에 따라 승인·CI 통과한 선행 PR145/146/147/150을 dev에 머지한 뒤 이 브랜치에 dev를 정상 merge했다. 기존 결제 재확인 로직과 선행 예약·환불 코드는 유지하며 이력을 재작성하지 않았다.
+
+신규 전용 PostgreSQL16(기본 max_connections100)의 전체 빌드604개 중7개가 DB 연결 고갈로 실패했다. 새 재확인 테스트 context가 이후 웨이팅 테스트까지 연결을 보유한 원인이었으며 PaymentReconcileServiceTest에 AFTER_CLASS context 반환을 추가했다. 운영 설정·결제/예약 로직·테스트 단언은 바꾸지 않았다.
+
+수정 후 새 빈 전용 DB에서 Java21의 `./gradlew clean build --no-daemon --console=plain`은 62클래스604개·실패/오류/건너뜀0 및 bootJar 성공이다. 최초 실패·수정 후 XML/전체 로그·검증 입력 SHA를 로컬 merge 증거 폴더에 보존했다. 이 변경 이후 source head CI를 별도로 확인한 뒤 dev에 머지한다. 실제 Toss·공유 DB 적용·배포는 수행하지 않았다.

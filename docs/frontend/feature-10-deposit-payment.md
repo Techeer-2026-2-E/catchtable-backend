@@ -1,5 +1,125 @@
 # 기능10 — 예약금 가결제 프런트 연동
 
+## 2026-10-29 후속 — 예약금 원본 소비와 유료 선점 생성 준비
+
+관련: [소스 이슈 #201](https://github.com/Techeer-2026-2-E/catchtable-backend/issues/201), [소스 PR #203](https://github.com/Techeer-2026-2-E/catchtable-backend/pull/203), [문서 이슈 #202](https://github.com/Techeer-2026-2-E/catchtable-backend/issues/202), [기능10 정본](https://app.notion.com/p/3d548d76fa32819386a3e858c26b2c1b). 소스는 dev 대상 일반 PR·미머지이며 dev 제공·배포 완료를 뜻하지 않는다. 기존 기능 소스 PR들도 Ready for review로 전환했고, 아래 과거 Draft 표시는 전환 전 기록이다.
+
+### 현재 기본 실행과 설정 공급 연결 후의 동작
+
+**기능33의 실제 설정 공급자는 아직 없다.** 사용자 결정에 따라 공급자가 없는 기본 실행은 기존 무료 즉시확정과 일반 선점 API를 유지한다. 실제 매장이 유료라고 추정하거나 임의 금액·환불 정책을 저장하지 않는다. 준혁 담당 매장 설정·DB·설정 API와 프런트 코드는 이 작업에서 구현하지 않았다.
+
+예약 측은 `ReservationDepositTermsReader`가 신뢰된 원본을 제공할 때 기존 매장 공유 잠금과 테이블 배정 안에서 처리한다. 요청 본문에 예약금 사용 여부·금액·환불 정책을 추가해도 원본을 바꿀 수 없다. 기존 요청/응답 DTO와 회원 식별 계약도 유지한다.
+
+| 서버 원본 상태 | 즉시확정 `POST /api/user/reservations` | 선점 `POST /api/user/reservations/holds` |
+| --- | --- | --- |
+| 공급자 미연결 | 기존 무료 예약 확정, 목 고객1·201·CONFIRMED | 기존 일반 선점, X-Member-Id·201·PENDING_PAYMENT, 금액/정책 미확인 |
+| 공급자가 명시한 무료 | 기존 무료 예약 확정 | 기존 일반 선점 유지, 유료 스냅샷을 만들지 않음 |
+| 유효 유료 원본 | 409 `RESERVATION_PAYMENT_REQUIRED`, 예약·선점·주문·SSE 생성 없음 | 201, 양수 최초 금액·정책과 원래5분을 원자적으로 저장 |
+| 연결된 공급자의 null·오류·잘못된 원본 | 409 `RESERVATION_DEPOSIT_TERMS_UNAVAILABLE` | 같은409, 무료나 임의 금액으로 대체하지 않음 |
+
+유료 즉시확정 거절 메시지는 “예약금 결제가 필요합니다. 선점 생성 → 결제 준비 → 승인 경로를 이용해 주세요.”다. 이 요청을 자동으로 선점으로 바꾸지 않으며 만료 선점 정리도 수행하지 않는다. 기존 입력·매장/회원 조회·예약 가능 시간 검사에 따른 오류는 유지한다.
+
+유료 흐름은 `선점 생성 → prepare → 결제 승인 → 예약 확정`이다. 생성만으로 결제 주문이나 PG 요청을 만들지 않는다. prepare의 신규201/READY 재사용200, 최초 금액/만료 보존과 진행·불명·완료409는 아래 기존 계약을 따른다. 원본이 없는 일반 선점은 prepare로 유료 전환되지 않는다.
+
+### 원본 공급자가 지켜야 할 계약
+
+`read(Store lockedStore)`는 이미 FOR SHARE로 잠긴 매장의 원본을 같은 트랜잭션에서 읽는다. 설정 쓰기도 같은 매장 잠금과 직렬화해야 한다. 외부 통신과 상태 변경은 하지 않는다. 유료 조건은 양수 금액과 기존 FLEXIBLE/STANDARD/STRICT 정책, 명시적 무료 조건은0원·정책null이다. 이는 예약 측 소비 형식이며 실제 기능33 저장 필드를 정한 것이 아니다.
+
+최초 스냅샷은 생성 뒤 설정이 바뀌어도 유지한다. 금액은 예약 건당 값이며 인원수를 곱하지 않는다. 공급자가 등록되어 있다면 조회 실패·잘못된 원본을 공급자 미연결 상태로 바꾸지 않는다.
+
+### 검증과 남은 범위
+
+테스트 전용 공급자로 공개 홀드 API부터 prepare·승인·예약 변경·부분 환불·고객/점주 취소를 검증했다. 신규2클래스37개와 관련14클래스280개가 통과했고, 새 전용 PostgreSQL16 빈 DB의 `./gradlew clean build --no-daemon`은 **68클래스758개·실패/오류/건너뜀0** 및 bootJar 성공이다. 실행별 결과는 중복되므로 합산하지 않는다. 최초 고정ID fixture SQL과 Timestamp 비교 단언 실패를 수정하고 전체 결과를 재확인했다.
+
+검증한 앱·테스트 커밋은 `c76174034f1c4dcfcd1df6eb579e9580c088f353`이며 최종 소스 head는 `647aaa748e63c43d083c0cf84f4beac063cb5fc2`다. 이후 변경은 work-log뿐이며 검증한 입력333개가 동일하다. [작업 기록](https://github.com/Techeer-2026-2-E/catchtable-backend/blob/647aaa748e63c43d083c0cf84f4beac063cb5fc2/work-log/201-paid-hold-consumer.md)에 범위·명령·검증 근거를 남겼다. 테스트용 공급자가 운영 JAR에 포함되지 않음을 확인했고, [정확한 소스 head CI](https://github.com/Techeer-2026-2-E/catchtable-backend/actions/runs/40841773519)는 SUCCESS다. 이 문서 PR CI는 별도로 확인한다.
+
+실제 매장 설정 공급 연결과 그 원본으로의 전체 흐름 확인, 공유 V20 적용 이력·적용 방식, 실제 Toss·프런트/JWT·배포는 남아 있다. 기존25개 migration을 유지했고 V20 없는 populated V22 업그레이드 차단을 우회하지 않았다. 이번 테스트용 원본 소비 검증을 실제 기능33 연동 완료로 표시하지 않는다.
+
+## 2026-10-29 현재 계약 — 저장된 유료 선점의 결제 준비
+
+- 문서 이슈: [#196](https://github.com/Techeer-2026-2-E/catchtable-backend/issues/196), 기능 이슈: [#195](https://github.com/Techeer-2026-2-E/catchtable-backend/issues/195), 상위 [#65](https://github.com/Techeer-2026-2-E/catchtable-backend/issues/65)
+- 정본: [기능10](https://app.notion.com/p/3d548d76fa32819386a3e858c26b2c1b), [prepare API](https://app.notion.com/p/0ba48d76fa328309ab3a018b1b5fed0f), [confirm API](https://app.notion.com/p/39b48d76fa328319a4a181bc187e8970)
+- 문서 기준 dev: `9da5d70d0afa296dad25fc689413c04c76a89272`. 해당 dev 문서의 이전 기록을 보존하고 준비 API의 현행 후보 계약을 추가했다.
+- 구현 후보: [Draft PR #198](https://github.com/Techeer-2026-2-E/catchtable-backend/pull/198), head `f81bcaa95de0244d76ff4a2d40e9d89165d06c55`. 검증한 앱·테스트 기준은 `3080466a18aa18d6f7fb334771b80273b6731c1b`이며 이후 커밋은 work-log만 추가·정정해 앱·테스트·빌드 입력 트리는 같다. 소스는 **dev 대상 Draft·미머지**다. 문서 머지는 dev의 API 제공·소스 머지·배포 완료를 뜻하지 않는다. [해당 소스 head CI](https://github.com/Techeer-2026-2-E/catchtable-backend/actions/runs/40826793631)는 SUCCESS다.
+
+### 대상과 선행 조건
+
+`POST /api/user/payments/prepare`는 신뢰할 수 있는 서버 경로가 이미 저장한 유료 선점만 대상으로 한다. 양수 `depositAmountSnapshot`, 유효한 `refundPolicySnapshot`, 미입장 `PENDING_PAYMENT`, 원래 `requestedAt + 5분` 만료시각과 그 시각 전이라는 조건이 필요하다. 기능33의 매장 설정과 실제 유료 선점 공개 생성은 연결되지 않았다. 현재 공개 무료 선점은 스냅샷이 없으므로 prepare로 유료 전환되지 않는다. 현재 매장 설정이나 임의 기본 금액·정책으로 과거 원본을 채우지 않는다. 아래 10000원은 예시이며 기본값이 아니다.
+
+요청은 `Content-Type: application/json`, 숫자 `X-Member-Id`와 CUSTOMER 회원으로 처리한다. JWT 연동 완료를 뜻하지 않는다. 본인 선점만 허용하고 다른 고객 선점은 없는 선점과 같은 404다.
+
+```http
+POST /api/user/payments/prepare
+Content-Type: application/json
+X-Member-Id: 101
+
+{"holdId":202}
+```
+
+`holdId`는 양수 정수이며 현재 모델에서 `reservationId`와 같은 값이다. 본문에는 이 필드만 정의되어 있다. 금액·정책·orderId·expiresAt·회원 정보를 추가하더라도 기존 Jackson 규칙으로 무시되어 서버 원본을 덮어쓰지 못한다. 인원수로 금액을 곱하지 않는다.
+
+### 성공과 재요청
+
+새 주문은 **201**, 같은 유효 선점의 기존 READY 재사용은 **200**이다. 응답은 같은 최상위 형식이며 `payment` 래퍼가 없다.
+
+```json
+{
+  "paymentId": 303,
+  "reservationId": 202,
+  "holdId": 202,
+  "orderId": "ct-00000000-0000-4000-8000-000000000000",
+  "orderName": "예약금",
+  "amount": 10000,
+  "status": "READY",
+  "expiresAt": "2030-01-20T03:04:00Z",
+  "serverTime": "2030-01-20T12:00:00+09:00",
+  "remainingSeconds": 240
+}
+```
+
+서버는 64자 이내의 유일한 orderId(`ct-` + UUID, 39자), 100자 이내 주문명, 최초 스냅샷 금액을 저장한다. 준비 응답의 reservationId/holdId는 같은 선점 ID다. 승인 전 reservationId를 null로 내리는 기존 결제 조회의 PaymentResponse와 준비 DTO를 혼동하지 않는다.
+
+재요청·동시 요청은 같은 READY의 paymentId·orderId·주문명·최초 금액·원래 만료시각을 그대로 반환한다. 새 주문이나 최초 이력을 추가하지 않고 결제/예약 행도 갱신하지 않는다. 새 주문의 최초 이력은 `READY → READY`, `USER`, `결제 준비` 1건이다. 준비는 SSE와 외부 PG 호출을 만들지 않는다.
+
+expiresAt/serverTime은 오프셋이 포함된 같은 시간축으로 비교한다. DB에서 읽은 expiresAt은 예시처럼 UTC일 수 있다. remainingSeconds는 서버 시각 기준 남은 초를 내림하고 0 이상으로 제한한다. 만료 1µs 전에는 0초와 READY가 반환될 수 있지만 원래 만료 정각부터 신규·재사용 모두 거절된다. 조회나 준비로 5분을 연장하지 않는다.
+
+### 충돌과 오류
+
+| HTTP / code | 의미와 프런트 처리 |
+| --- | --- |
+| 400 `INVALID_INPUT` | holdId 누락·null·0·음수·잘못된 JSON/타입 |
+| 401 `UNAUTHORIZED` | X-Member-Id 누락·잘못된 숫자 |
+| 403 `FORBIDDEN_MEMBER_TYPE` | CUSTOMER가 아닌 회원 |
+| 404 `MEMBER_NOT_FOUND` | 존재하지 않는 회원 |
+| 404 `RESERVATION_NOT_FOUND` | 없는 선점 또는 다른 고객의 선점 |
+| 409 `PAYMENT_MISMATCH` | 무료/누락/잘못된 스냅샷·바뀐 5분 원본·회원/금액/승인 전 바인딩이 맞지 않는 READY·여러 결제 행. 서버가 원본을 추정하거나 복구하지 않음 |
+| 409 `INVALID_PAYMENT_STATUS` | 만료·미래 요청시각·입장·PENDING_PAYMENT 이외 예약 또는 기존 FAILED/CANCELED. 새 재결제 정책 없음 |
+| 409 `PAYMENT_STATUS_CHECK_REQUIRED` | 승인 시작·격리·TIMEOUT·DONE·PARTIAL_REFUNDED·REFUNDED. **기존 결제 상태를 조회**하고 새 주문·추가 결제를 만들지 않음 |
+| 409 `REFUND_DATA_NOT_READY` | 기존 환불 동결. 동결을 풀거나 새 주문을 만들지 않음 |
+
+승인 진행·결과 불명·완료의 409 메시지는 “진행하거나 완료한 결제가 있습니다. 기존 결제 상태를 조회해 주세요.”다. 알고 있는 paymentId로 `GET /api/user/payments/{paymentId}`를 확인한다. ID를 잃었다면 `GET /api/user/payments`로 조회하며, 결과 불명에 대한 기존 `POST /api/user/payments/{paymentId}/sync`와 재확인 계약을 따른다. prepare는 기존 승인 키·상태·격리 정보를 지우거나 PG를 재호출하지 않는다. 여러 모순된 결제 행은 우선 PAYMENT_MISMATCH로 거절한다.
+
+### 승인·재확인·환불과의 연결
+
+prepare가 반환한 orderId/amount로 기존 `POST /api/user/payments/confirm`을 호출한다. 승인 시작은 원래 5분 안에 영속 저장하고 외부 PG 호출은 바깥 트랜잭션과 행 잠금 없이 진행한다. 같은 요청의 검증된 DONE만 원래 테이블·시간을 한 번 확정한다. 유효한 시작 기록이 있으면 최초 만료 뒤의 같은 DONE도 가능하다. READY/TIMEOUT/FAILED만으로 예약을 확정하지 않고 종료 예약을 되살리지 않는다. 알림은 기존 커밋 후 계약을 유지한다.
+
+이 통합 후보는 기존 [PR #192](https://github.com/Techeer-2026-2-E/catchtable-backend/pull/192)의 승인·재확인·환불 보호를 정상 merge했다. 최초 유효 환불 요청과 한도 저장·환불 중 변경 동결이 승인된 [#188](https://github.com/Techeer-2026-2-E/catchtable-backend/issues/188) 이후의 계약을 따른다. 준비 API가 돈만 환불하는 경로와 예약 취소를 합치지는 않는다. [기능60](feature-60-refund-execution.md)·[기능61](feature-61-refund-preview.md)와 각각의 소스 상태를 확인한다. 아래의 이전 4B 보류 기록은 당시 상태다.
+
+### 검증과 남은 연결
+
+전용 PostgreSQL 16, 기본 max_connections=100, Java 21에서 새 prepare54개와 관련 회귀424개가 통과했다. 새 빈 DB의 최종 `./gradlew clean build --no-daemon`은 **66클래스 708개, 실패/오류/건너뜀0**, bootJar 생성 성공이다. 실행별 중복 수나 과거 #192의 628개를 더한 값이 아니다. [작업 기록](https://github.com/Techeer-2026-2-E/catchtable-backend/blob/f81bcaa95de0244d76ff4a2d40e9d89165d06c55/work-log/195-payment-prepare-snapshot.md), [구현](https://github.com/Techeer-2026-2-E/catchtable-backend/blob/f81bcaa95de0244d76ff4a2d40e9d89165d06c55/src/main/java/com/catchtable/payment/service/PaymentPrepareService.java), [DTO](https://github.com/Techeer-2026-2-E/catchtable-backend/blob/f81bcaa95de0244d76ff4a2d40e9d89165d06c55/src/main/java/com/catchtable/payment/dto/PaymentPrepareResponse.java)를 기준으로 한다. 소스 게시와 정확한 head의 CI 결과는 별도 증거다.
+
+금액 위변조 무효, READY 원본 재사용, 동시 prepare1건, 정확한 만료 경계, 승인/만료 경합, 준비→기존 confirm DONE→환불/취소를 검증했다. 마지막 흐름은 **신뢰된 저장 유료 fixture부터의 fake 검증**이며 실제 유료 선점 생성부터의 E2E가 아니다. 실제 Toss·프런트 화면/코드·JWT·배포는 검증하지 않았다. 이 문서의 링크·계약·diff 검사와 문서 PR CI는 소스 PR 검증을 대신하지 않는다.
+
+기능33 설정·실제 유료 생성 연결과 공유 V20 적용 이력·rollout은 남아 있다. 25개 기존 마이그레이션을 그대로 유지했다. V20 없는 populated V22 DB는 예상대로 Flyway 업그레이드가 차단되며 빈 DB 성공으로 이를 해결했다고 표시하지 않는다. repair/rename/outOfOrder/ignore를 적용하지 않는다. 기능 소스의 Draft 게시·정확한 head CI·머지와 문서 PR은 별개이며 #195/#65를 이 문서만으로 닫지 않는다.
+
+---
+
+## 이전 계약·검증 기록
+
+다음은 기준 dev 문서의 기록을 그대로 보존한 것이다. 아래 “현재/미구현/결정 대기” 및 과거 테스트 수는 각 기록 당시의 상태이며, 준비의 현행 후보 계약은 위 절을 따른다.
+
+
 - 확인일: 2026-10-27
 - 문서 작업 이슈: [#122](https://github.com/Techeer-2026-2-E/catchtable-backend/issues/122)
 - 명세: [기능10](https://app.notion.com/3d548d76fa32819386a3e858c26b2c1b)
@@ -22,6 +142,14 @@
 ## 남은 연결
 
 예약금 설정은 기능33 담당, 결제 상태·멱등성·결과 재확인은 윤서 담당 기능58·62·63과 맞춘 뒤 연결한다. 실제 승인과 취소 실행, 공통 모델·상태명은 이 문서에서 새로 정하지 않는다.
+
+## 2026-10-29 재확인 후속 검토 메모
+
+기준 dev `7da9c1db77dac1327b565e8d1f36bd3961ea57c6`에는 아래 재확인·예약 정산 후속이 아직 없다. 공통 [PR #179](https://github.com/Techeer-2026-2-E/catchtable-backend/pull/179)의 제안과 별도 [기능10 수정 #180](https://github.com/Techeer-2026-2-E/catchtable-backend/issues/180)의 로컬 후보를 함께 검토할 때 사용하는 메모다. 기존 [PR #145](https://github.com/Techeer-2026-2-E/catchtable-backend/pull/145)도 Draft·미머지이며 이 문서 반영이 API 공개·연동 완료를 뜻하지 않는다.
+
+재확인에서도 최초 승인 연결의 회원·주문·키·금액과 최초 예약 스냅샷을 검사한다. 불일치는 `409 PAYMENT_MISMATCH`이며 진행 중인 자리와 연결을 유지한다. 이미 확정한 뒤 취소·완료·노쇼가 된 예약은 재확인으로 변경하지 않는다. 확정된 적 없는 CANCELLED/EXPIRED의 늦은 승인은 예약을 되살리지 않고 공통 후보의 `refundRequired` 대상으로 남긴다. 같은 원래 키 DONE의 늦은 확정과 커밋 후 알림1회 계약은 유지한다.
+
+confirm은 기존 `PaymentResponse` 형식이고, 공통 후보의 sync·상세는 같은 최상위 결제 필드에 `refunds` 배열이 추가된다. `refundRequired`는 실제 환불 실행 결과가 아니다. 기능33 설정/prepare, 사용자4B의 양수 환불 실행, 공유 V20 적용 전략, 실제 Toss·프런트/JWT·배포는 별도 범위다. 이 문서 후보는 링크·기준 소스·Markdown·diff만 검사하며 앱 테스트 증거는 별도 소스 후보와 구분한다.
 
 ## 문서 검증
 
