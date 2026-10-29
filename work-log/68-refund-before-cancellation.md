@@ -55,3 +55,14 @@ DB_HOST=127.0.0.1 DB_PORT=54937 DB_NAME=phase2_refund_approved DB_USERNAME=phase
 ```
 
 고객/점주 취소·예상액·정상 승인 경계를 함께 확인했다. V20 공유 이력·upgrade 차단은 [기능10 기록](65-deposit-snapshot.md)을 따른다. 실제 source CI·Toss·프런트·배포는 이 검사에 포함하지 않는다. 합본 전체 빌드는 별도 결과다.
+
+
+## 2026-10-29 후속 — 재확인 완료와 예약 취소의 통합 경계
+
+기존 #150을 변경하지 않는 별도 테스트 후속 후보다. 선행 범위는 #145/#146/#150과 공통 [#179](https://github.com/Techeer-2026-2-E/catchtable-backend/pull/179), 예약 정산 경계 [#180](https://github.com/Techeer-2026-2-E/catchtable-backend/issues/180)다. 기능37 코드를 섞지 않으며 새 환불 실행·취소 endpoint는 추가하지 않는다. [기능60 명세](https://app.notion.com/p/3d548d76fa3281369431cf4bd1c07a00)와 [기능61 명세](https://app.notion.com/p/3d548d76fa3281699f09e28ed2198911)의 기존 보호를 검증한다.
+
+기존 `ReservationCancellationRefundTest`와 공통 fixture를 재사용해 5건을 추가했다. 고객/점주와 REQUESTED/UNKNOWN의 네 조합에서 Toss 조회가 진행되는 동안 예상액과 취소가 409 REFUND_DATA_NOT_READY이고 예약·자리·SSE는 유지된다. 조회 중 바깥 트랜잭션/예약·결제 행 잠금이 없음을 별도 연결로 확인한다. 검증된 기존 전액 환불 결과가 커밋된 뒤에도 돈 환불 자체는 예약을 유지하며, 그 뒤 취소와 재요청만 자리와 알림을 한 번 변경한다. 최초 환불 키·시각·요청액은 보존하고 Toss cancel은 호출하지 않는다. 엄격 정책 당일 고객의 추가 환불0원 취소 뒤 DONE을 재확인해도 취소가 유지되고 refundRequired가 생기지 않는 실제 취소 경로도 확인했다.
+
+승인 연결 FK가 있는 fixture 정리는 기존 `PaymentTestData.deleteStore`를 재사용한다. normal merge 때 중복된 `List` import 한 줄만 제거했으며 공통 결제/환불 로직·마이그레이션은 변경하지 않았다.
+
+새 disposable PostgreSQL16 localhost:54941, DB `phase2_targeted`, 기본 max_connections=100에서 `./gradlew test --tests '*ReservationCancellationRefundTest' --tests '*ReservationRefundPreviewTest' --no-daemon`을 실행해 두 클래스60개가 실패·오류·건너뜀0으로 통과했다. 전체 합본·source CI·기존 DB upgrade는 별도 검증이다. 실제 Toss·프런트/JWT·배포, 사용자4B가 보류한 새 양수 환불 실행은 포함하지 않는다.
