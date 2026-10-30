@@ -1,5 +1,34 @@
 # 기능10 — 예약금 가결제 프런트 연동
 
+## 2026-10-30 테스트 결제 환경 준비
+
+관련: [환경 안내 #225](https://github.com/Techeer-2026-2-E/catchtable-backend/issues/225), [공유 DB 점검 #224](https://github.com/Techeer-2026-2-E/catchtable-backend/issues/224), [상위 #65](https://github.com/Techeer-2026-2-E/catchtable-backend/issues/65).
+
+예약 측 스냅샷·prepare·승인/재확인 코드는 dev에 머지됐다. 아래 과거의 미머지·계약 대기 표시는 당시 기록이다. 실제 기능33 설정 공급자는 현재 dev에 없으며, 기본 실행은 사용자가 정한 무료 예약·일반 선점을 유지한다. 테스트용 원본 공급자로 검증한 것을 실제 매장 설정 연결로 표시하지 않는다.
+
+### 서버 환경변수
+
+- `TOSS_SECRET_KEY`: 결제 인증에 사용한 클라이언트 키와 같은 상점/환경의 테스트 시크릿 키. `test_sk_`·`test_gsk_` 등 키 종류별 지원 API와 짝을 확인하고 테스트에는 테스트 키만 사용한다. 시크릿 키는 프런트·URL·로그·Git에 넣지 않는다.
+- `TOSS_BASE_URL`: 실제 테스트 PG 검증에서는 `https://api.tosspayments.com`. 테스트키가 테스트 환경을 구분하며 별도 테스트 도메인을 만드는 방식이 아니다.
+- `DB_HOST`·`DB_PORT`·`DB_NAME`·`DB_USERNAME`·`DB_PASSWORD`: 보존할 데이터가 없는 전용 테스트 DB. 공유 DB를 통합 테스트 대상으로 연결하지 않는다.
+
+[.env.example](../../.env.example)에 서버가 이미 사용하는 Toss 변수 이름만 추가했다. `.env`는 Compose가 읽으며 Java 앱에 자동 주입되지 않는다. 서버 실행 프로세스에도 별도로 환경변수를 전달해야 한다. 실제 값이 든 파일은 로컬에만 보관한다.
+
+현재 시크릿 키 기본값은 빈 문자열이며 이때 자동 결제 재확인 스케줄러는 비활성이다. 키를 설정하면 자동 재확인도 실행될 수 있으므로 기존 결제 원장이 없는 전용 테스트 DB를 사용한다. 키가 비어 있는 상태의 로컬 빌드 성공을 Toss 인증 성공으로 해석하지 않는다.
+
+### 실제 승인까지 필요한 조건
+
+1. 공유 DB 적용 여부 확인은 앱을 기동하기 전에 읽기 전용 이력 점검으로 진행한다. 앱 시작은 기본 Flyway를 실행하므로 별도 단계다.
+2. 실제 기능33 원본이 연결되면 유료 설정으로 선점을 생성한다. 현재 원본 없는 공개 선점에 임의 금액을 넣어 유료 결제로 바꾸지 않는다.
+3. 유효한 유료 선점으로 `/api/user/payments/prepare`를 호출한다. 같은 READY 재요청은 기존 주문·금액·만료시각을 유지한다.
+4. 준비 응답의 주문·금액으로 Toss 테스트 결제창에서 인증한다. 서버의 시크릿 키만으로 `paymentKey`를 새로 만드는 단계가 아니다. 클라이언트에는 짝인 클라이언트 키만 사용한다.
+5. 인증 후 받은 `paymentKey`와 원래 `orderId`·`amount`를 `/api/user/payments/confirm`에 전달한다. 서버가 확인한 DONE만 예약 확정으로 처리한다.
+6. 승인·실패·결과 불명/재확인·같은 요청 재시도를 확인한다. 환불 검증은 별도 [기능60 계약](feature-60-refund-execution.md)을 따른다.
+
+테스트키/실제 설정이 준비되기 전에는 기존 fake PG 통합 테스트까지만 검증할 수 있다. 실제 승인·취소·프런트 화면·배포 완료로 기록하지 않는다.
+
+근거: [Toss 키 종류](https://docs.tosspayments.com/reference/using-api/api-keys), [API 인증](https://docs.tosspayments.com/reference/using-api/authorization), [결제창 인증 후 승인](https://docs.tosspayments.com/guides/v2/payment-window/integration), 현재 `application.yml`·`TossPaymentsConfig`·`PaymentReconcileScheduler`.
+
 ## 2026-10-29 후속 — 예약금 원본 소비와 유료 선점 생성 준비
 
 관련: [소스 이슈 #201](https://github.com/Techeer-2026-2-E/catchtable-backend/issues/201), [소스 PR #203](https://github.com/Techeer-2026-2-E/catchtable-backend/pull/203), [문서 이슈 #202](https://github.com/Techeer-2026-2-E/catchtable-backend/issues/202), [기능10 정본](https://app.notion.com/p/3d548d76fa32819386a3e858c26b2c1b). 소스는 dev 대상 일반 PR·미머지이며 dev 제공·배포 완료를 뜻하지 않는다. 기존 기능 소스 PR들도 Ready for review로 전환했고, 아래 과거 Draft 표시는 전환 전 기록이다.
