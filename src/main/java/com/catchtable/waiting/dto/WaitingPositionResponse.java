@@ -1,5 +1,6 @@
 package com.catchtable.waiting.dto;
 
+import com.catchtable.waiting.entity.ArrivalIntent;
 import com.catchtable.waiting.entity.Waiting;
 import com.catchtable.waiting.entity.WaitingStatus;
 
@@ -17,7 +18,9 @@ public record WaitingPositionResponse(
         int partyCount,
         WaitingStatus status,
         OffsetDateTime calledAt,  // 호출 시각 (호출 전·종료 시 null)
-        OffsetDateTime expiresAt  // 호출 만료 시각 (호출 전·종료 시 null)
+        OffsetDateTime expiresAt, // 호출 만료 시각 (호출 전·종료 시 null)
+        OffsetDateTime respondedAt,
+        ArrivalIntent arrivalIntent
 ) {
     public static WaitingPositionResponse of(Waiting waiting, Long teamsAhead)
     {
@@ -34,7 +37,9 @@ public record WaitingPositionResponse(
                 waiting.getPartyCount(),
                 waiting.getStatus(),
                 active ? waiting.getCalledAt() : null,
-                active ? waiting.getCallExpiresAt() : null
+                active ? waiting.getCallExpiresAt() : null,
+                active ? waiting.getRespondedAt() : null,
+                active ? waiting.getArrivalIntent() : null
         );
     }
 }

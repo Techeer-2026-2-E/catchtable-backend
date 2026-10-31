@@ -169,19 +169,24 @@ class UserWaitingControllerTest {
         getWaiting(me, mine.getId())
                 .andExpect(jsonPath("$.status").value("WAITING"))
                 .andExpect(jsonPath("$.calledAt").doesNotExist())
-                .andExpect(jsonPath("$.expiresAt").doesNotExist());
+                .andExpect(jsonPath("$.expiresAt").doesNotExist())
+                .andExpect(jsonPath("$.respondedAt").doesNotExist())
+                .andExpect(jsonPath("$.arrivalIntent").doesNotExist());
     }
 
     @Test
     @DisplayName("호출 뒤 종료된 웨이팅은 호출 시각과 만료 시각을 숨긴다")
     void endedWaitingHasNoCallTimes() throws Exception {
         Waiting mine = saveCalledWaiting(me, 1);
+        respond(me, mine.getId()).andExpect(status().isOk());
         changeStatus(mine, WaitingStatus.NO_SHOW);
 
         getWaiting(me, mine.getId())
                 .andExpect(jsonPath("$.status").value("NO_SHOW"))
                 .andExpect(jsonPath("$.calledAt").doesNotExist())
-                .andExpect(jsonPath("$.expiresAt").doesNotExist());
+                .andExpect(jsonPath("$.expiresAt").doesNotExist())
+                .andExpect(jsonPath("$.respondedAt").doesNotExist())
+                .andExpect(jsonPath("$.arrivalIntent").doesNotExist());
     }
 
     @Test
@@ -216,16 +221,29 @@ class UserWaitingControllerTest {
     void respondToCallRecordsArrivalIntent() throws Exception {
         Waiting mine = saveCalledWaiting(me, 1);
 
-        respond(me, mine.getId())
+        String first = respond(me, mine.getId())
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.waitingId").value(mine.getId()))
                 .andExpect(jsonPath("$.status").value("CALLED"))
                 .andExpect(jsonPath("$.arrivalIntent").value("COMING"))
                 .andExpect(jsonPath("$.respondedAt").isNotEmpty())
-                .andExpect(jsonPath("$.expiresAt").isNotEmpty());
-        respond(me, mine.getId())
+                .andExpect(jsonPath("$.expiresAt").isNotEmpty())
+                .andReturn().getResponse().getContentAsString();
+        String retried = respond(me, mine.getId())
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.arrivalIntent").value("COMING"));
+                .andExpect(jsonPath("$.status").value("CALLED"))
+                .andExpect(jsonPath("$.arrivalIntent").value("COMING"))
+                .andReturn().getResponse().getContentAsString();
+        String detail = getWaiting(me, mine.getId())
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("CALLED"))
+                .andExpect(jsonPath("$.arrivalIntent").value("COMING"))
+                .andExpect(jsonPath("$.respondedAt").isNotEmpty())
+                .andReturn().getResponse().getContentAsString();
+
+        assertThat(instantAt(retried, "respondedAt")).isEqualTo(instantAt(first, "respondedAt"));
+        assertThat(instantAt(detail, "respondedAt")).isEqualTo(instantAt(first, "respondedAt"));
+        assertThat(instantAt(detail, "expiresAt")).isEqualTo(instantAt(first, "expiresAt"));
     }
 
     @Test
