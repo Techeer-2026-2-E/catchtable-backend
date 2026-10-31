@@ -18,14 +18,21 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Import;
+import org.springframework.context.annotation.Primary;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
 
+import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -39,9 +46,21 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 // 현재 대기순번 조회 테스트 (앞 팀 수는 쿼리 결과가 핵심이라 실제 DB로 확인)
 @SpringBootTest
 @AutoConfigureMockMvc
+@Import(UserWaitingControllerTest.FixedTime.class)
+@DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 class UserWaitingControllerTest {
 
     private static final LocalDate TODAY = LocalDate.of(2030, 1, 10);
+
+    @TestConfiguration
+    static class FixedTime {
+        @Bean
+        @Primary
+        Clock testClock() {
+            // DB 저장 정밀도에 맞춰 OS별 현재 시각 정밀도 차이를 피한다.
+            return Clock.fixed(Instant.parse("2030-01-10T03:01:00.123456Z"), ZoneId.of("Asia/Seoul"));
+        }
+    }
 
     @Autowired MockMvc mockMvc;
     @Autowired WaitingRepository waitingRepository;
