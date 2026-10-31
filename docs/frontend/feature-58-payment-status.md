@@ -36,6 +36,7 @@
 - 모두 `X-Member-Id` 헤더. 없으면 `401 UNAUTHORIZED`, 고객이 아니면 `403 FORBIDDEN_MEMBER_TYPE`, 남의 결제나 없는 결제는 `404 PAYMENT_NOT_FOUND`.
 - 목록 항목: `paymentId`, `reservationId`, `holdId`, `orderId`, `orderName`, `amount`, `status`, `method`, `approvedAt`, `canceledAmount`, `receiptUrl`, `refundRequired`(예약 확정 없이 확인된 승인, 환불 대상. 2026-10-29 추가).
 - `refunds` 항목: `refundId`, `refundAmount`, `status`(`REQUESTED`, `COMPLETED`, `NOT_REQUIRED`, `FAILED`, `UNKNOWN`), `cancelReason`, `refundedAt`(확정 전 `null`).
+- `receiptNotice`: 상세에만 있는 테스트 결제 안내 문구(고정값).
 - 2026-10-28 변경: 목록이 배열에서 페이징 객체로 바뀌었다. 프런트 `paymentApi.ts`의 목록 응답 타입 갱신이 필요하다.
 
 ## 프런트와 다른 점
