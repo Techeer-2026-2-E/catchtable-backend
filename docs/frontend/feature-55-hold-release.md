@@ -1,5 +1,7 @@
 # 기능55 — 결제 실패·이탈 시 테이블 반환 프런트 연동
 
+> 2026-11-03 현행 승인 결과·재확인에 따른 반환과 최신 프런트 호출부는 [기능10의 현재 계약](feature-10-deposit-payment.md#2026-11-03-현재-계약)을 따른다. 아래 날짜별 미연결·후보 표시는 당시 기록이다.
+
 - 확인일: 2026-10-27
 - 문서 작업 이슈: [#128](https://github.com/Techeer-2026-2-E/catchtable-backend/issues/128)
 - 명세: [기능55](https://app.notion.com/3d548d76fa3281d4bc29d5f06ca81c68)

@@ -1,5 +1,7 @@
 # 기능53 — 결제 중 테이블 임시 선점 프런트 연동
 
+> 2026-11-03 현행 선점·결제 연결과 최신 프런트 호출부는 [기능10의 현재 계약](feature-10-deposit-payment.md#2026-11-03-현재-계약)을 따른다. 아래 날짜별 미구현·미머지 표시는 당시 기록이다.
+
 - 확인일: 2026-10-27
 - 문서 작업 이슈: [#126](https://github.com/Techeer-2026-2-E/catchtable-backend/issues/126)
 - 명세: [기능53](https://app.notion.com/3d548d76fa3281f7834ee32be4c17f60)

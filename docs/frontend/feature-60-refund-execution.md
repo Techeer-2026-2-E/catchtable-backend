@@ -1,5 +1,16 @@
 # 기능60 — 전액·부분 환불 프런트 연동
 
+## 2026-11-03 현재 계약
+
+[dev 5db45f0](https://github.com/Techeer-2026-2-E/catchtable-backend/commit/5db45f057fb593a71e6d28b787ba65ceff1f7375)에는 환불 실행·고객/점주 취소 정산·최초 유효 요청 기준 저장·재시작 복구·같은 환불 응답의 UTC 시각 표현이 반영돼 있다. 아래 날짜별 실행 후보·미구현·미머지 설명은 당시 기록이다.
+
+- 돈만 환불하는 `POST /api/user/payments/{paymentId}/cancel`은 `X-Member-Id`·필수 `Idempotency-Key`와 기존 사유/금액 본문을 사용하며 예약·자리를 유지한다.
+- 고객 예약 취소는 기존 본문 없음, 점주 취소는 고정 목 점주2와 필수 `reason` 본문이다. 양수 환불을 실행할 취소에는 `Idempotency-Key`를 연결한다. 헤더 없는 무료·추가0원 취소는 기존 계약을 유지하고 양수 미환불은 `409 REFUND_NOT_COMPLETED`로 보호한다.
+- 양수 취소 환불이 성공한 뒤에만 예약 취소·자리 반환·취소 SSE를 한 번 반영한다. REQUESTED/UNKNOWN 동안 예약 변경·입장·노쇼·완료·경쟁 취소를 막는다. 결과 불명에는 같은 요청과 기존 sync를 사용하며 새 키나 임의 시간 만료로 해제하지 않는다.
+- `RefundResult.refundedAt`은 완료 시 UTC이며 NOT_REQUIRED는 null이다. 금액 생략과 명시적 금액은 같은 키에서 서로 다른 요청으로 판단한다.
+
+아래 상세 요청·오류 계약을 현재 코드와 대조했다. 최신 프런트의 고객/점주 취소에는 아직 환불용 키가 없으며 [기능10의 현재 계약](feature-10-deposit-payment.md#2026-11-03-현재-계약)에 호출부 근거를 연결했다. 이번 로컬 fake 검증을 실제 설정 원본·Toss·유료 화면 검증으로 표시하지 않는다. 검증 범위는 [작업 기록](../../work-log/2026-11-03-phase2-local-verification.md)을 따른다.
+
 ## 2026-10-29 후속 — 같은 환불 요청의 시각 표현
 
 [소스 PR #211](https://github.com/Techeer-2026-2-E/catchtable-backend/pull/211), 이슈 #205. 소스는 dev 대상 일반 PR·Ready for review·미머지다. 이 문서의 dev 머지는 기능 코드 머지·배포 완료와 구분한다.
