@@ -7,6 +7,7 @@ import com.catchtable.waiting.dto.OwnerWaitingResponse;
 import com.catchtable.waiting.dto.WaitingCallResponse;
 import com.catchtable.waiting.dto.WaitingPolicyRequest;
 import com.catchtable.waiting.dto.WaitingPolicyResponse;
+import com.catchtable.waiting.dto.WaitingRecallResponse;
 import com.catchtable.waiting.dto.WaitingEnterResponse;
 import com.catchtable.waiting.dto.WaitingTerminationResponse;
 import com.catchtable.waiting.service.OwnerWaitingService;
@@ -82,6 +83,12 @@ public class OwnerWaitingController {
     @PostMapping("/waitings/{waitingId}/call")
     public WaitingCallResponse callWaiting(@LoginMember Long memberId, @PathVariable Long waitingId) {
         return ownerWaitingService.callWaiting(memberId, waitingId);
+    }
+
+    /** 호출 재전송 (만료시각 유지) */
+    @PostMapping("/waitings/{waitingId}/recall")
+    public WaitingRecallResponse recallWaiting(@LoginMember Long memberId, @PathVariable Long waitingId) {
+        return ownerWaitingService.recallWaiting(memberId, waitingId);
     }
 
     @PostMapping("/waitings/{waitingId}/enter")

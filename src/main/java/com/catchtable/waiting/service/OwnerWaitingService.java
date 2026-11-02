@@ -16,6 +16,7 @@ import com.catchtable.waiting.dto.OwnerWaitingResponse;
 import com.catchtable.waiting.dto.WaitingCallNotification;
 import com.catchtable.waiting.dto.WaitingCallResponse;
 import com.catchtable.waiting.dto.WaitingQueueChangedEvent;
+import com.catchtable.waiting.dto.WaitingRecallResponse;
 import com.catchtable.waiting.dto.WaitingPolicyResponse;
 import com.catchtable.waiting.dto.WaitingEnterResponse;
 import com.catchtable.waiting.dto.WaitingTerminationResponse;
@@ -130,6 +131,17 @@ public class OwnerWaitingService {
                 "대기 목록이 변경되었습니다."));
         eventPublisher.publishEvent(new WaitingQueueChangedEvent(store.getId(), waiting.getWaitingDate()));
         return WaitingCallResponse.from(waiting);
+    }
+
+    // 순번·상태 불변이라 목록·순번 이벤트 없음
+    @Transactional
+    public WaitingRecallResponse recallWaiting(Long memberId, Long waitingId) {
+        Waiting waiting = findOwnerWaitingForUpdate(memberId, waitingId);
+        waiting.recall(OffsetDateTime.now(clock));
+
+        eventPublisher.publishEvent(WaitingCallNotification.of(waiting.getMember().getId(), waiting.getId(),
+                waiting.getWaitNumber(), waiting.getStore().getName(), waiting.getCalledAt(), waiting.getCallExpiresAt()));
+        return WaitingRecallResponse.from(waiting);
     }
 
     @Transactional

@@ -17,6 +17,7 @@ import com.catchtable.waiting.repository.WaitingEndHistoryRepository;
 import com.catchtable.waiting.service.WaitingService;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -448,6 +449,67 @@ class OwnerWaitingControllerTest {
                 .andExpect(jsonPath("$.code").value("WAITING_NOT_FOUND"));
         mockMvc.perform(post(path, -1L).header("X-Member-Id", owner.getId()))
                 .andExpect(status().isNotFound());
+    }
+
+    @Test
+    @DisplayName("호출 재전송은 기존 만료시각으로 고객에게만 다시 알린다")
+    void recallReturnsRecallInfoAndNotifiesOnlyCustomer() throws Exception {
+        Waiting waiting = waiting(store, TODAY, 1, WaitingStatus.CALLED);
+        jdbc.update("update waiting set call_count = 1, called_at = ?, call_expires_at = ? where id = ?",
+                OffsetDateTime.parse("2030-01-11T00:00:00+09:00"),
+                OffsetDateTime.parse("2030-01-11T00:10:00+09:00"), waiting.getId());
+        MvcResult ownerStream = subscribe();
+        MvcResult customerStream = mockMvc.perform(get("/api/user/notifications/subscribe")
+                        .param("memberId", customer.getId().toString()))
+                .andExpect(request().asyncStarted())
+                .andReturn();
+
+        mockMvc.perform(post("/api/owner/waitings/{waitingId}/recall", waiting.getId())
+                        .header("X-Member-Id", owner.getId()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.waitingId").value(waiting.getId()))
+                .andExpect(jsonPath("$.status").value("CALLED"))
+                .andExpect(jsonPath("$.waitNumber").value(1))
+                .andExpect(jsonPath("$.callCount").value(1))
+                // DB에서 읽은 시각은 UTC 표기
+                .andExpect(jsonPath("$.calledAt").value("2030-01-10T15:00:00Z"))
+                .andExpect(jsonPath("$.expiresAt").value("2030-01-10T15:10:00Z"))
+                .andExpect(jsonPath("$.recallCount").value(1))
+                .andExpect(jsonPath("$.lastRecalledAt").value("2030-01-11T00:05:00+09:00"));
+
+        assertThat(streamContent(customerStream))
+                .contains("\"message\":\"1번 고객님, 00:10까지 테스트 매장에 입장해 주세요.\"",
+                        "\"expiresAt\":\"2030-01-10T15:10:00Z\"")
+                .containsOnlyOnce("event:WAITING_CALLED")
+                .doesNotContain("event:WAITING_POSITION_CHANGED");
+        assertThat(streamContent(ownerStream)).doesNotContain("event:WAITING_CHANGED");
+    }
+
+    @Test
+    @DisplayName("호출 재전송은 호출 중·만료 전만 허용하고 점주·매장 소유를 확인한다")
+    void recallRejectsNotRecallableAndChecksOwnership() throws Exception {
+        Waiting uncalled = waiting(store, TODAY, 1, WaitingStatus.WAITING);
+        Waiting expired = waiting(store, TODAY, 2, WaitingStatus.CALLED);
+        Waiting called = waiting(store, TODAY, 3, WaitingStatus.CALLED);
+        jdbc.update("update waiting set call_expires_at = ? where id = ?",
+                OffsetDateTime.parse("2030-01-11T00:05:00+09:00"), expired.getId());
+        jdbc.update("update waiting set call_expires_at = ? where id = ?",
+                OffsetDateTime.parse("2030-01-11T00:10:00+09:00"), called.getId());
+        Long otherOwner = member("다른 점주", UserType.OWNER).getId();
+        String path = "/api/owner/waitings/{waitingId}/recall";
+
+        for (Waiting target : List.of(uncalled, expired)) {
+            mockMvc.perform(post(path, target.getId()).header("X-Member-Id", owner.getId()))
+                    .andExpect(status().isConflict())
+                    .andExpect(jsonPath("$.code").value("WAITING_NOT_RECALLABLE"));
+        }
+        mockMvc.perform(post(path, called.getId()).header("X-Member-Id", customer.getId()))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("FORBIDDEN_MEMBER_TYPE"));
+        mockMvc.perform(post(path, called.getId()).header("X-Member-Id", otherOwner))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("WAITING_NOT_FOUND"));
+        assertThat(waitingRepository.findById(called.getId()).orElseThrow().getRecallCount()).isZero();
     }
 
     @Test
