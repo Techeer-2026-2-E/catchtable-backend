@@ -13,6 +13,8 @@ import com.catchtable.payment.repository.PaymentStatusHistoryRepository;
 import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -70,16 +72,19 @@ class PaymentServiceTest {
                 });
     }
 
-    @Test
-    void eachRefundRecordsOneHistoryAndRepeatRecordsNone() {
+    @ParameterizedTest
+    @ValueSource(strings = {"CANCELED", "PARTIAL_CANCELED"})
+    void eachRefundRecordsOneHistoryAndRepeatRecordsNone(String fullyRefundedTossStatus) {
         Long paymentId = payment("READY");
         String orderId = data.orderId(paymentId);
         service.applyTossPayment(paymentId, toss(orderId, "DONE", AMOUNT), PaymentStatusSource.TOSS_CONFIRM);
 
         service.applyTossPayment(paymentId, toss(orderId, "PARTIAL_CANCELED", 7_000), PaymentStatusSource.TOSS_CANCEL);
         service.applyTossPayment(paymentId, toss(orderId, "PARTIAL_CANCELED", 7_000), PaymentStatusSource.TOSS_QUERY);
-        var refunded = service.applyTossPayment(paymentId, toss(orderId, "CANCELED", 0), PaymentStatusSource.TOSS_CANCEL);
+        var refunded = service.applyTossPayment(paymentId, toss(orderId, fullyRefundedTossStatus, 0), PaymentStatusSource.TOSS_CANCEL);
+        var repeated = service.applyTossPayment(paymentId, toss(orderId, fullyRefundedTossStatus, 0), PaymentStatusSource.TOSS_QUERY);
 
+        assertThat(repeated).isEqualTo(refunded);
         assertThat(refunded.status()).isEqualTo(PaymentStatus.REFUNDED);
         assertThat(refunded.canceledAmount()).isEqualTo(AMOUNT);
         assertThat(historyRepository.findAllByPaymentIdOrderByIdAsc(paymentId))
