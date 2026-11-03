@@ -68,10 +68,10 @@ class WaitingAutoExpireConcurrencyTest {
             OffsetDateTime now = OffsetDateTime.now(clock);
             Long waitingId = jdbc.queryForObject("""
                     INSERT INTO waiting (
-                        member_id, store_id, waiting_date, party_count, wait_number, status,
+                        member_id, store_id, waiting_date, party_count, wait_number, queue_order, status,
                         called_at, call_expires_at, call_count, created_at, updated_at
                     )
-                    VALUES (?, ?, ?, 2, 1, 'CALLED', ?, ?, 1, now(), now())
+                    VALUES (?, ?, ?, 2, 1, 1, 'CALLED', ?, ?, 1, now(), now())
                     RETURNING id
                     """, Long.class, customerId, storeId, now.toLocalDate(),
                     now.minusMinutes(11), now.minusMinutes(1));

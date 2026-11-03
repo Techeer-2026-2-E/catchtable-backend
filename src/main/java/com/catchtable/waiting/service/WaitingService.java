@@ -123,8 +123,8 @@ public class WaitingService {
 
     // 응답 변환 (앞 팀 수 계산 포함)
     private WaitingResponse toResponse(Waiting waiting, Long storeId) {
-        long teamsAhead = waitingRepository.countByStoreIdAndWaitingDateAndStatusInAndWaitNumberLessThan(
-                storeId, waiting.getWaitingDate(), WaitingStatus.ACTIVE, waiting.getWaitNumber());
+        long teamsAhead = waitingRepository.countByStoreIdAndWaitingDateAndStatusInAndQueueOrderLessThan(
+                storeId, waiting.getWaitingDate(), WaitingStatus.ACTIVE, waiting.getQueueOrder());
         return WaitingResponse.of(waiting, storeId, teamsAhead);
     }
 }

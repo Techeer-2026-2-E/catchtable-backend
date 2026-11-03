@@ -31,9 +31,9 @@ public class WaitingQueryService {
         }
 
         long teamsAhead=
-                waitingRepository.countByStoreIdAndWaitingDateAndStatusInAndWaitNumberLessThan(
+                waitingRepository.countByStoreIdAndWaitingDateAndStatusInAndQueueOrderLessThan(
                         waiting.getStore().getId(), waiting.getWaitingDate(),
-                        WaitingStatus.ACTIVE, waiting.getWaitNumber());
+                        WaitingStatus.ACTIVE, waiting.getQueueOrder());
                 return WaitingPositionResponse.of(waiting, teamsAhead);
     }
 }

@@ -31,7 +31,7 @@ public class WaitingQueueNotifier {
     @Transactional(propagation = Propagation.REQUIRES_NEW, readOnly = true)
     public void handle(WaitingQueueChangedEvent event)
     {
-        List<Waiting> queue= waitingRepository.findAllByStoreIdAndWaitingDateAndStatusInOrderByWaitNumberAsc(
+        List<Waiting> queue= waitingRepository.findAllByStoreIdAndWaitingDateAndStatusInOrderByQueueOrderAsc(
                 event.storeId(), event.waitingDate(), WaitingStatus.ACTIVE);
 
         for(int i=0; i< queue.size(); i++){

@@ -47,7 +47,7 @@ public interface WaitingRepository extends JpaRepository<Waiting, Long> {
     Optional<Waiting> findByIdForUpdate(@Param("waitingId") Long waitingId);
 
     @EntityGraph(attributePaths = {"member"})
-    List<Waiting> findAllByStoreIdAndWaitingDateAndStatusInOrderByWaitNumberAsc(
+    List<Waiting> findAllByStoreIdAndWaitingDateAndStatusInOrderByQueueOrderAsc(
             Long storeId, LocalDate waitingDate, Collection<WaitingStatus> statuses);
 
     // 고객의 진행 중 웨이팅 조회 (같은 매장·같은 날)
@@ -62,9 +62,25 @@ public interface WaitingRepository extends JpaRepository<Waiting, Long> {
             """)
     int findMaxWaitNumber(@Param("storeId") Long storeId, @Param("waitingDate") LocalDate waitingDate);
 
-    // 내 앞 대기 팀 수
-    long countByStoreIdAndWaitingDateAndStatusInAndWaitNumberLessThan(
-            Long storeId, LocalDate waitingDate, Collection<WaitingStatus> statuses, int waitNumber);
+    // 매장 id (잠금 없음, 매장 락 선행용)
+    @Query("select w.store.id from Waiting w where w.id = :waitingId and w.store.owner.id = :ownerId")
+    Optional<Long> findStoreIdByIdAndOwnerId(@Param("waitingId") Long waitingId, @Param("ownerId") Long ownerId);
+
+    // 뒤 진행 중 팀 행 잠금 (정렬 순서는 매장 락 안에서만 변경)
+    @Query(value = """
+            select * from waiting
+            where store_id = :storeId and waiting_date = :waitingDate
+              and status in ('WAITING', 'CALLED', 'CONFIRMED') and queue_order > :queueOrder
+            order by queue_order
+            for update
+            """, nativeQuery = true)
+    List<Waiting> findActiveBehindForUpdate(@Param("storeId") Long storeId,
+                                            @Param("waitingDate") LocalDate waitingDate,
+                                            @Param("queueOrder") int queueOrder);
+
+    // 내 앞 대기 팀 수 (정렬 순서 기준)
+    long countByStoreIdAndWaitingDateAndStatusInAndQueueOrderLessThan(
+            Long storeId, LocalDate waitingDate, Collection<WaitingStatus> statuses, int queueOrder);
 
     // 고객 내역 조회용 (매장명 표시를 위해 매장 함께 조회)
     @EntityGraph(attributePaths = {"store"})
