@@ -55,6 +55,15 @@ class ReservationCompletionTest {
         Reservation completed = reservationRepository.findById(visitedPast.getId()).orElseThrow();
         assertThat(completed.getStatus()).isEqualTo(ReservationStatus.COMPLETED);
         assertThat(completed.getCompletedAt()).isNotNull();
+        var completedDetail = reservationService.getReservation(customer.getId(), completed.getId());
+        assertThat(completedDetail.checkedInAt()).isEqualTo(completed.getCheckedInAt());
+        assertThat(completedDetail.completedAt()).isEqualTo(completed.getCompletedAt());
+        var unvisitedDetail = reservationService.getReservation(customer.getId(), unvisitedPast.getId());
+        assertThat(unvisitedDetail.checkedInAt()).isNull();
+        assertThat(unvisitedDetail.completedAt()).isNull();
+        var visitedDetail = reservationService.getReservation(customer.getId(), visitedFuture.getId());
+        assertThat(visitedDetail.checkedInAt()).isNotNull();
+        assertThat(visitedDetail.completedAt()).isNull();
         assertThat(reservationRepository.findById(unvisitedPast.getId()).orElseThrow().getStatus())
                 .isEqualTo(ReservationStatus.CONFIRMED);
         assertThat(reservationRepository.findById(visitedFuture.getId()).orElseThrow().getStatus())

@@ -37,7 +37,7 @@ class ReservationControllerTest {
         when(reservationService.createReservation(eq(1L), any(CreateReservationRequest.class)))
                 .thenReturn(new ReservationResponse(1L, 1L, "목 식당", 2L, startAt,
                         startAt.plusHours(2), 2, ReservationStatus.CONFIRMED,
-                        startAt.minusDays(1), startAt.minusDays(1), null, null, null));
+                        startAt.minusDays(1), startAt.minusDays(1), null, null, null, null, null));
 
         mockMvc.perform(post("/api/user/reservations")
                         .contentType(MediaType.APPLICATION_JSON)

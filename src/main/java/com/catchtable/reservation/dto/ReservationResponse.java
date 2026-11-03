@@ -6,7 +6,7 @@ import com.catchtable.reservation.entity.ReservationStatus;
 
 import java.time.OffsetDateTime;
 
-/** 취소 관련 필드는 취소 전에는 null이다. 결제 대기 중에는 confirmedAt도 null이다. */
+/** 방문 확인·완료 시각은 처리 전 null이며, completedAt은 시스템의 자동 완료 처리 시각이다. */
 public record ReservationResponse(
         Long reservationId,
         Long storeId,
@@ -20,7 +20,9 @@ public record ReservationResponse(
         OffsetDateTime confirmedAt,
         OffsetDateTime cancelledAt,
         CancellationActor cancellationActor,
-        String cancellationReason
+        String cancellationReason,
+        OffsetDateTime checkedInAt,
+        OffsetDateTime completedAt
 ) {
     public static ReservationResponse from(Reservation reservation, OffsetDateTime now) {
         return new ReservationResponse(
@@ -36,7 +38,9 @@ public record ReservationResponse(
                 reservation.getConfirmedAt(),
                 reservation.getCancelledAt(),
                 reservation.getCancellationActor(),
-                reservation.getCancellationReason()
+                reservation.getCancellationReason(),
+                reservation.getCheckedInAt(),
+                reservation.getCompletedAt()
         );
     }
 }
