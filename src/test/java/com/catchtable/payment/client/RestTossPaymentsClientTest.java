@@ -161,6 +161,47 @@ class RestTossPaymentsClientTest {
         server.verify();
     }
 
+    @Test
+    void malformedConfirmationBodyIsAnUnknownResult() {
+        server.expect(requestTo(BASE_URL + "/v1/payments/confirm"))
+                .andRespond(withSuccess("{", MediaType.APPLICATION_JSON));
+
+        assertThatThrownBy(() -> client.confirm("pk-1", "order-1", 10000, "key-1"))
+                .isInstanceOf(TossPaymentsUnknownResultException.class);
+        server.verify();
+    }
+
+    @Test
+    void emptyCancellationBodyIsAnUnknownResult() {
+        server.expect(requestTo(BASE_URL + "/v1/payments/pk-1/cancel"))
+                .andRespond(withSuccess("", MediaType.APPLICATION_JSON));
+
+        assertThatThrownBy(() -> client.cancel("pk-1", 3000L, "고객 취소", "key-1"))
+                .isInstanceOf(TossPaymentsUnknownResultException.class);
+        server.verify();
+    }
+
+    @Test
+    void nonJsonQueryBodyIsAnUnknownResult() {
+        server.expect(requestTo(BASE_URL + "/v1/payments/pk-1"))
+                .andRespond(withSuccess("<html>invalid response</html>", MediaType.TEXT_HTML));
+
+        assertThatThrownBy(() -> client.getByPaymentKey("pk-1"))
+                .isInstanceOf(TossPaymentsUnknownResultException.class);
+        server.verify();
+    }
+
+    @Test
+    void malformedClientErrorRemainsADefiniteFailure() {
+        server.expect(requestTo(BASE_URL + "/v1/payments/confirm"))
+                .andRespond(withStatus(HttpStatus.BAD_REQUEST).contentType(MediaType.APPLICATION_JSON).body("{"));
+
+        assertThatThrownBy(() -> client.confirm("pk-1", "order-1", 10000, "key-1"))
+                .isInstanceOfSatisfying(TossPaymentsException.class,
+                        exception -> assertThat(exception.getHttpStatus()).isEqualTo(400));
+        server.verify();
+    }
+
     @ParameterizedTest
     @CsvSource({
             "READY, READY", "IN_PROGRESS, READY", "WAITING_FOR_DEPOSIT, READY", "DONE, DONE",
