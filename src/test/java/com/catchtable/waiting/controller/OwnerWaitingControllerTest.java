@@ -180,7 +180,7 @@ class OwnerWaitingControllerTest {
         });
 
         assertThat(streamContent(stream)).doesNotContain("WAITING_CHANGED");
-        assertThat(waitingRepository.findAllByStoreIdAndWaitingDateAndStatusInOrderByWaitNumberAsc(
+        assertThat(waitingRepository.findAllByStoreIdAndWaitingDateAndStatusInOrderByQueueOrderAsc(
                 store.getId(), TODAY, WaitingStatus.ACTIVE)).isEmpty();
     }
 

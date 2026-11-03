@@ -15,15 +15,18 @@ import com.catchtable.store.repository.StoreTableRepository;
 import com.catchtable.waiting.dto.OwnerWaitingResponse;
 import com.catchtable.waiting.dto.WaitingCallNotification;
 import com.catchtable.waiting.dto.WaitingCallResponse;
+import com.catchtable.waiting.dto.WaitingDeferResponse;
 import com.catchtable.waiting.dto.WaitingQueueChangedEvent;
 import com.catchtable.waiting.dto.WaitingPolicyResponse;
 import com.catchtable.waiting.dto.WaitingEnterResponse;
 import com.catchtable.waiting.dto.WaitingTerminationResponse;
 import com.catchtable.waiting.entity.Waiting;
+import com.catchtable.waiting.entity.WaitingDeferHistory;
 import com.catchtable.waiting.entity.WaitingEndHistory;
 import com.catchtable.waiting.entity.WaitingEndReason;
 import com.catchtable.waiting.entity.WaitingStatus;
 import com.catchtable.waiting.repository.WaitingRepository;
+import com.catchtable.waiting.repository.WaitingDeferHistoryRepository;
 import com.catchtable.waiting.repository.WaitingEndHistoryRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.ApplicationEventPublisher;
@@ -43,6 +46,7 @@ public class OwnerWaitingService {
 
     private final WaitingRepository waitingRepository;
     private final WaitingEndHistoryRepository historyRepository;
+    private final WaitingDeferHistoryRepository deferHistoryRepository;
     private final StoreRepository storeRepository;
     private final StoreTableRepository storeTableRepository;
     private final MemberRepository memberRepository;
@@ -53,7 +57,7 @@ public class OwnerWaitingService {
     public List<OwnerWaitingResponse> getWaitings(Long memberId, Long storeId) {
         requireOwnerStore(memberId, storeId);
         List<StoreTable> tables = storeTableRepository.findAllByStoreIdOrderByTableNumberAsc(storeId);
-        return waitingRepository.findAllByStoreIdAndWaitingDateAndStatusInOrderByWaitNumberAsc(
+        return waitingRepository.findAllByStoreIdAndWaitingDateAndStatusInOrderByQueueOrderAsc(
                         storeId, LocalDate.now(clock), WaitingStatus.ACTIVE).stream()
                 .map(waiting -> OwnerWaitingResponse.from(waiting, tables))
                 .toList();
@@ -143,6 +147,34 @@ public class OwnerWaitingService {
             eventPublisher.publishEvent(new WaitingQueueChangedEvent(store.getId(), waiting.getWaitingDate()));
         }
         return WaitingEnterResponse.from(waiting);
+    }
+
+    // 매장 → 웨이팅 순서로 잠금 (신청과 동일)
+    @Transactional
+    public WaitingDeferResponse deferWaiting(Long memberId, Long waitingId) {
+        requireOwner(memberId);
+        Long storeId = waitingRepository.findStoreIdByIdAndOwnerId(waitingId, memberId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.WAITING_NOT_FOUND));
+        Store store = storeRepository.findByIdForUpdate(storeId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.WAITING_NOT_FOUND));
+        Waiting waiting = waitingRepository.findByIdAndOwnerIdForUpdate(waitingId, memberId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.WAITING_NOT_FOUND));
+        waiting.validateDeferrable();
+        Waiting next = waitingRepository.findActiveBehindForUpdate(
+                        storeId, waiting.getWaitingDate(), waiting.getQueueOrder()).stream()
+                .findFirst()
+                .orElseThrow(() -> new BusinessException(ErrorCode.WAITING_NOT_DEFERRABLE));
+        int beforePosition = (int) waitingRepository.countByStoreIdAndWaitingDateAndStatusInAndQueueOrderLessThan(
+                storeId, waiting.getWaitingDate(), WaitingStatus.ACTIVE, waiting.getQueueOrder()) + 1;
+
+        WaitingDeferHistory history = deferHistoryRepository.save(
+                waiting.deferBehind(next, beforePosition, memberId, OffsetDateTime.now(clock)));
+
+        eventPublisher.publishEvent(new CustomerNotificationEvent(
+                store.getOwner().getId(), NotificationType.WAITING_CHANGED, storeId,
+                "대기 목록이 변경되었습니다."));
+        eventPublisher.publishEvent(new WaitingQueueChangedEvent(storeId, waiting.getWaitingDate()));
+        return WaitingDeferResponse.of(waiting, history);
     }
 
     private void publishTermination(Waiting waiting, NotificationType type, String message) {

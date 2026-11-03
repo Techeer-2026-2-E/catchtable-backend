@@ -5,6 +5,7 @@ import com.catchtable.waiting.dto.OwnerWaitingCancelRequest;
 import com.catchtable.waiting.dto.OwnerWaitingNoShowRequest;
 import com.catchtable.waiting.dto.OwnerWaitingResponse;
 import com.catchtable.waiting.dto.WaitingCallResponse;
+import com.catchtable.waiting.dto.WaitingDeferResponse;
 import com.catchtable.waiting.dto.WaitingPolicyRequest;
 import com.catchtable.waiting.dto.WaitingPolicyResponse;
 import com.catchtable.waiting.dto.WaitingEnterResponse;
@@ -82,6 +83,12 @@ public class OwnerWaitingController {
     @PostMapping("/waitings/{waitingId}/call")
     public WaitingCallResponse callWaiting(@LoginMember Long memberId, @PathVariable Long waitingId) {
         return ownerWaitingService.callWaiting(memberId, waitingId);
+    }
+
+    /** 순번 연기 (바로 뒤 진행 중 팀과 맞바꿈, 최대 2회) */
+    @PostMapping("/waitings/{waitingId}/defer")
+    public WaitingDeferResponse deferWaiting(@LoginMember Long memberId, @PathVariable Long waitingId) {
+        return ownerWaitingService.deferWaiting(memberId, waitingId);
     }
 
     @PostMapping("/waitings/{waitingId}/enter")
