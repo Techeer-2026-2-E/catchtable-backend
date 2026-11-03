@@ -19,6 +19,7 @@ public class NotificationService {
 
     private static final long TIMEOUT_MILLIS=30*60*1000L;
     private final SseEmitterRepository emitterRepository;
+    private final NotificationSettingService settingService;
 
     public SseEmitter subscribe(Long memberId)
     {
@@ -35,6 +36,10 @@ public class NotificationService {
     }
     public void send(CustomerNotificationEvent event)
     {
+        // 수신 거부한 선택 알림 제외
+        if (!settingService.allows(event.memberId(), event.type())) {
+            return;
+        }
         NotificationMessage message=NotificationMessage.from(event, LocalDateTime.now());
         for(SseEmitter emitter:emitterRepository.findAllByMemberId(event.memberId()))
         {
