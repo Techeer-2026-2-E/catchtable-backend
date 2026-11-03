@@ -40,3 +40,23 @@ V20/V25는 각각 기존 SHA-256 `5a2d0f56b27320836841e258607edc86c239218cbc8eae
 ## 남은 범위
 
 공유 V20 적용 이력과 기존 DB upgrade 전략은 계속 UNKNOWN/차단이다. 기능33 예약금 설정과 prepare는 다른 담당 범위다. 실제 Toss·프런트 코드/화면·JWT·배포는 확인하지 않았다. 새 복구 작업, 다른 결제 상태, 인원별 예약금/차액 결제는 추가하지 않았다. 상위 #68의 외부 완료 여부와 source PR CI·게시·머지는 조정자가 별도로 확인한다.
+
+## 2026-11-03 후속 — 완료된 환불의 늦은 성공 응답
+
+기준은 `origin/dev@54119eb3c236f24b4a77108ca0c1c19d51abc3d1`이며 [현행 계약](../docs/frontend/feature-60-refund-execution.md#2026-11-03-현재-계약)과 [기능60 명세](https://app.notion.com/3d548d76fa3281369431cf4bd1c07a00)를 대조했다. 기존 실행·재시작·계산·예상액·취소·공통 환불·환불 재확인 관련 146개가 먼저 통과했다. 이미 보장된 정책·동결·복구는 중복 구현하지 않았다.
+
+같은 키의 동시 환불 중 한 성공 응답이 늦어지면, 다른 요청이 해당 키의 3,000원 환불을 먼저 완료한 뒤 다른 키로 2,000원을 추가 환불할 수 있다. 이후 늦은 응답의 누적 3,000원을 다시 반영하면 현재 누적 5,000원보다 작아 `INVALID_INPUT`이 발생했다. 신규 `lateCompletedResponseReplaysTheFirstResultAfterAnotherRefund` 한 개로 수정 전 실패를 재현했다.
+
+`PaymentRefundService`의 성공 결과 반영에서 기존 `completedResult`를 먼저 확인한다. 같은 결제 행 잠금 안에서 이미 완료된 요청이면 최초 결과를 반환하여 늦은 응답을 다시 적용하지 않는다. 호출자 두 곳인 예약 환불 실행과 공통 재확인은 기존 계약을 유지한다. 잠금 순서·PG 통신의 트랜잭션 경계·REQUESTED/UNKNOWN·예약 취소 의도·스키마·설정은 변경하지 않았다.
+
+검증 환경은 전용 일회용 PostgreSQL 16.15 컨테이너, loopback 자동 할당 포트의 빈 DB, Java 21.0.12.1이다. TCP `SELECT 1`과 시작 전 public 테이블 0개를 확인했다. Toss 키는 빈 값, URL은 `http://127.0.0.1:9`이며 fake/mock만 사용했다. 최종 실행은 다음 테스트 필터를 지정한 `./gradlew test --no-daemon --max-workers=2 --console=plain`이다.
+
+- `ReservationRefundExecutionTest` 42개(신규 1개 포함), `ReservationRefundRestartTest` 2개
+- `ReservationRefundCalculatorTest` 28개, `ReservationRefundPreviewTest` 32개, `ReservationCancellationRefundTest` 28개
+- `PaymentRefundServiceTest` 12개
+- `PaymentReconcileServiceTest`의 `reflectedUnknownRefundCompletes`, `missingUnknownRefundRetriesSameKey`, `expiredUnknownRefundFails` 3개
+- `PaymentIdempotencyConcurrencyTest`의 `concurrentSameKeyRefundExecutesOnce`, `concurrentDifferentKeyRefundsStayWithinLimit` 2개
+
+최종 **8클래스 149개, 실패·오류·건너뜀 0**이다. 신규 회귀는 최초 결과·완료 기록 불변, 누적 5,000원·결제 이력 2건, 예약·테이블 유지와 취소 SSE 없음도 확인한다. 이전 146개·수정 전 실패 1개를 최종 수에 더하지 않는다. 실행별 정확한 명령·전체 로그·XML·HTML·검증 입력 patch와 해시는 공통 Git 디렉터리의 `orca-artifacts/run_8fadb495b2f1/p2-refund-settlement/`에 보존했다. 마이그레이션 입력 전체의 SHA-256 동일성과 `git diff --check`를 확인한다.
+
+작업 도중 PR #235의 원격 병합을 확인했으나 이번 입력에는 가져오지 않았다. 해당 PR의 빈/깨진 HTTP 응답 분류와 이번 완료 응답 경합은 다른 원인·파일이며 이 수정은 PR #235에 의존하지 않는다. 통합자가 최신 dev에 필요한 로컬 커밋을 모아 전체 build를 수행한다. 이번 작업에서는 전체 build·CI·실제 기능33 공급자·실제 Toss·프런트·공유 DB·배포·외부 게시를 수행하지 않았으며 상위 #68 전체 완료를 주장하지 않는다.

@@ -143,6 +143,9 @@ public class PaymentRefundService {
         }
         // 외부 환불 성공 확인 후 누적액·결제 상태 확정
         return update(attempt, refund -> {
+            // 먼저 완료된 같은 키의 늦은 응답으로 후속 환불의 누적액을 다시 반영하지 않는다.
+            RefundResult completed = completedResult(refund);
+            if (completed != null) return completed;
             paymentService.applyTossPayment(attempt.paymentId(), toss, PaymentStatusSource.TOSS_CANCEL);
             refund.complete(refund.getPayment().getRefundedAmount(), now());
             return RefundResult.from(refund);
