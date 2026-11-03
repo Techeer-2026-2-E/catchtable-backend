@@ -33,6 +33,8 @@ import java.util.Objects;
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class Waiting extends BaseTimeEntity {
 
+    private static final int MAX_DEFER_COUNT = 2;
+
     // PK
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -59,6 +61,14 @@ public class Waiting extends BaseTimeEntity {
     // 대기번호
     @Column(name = "wait_number", nullable = false)
     private int waitNumber;
+
+    // 대기열 정렬 순서 (연기 시 변경, 대기번호는 고정)
+    @Column(name = "queue_order", nullable = false)
+    private int queueOrder;
+
+    // 순번 연기 횟수
+    @Column(name = "defer_count", nullable = false)
+    private int deferCount;
 
     // 상태
     @Enumerated(EnumType.STRING)
@@ -107,6 +117,7 @@ public class Waiting extends BaseTimeEntity {
         this.waitingDate = waitingDate;
         this.partyCount = partyCount;
         this.waitNumber = waitNumber;
+        this.queueOrder = waitNumber;
         this.status = WaitingStatus.WAITING; // 최초 상태: 대기
     }
 
@@ -163,6 +174,26 @@ public class Waiting extends BaseTimeEntity {
         // 재호출 시 응답 초기화
         respondedAt = null;
         arrivalIntent = null;
+    }
+
+    // 연기 가능 검사 (대기 중·최대 2회)
+    public void validateDeferrable() {
+        if (status != WaitingStatus.WAITING) {
+            throw new BusinessException(ErrorCode.WAITING_NOT_DEFERRABLE);
+        }
+        if (deferCount >= MAX_DEFER_COUNT) {
+            throw new BusinessException(ErrorCode.WAITING_DEFER_LIMIT_EXCEEDED);
+        }
+    }
+
+    // 바로 뒤 진행 중 팀과 순서 맞바꿈
+    public WaitingDeferHistory deferBehind(Waiting next, int beforePosition, Long actorId, OffsetDateTime now) {
+        validateDeferrable();
+        int order = queueOrder;
+        queueOrder = next.queueOrder;
+        next.queueOrder = order;
+        deferCount++;
+        return WaitingDeferHistory.record(this, beforePosition, beforePosition + 1, actorId, now);
     }
 
     // 방문 의사 응답
