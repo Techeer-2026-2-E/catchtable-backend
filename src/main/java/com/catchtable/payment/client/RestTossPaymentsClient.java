@@ -6,6 +6,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestClient;
+import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestClientResponseException;
 
 import java.nio.charset.StandardCharsets;
@@ -66,7 +67,11 @@ public class RestTossPaymentsClient implements TossPaymentsClient {
 
     private TossPaymentResponse execute(Supplier<TossPaymentResponse> request) {
         try {
-            return request.get();
+            TossPaymentResponse response = request.get();
+            if (response == null) {
+                throw new TossPaymentsUnknownResultException("Toss 응답 본문이 비어 있습니다.", null);
+            }
+            return response;
         } catch (ResourceAccessException exception) {
             throw new TossPaymentsUnknownResultException("Toss 응답을 받지 못했습니다.", exception);
         } catch (RestClientResponseException exception) {
@@ -75,6 +80,8 @@ public class RestTossPaymentsClient implements TossPaymentsClient {
                 throw new TossPaymentsUnknownResultException("Toss 처리 결과를 알 수 없습니다: " + error.code(), exception);
             }
             throw new TossPaymentsException(exception.getStatusCode().value(), error.code(), error.message());
+        } catch (RestClientException exception) {
+            throw new TossPaymentsUnknownResultException("Toss 응답을 해석하지 못했습니다.", exception);
         }
     }
 

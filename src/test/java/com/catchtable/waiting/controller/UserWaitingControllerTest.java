@@ -18,14 +18,21 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Import;
+import org.springframework.context.annotation.Primary;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
 
+import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -39,9 +46,21 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 // 현재 대기순번 조회 테스트 (앞 팀 수는 쿼리 결과가 핵심이라 실제 DB로 확인)
 @SpringBootTest
 @AutoConfigureMockMvc
+@Import(UserWaitingControllerTest.FixedTime.class)
+@DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 class UserWaitingControllerTest {
 
     private static final LocalDate TODAY = LocalDate.of(2030, 1, 10);
+
+    @TestConfiguration
+    static class FixedTime {
+        @Bean
+        @Primary
+        Clock testClock() {
+            // DB 저장 정밀도에 맞춰 OS별 현재 시각 정밀도 차이를 피한다.
+            return Clock.fixed(Instant.parse("2030-01-10T03:01:00.123456Z"), ZoneId.of("Asia/Seoul"));
+        }
+    }
 
     @Autowired MockMvc mockMvc;
     @Autowired WaitingRepository waitingRepository;
@@ -169,19 +188,24 @@ class UserWaitingControllerTest {
         getWaiting(me, mine.getId())
                 .andExpect(jsonPath("$.status").value("WAITING"))
                 .andExpect(jsonPath("$.calledAt").doesNotExist())
-                .andExpect(jsonPath("$.expiresAt").doesNotExist());
+                .andExpect(jsonPath("$.expiresAt").doesNotExist())
+                .andExpect(jsonPath("$.respondedAt").doesNotExist())
+                .andExpect(jsonPath("$.arrivalIntent").doesNotExist());
     }
 
     @Test
     @DisplayName("호출 뒤 종료된 웨이팅은 호출 시각과 만료 시각을 숨긴다")
     void endedWaitingHasNoCallTimes() throws Exception {
         Waiting mine = saveCalledWaiting(me, 1);
+        respond(me, mine.getId()).andExpect(status().isOk());
         changeStatus(mine, WaitingStatus.NO_SHOW);
 
         getWaiting(me, mine.getId())
                 .andExpect(jsonPath("$.status").value("NO_SHOW"))
                 .andExpect(jsonPath("$.calledAt").doesNotExist())
-                .andExpect(jsonPath("$.expiresAt").doesNotExist());
+                .andExpect(jsonPath("$.expiresAt").doesNotExist())
+                .andExpect(jsonPath("$.respondedAt").doesNotExist())
+                .andExpect(jsonPath("$.arrivalIntent").doesNotExist());
     }
 
     @Test
@@ -216,16 +240,29 @@ class UserWaitingControllerTest {
     void respondToCallRecordsArrivalIntent() throws Exception {
         Waiting mine = saveCalledWaiting(me, 1);
 
-        respond(me, mine.getId())
+        String first = respond(me, mine.getId())
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.waitingId").value(mine.getId()))
                 .andExpect(jsonPath("$.status").value("CALLED"))
                 .andExpect(jsonPath("$.arrivalIntent").value("COMING"))
                 .andExpect(jsonPath("$.respondedAt").isNotEmpty())
-                .andExpect(jsonPath("$.expiresAt").isNotEmpty());
-        respond(me, mine.getId())
+                .andExpect(jsonPath("$.expiresAt").isNotEmpty())
+                .andReturn().getResponse().getContentAsString();
+        String retried = respond(me, mine.getId())
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.arrivalIntent").value("COMING"));
+                .andExpect(jsonPath("$.status").value("CALLED"))
+                .andExpect(jsonPath("$.arrivalIntent").value("COMING"))
+                .andReturn().getResponse().getContentAsString();
+        String detail = getWaiting(me, mine.getId())
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("CALLED"))
+                .andExpect(jsonPath("$.arrivalIntent").value("COMING"))
+                .andExpect(jsonPath("$.respondedAt").isNotEmpty())
+                .andReturn().getResponse().getContentAsString();
+
+        assertThat(instantAt(retried, "respondedAt")).isEqualTo(instantAt(first, "respondedAt"));
+        assertThat(instantAt(detail, "respondedAt")).isEqualTo(instantAt(first, "respondedAt"));
+        assertThat(instantAt(detail, "expiresAt")).isEqualTo(instantAt(first, "expiresAt"));
     }
 
     @Test

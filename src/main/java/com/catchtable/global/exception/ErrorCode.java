@@ -43,6 +43,7 @@ public enum ErrorCode {
     WAITING_NOT_CALLABLE(HttpStatus.CONFLICT, "호출할 수 없는 웨이팅입니다."),
     WAITING_NOT_RESPONDABLE(HttpStatus.CONFLICT, "응답할 수 없는 웨이팅입니다."),
     WAITING_NOT_ENTERABLE(HttpStatus.CONFLICT, "입장 처리할 수 없는 웨이팅입니다."),
+    WAITING_NOT_RECALLABLE(HttpStatus.CONFLICT, "호출 재전송할 수 없는 웨이팅입니다."),
     WAITING_NOT_DEFERRABLE(HttpStatus.CONFLICT, "순번을 연기할 수 없는 웨이팅입니다."),
     WAITING_DEFER_LIMIT_EXCEEDED(HttpStatus.CONFLICT, "순번은 최대 2회까지 연기할 수 있습니다."),
     WAITING_CLOSED(HttpStatus.CONFLICT, "현재 웨이팅 접수를 받지 않는 매장입니다."),

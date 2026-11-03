@@ -126,7 +126,8 @@ class UserPaymentControllerTest {
                 .andExpect(jsonPath("$.refunds[0].status").value("COMPLETED"))
                 .andExpect(jsonPath("$.refunds[0].cancelReason").value("일정 변경"))
                 .andExpect(jsonPath("$.refunds[0].refundedAt").exists())
-                .andExpect(jsonPath("$.refunds[1].refundId").value(second));
+                .andExpect(jsonPath("$.refunds[1].refundId").value(second))
+                .andExpect(jsonPath("$.receiptNotice").value("테스트 결제입니다. 실제 영수증이나 매출 증빙이 아닙니다."));
     }
 
     @Test

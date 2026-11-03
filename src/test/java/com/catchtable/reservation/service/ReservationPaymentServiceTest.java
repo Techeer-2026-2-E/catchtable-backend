@@ -47,6 +47,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
@@ -60,6 +61,7 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -203,11 +205,20 @@ class ReservationPaymentServiceTest {
     }
 
     @ParameterizedTest
-    @ValueSource(ints = {4, 5})
-    void expiredReadyBeforeApprovalCannotCallTossOrExtendItsDeadline(int minutes) {
-        now.set(NOW.plusMinutes(minutes));
+    @ValueSource(longs = {0, 1000})
+    void expiredReadyBeforeApprovalCannotCallTossOrExtendItsDeadline(long nanosAfterExpiry) throws Exception {
+        now.set(NOW.plusMinutes(4).plusNanos(nanosAfterExpiry));
         assertFailure(() -> service.confirm(memberId, request()), ErrorCode.INVALID_PAYMENT_STATUS);
         assertThat(fenced()).isFalse();
+        for (int attempt = 0; attempt < 2; attempt++) {
+            mvc.perform(delete("/api/user/reservations/holds/{id}", reservationId).header("X-Member-Id", memberId))
+                    .andExpect(status().isNoContent());
+        }
+        mvc.perform(get("/api/user/reservations/holds/{id}", reservationId).header("X-Member-Id", memberId))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.status").value("EXPIRED"))
+                .andExpect(jsonPath("$.expiresAt").value(NOW.plusMinutes(4).toInstant().toString()))
+                .andExpect(jsonPath("$.serverTime").value(now.get().format(DateTimeFormatter.ISO_OFFSET_DATE_TIME)))
+                .andExpect(jsonPath("$.remainingSeconds").value(0));
         assertThat(reservations.getHold(memberId, reservationId).status()).isEqualTo(ReservationStatus.EXPIRED);
         assertThat(reservations.getHold(memberId, reservationId).expiresAt().toInstant())
                 .isEqualTo(NOW.plusMinutes(4).toInstant());
@@ -215,8 +226,12 @@ class ReservationPaymentServiceTest {
     }
 
     @Test
-    void releasedHoldWinsBeforeTheApprovalFenceAndNeverCallsToss() {
-        reservations.releaseHold(memberId, reservationId);
+    void releasedHoldWinsBeforeTheApprovalFenceAndNeverCallsToss() throws Exception {
+        now.set(NOW.plusMinutes(4).minusNanos(1000));
+        for (int attempt = 0; attempt < 2; attempt++) {
+            mvc.perform(delete("/api/user/reservations/holds/{id}", reservationId).header("X-Member-Id", memberId))
+                    .andExpect(status().isNoContent());
+        }
         assertFailure(() -> service.confirm(memberId, request()), ErrorCode.INVALID_PAYMENT_STATUS);
         assertThat(state()).isEqualTo("CANCELLED");
         verifyNoInteractions(toss);
@@ -297,8 +312,15 @@ class ReservationPaymentServiceTest {
     }
 
     @Test
-    void startsOneMicrosecondBeforeExpiryAndConfirmsTheSameSlotAfterExpiry() {
+    void startsOneMicrosecondBeforeExpiryAndConfirmsTheSameSlotAfterExpiry() throws Exception {
         now.set(NOW.plusMinutes(4).minusNanos(1000));
+        for (int attempt = 0; attempt < 2; attempt++) {
+            mvc.perform(get("/api/user/reservations/holds/{id}", reservationId).header("X-Member-Id", memberId))
+                    .andExpect(status().isOk()).andExpect(jsonPath("$.status").value("PENDING_PAYMENT"))
+                    .andExpect(jsonPath("$.expiresAt").value(NOW.plusMinutes(4).toInstant().toString()))
+                    .andExpect(jsonPath("$.serverTime").value(now.get().format(DateTimeFormatter.ISO_OFFSET_DATE_TIME)))
+                    .andExpect(jsonPath("$.remainingSeconds").value(0));
+        }
         when(toss.confirm(anyString(), anyString(), anyLong(), anyString())).thenAnswer(call -> {
             now.set(NOW.plusMinutes(10));
             return response("DONE");
@@ -562,16 +584,31 @@ class ReservationPaymentServiceTest {
 
     @ParameterizedTest
     @ValueSource(strings = {"CANCELLED", "EXPIRED"})
-    void aLateSuccessCannotResurrectATerminalHoldAndIsMarkedForRefund(String terminal) {
+    void aLateSuccessCannotResurrectATerminalHoldAndIsMarkedForRefund(String terminal) throws Exception {
         when(toss.confirm(anyString(), anyString(), anyLong(), anyString())).thenReturn(response("IN_PROGRESS"));
         assertFailure(() -> service.confirm(memberId, request()), ErrorCode.PAYMENT_RECONCILIATION_REQUIRED);
+        var original = reservations.getHold(memberId, reservationId);
         jdbc.update("UPDATE reservation SET status = ? WHERE id = ?", terminal, reservationId);
+        now.set(NOW.plusMinutes(5));
+        var replacement = reservations.createHold(memberId,
+                new CreateReservationRequest(storeId, original.reservationStartAt(), 2));
         when(toss.getByOrderId(orderId)).thenReturn(response("DONE"));
 
+        mvc.perform(post("/api/user/payments/{paymentId}/sync", paymentId).header("X-Member-Id", memberId))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.reservationId").value(reservationId))
+                .andExpect(jsonPath("$.refundRequired").value(true));
         reconciler.reconcile(paymentId);
-        reconciler.reconcile(paymentId);
+        assertFailure(() -> service.confirm(memberId, request()), ErrorCode.PAYMENT_RECONCILIATION_REQUIRED);
+        mvc.perform(delete("/api/user/reservations/holds/{id}", reservationId).header("X-Member-Id", memberId))
+                .andExpect(status().isNoContent());
 
         assertThat(state()).isEqualTo(terminal);
+        assertThat(replacement.tableId()).isEqualTo(original.tableId());
+        var stillHeld = reservations.getHold(memberId, replacement.holdId());
+        assertThat(stillHeld.status()).isEqualTo(ReservationStatus.PENDING_PAYMENT);
+        assertThat(stillHeld.tableId()).isEqualTo(original.tableId());
+        assertThat(stillHeld.reservationStartAt()).isAtSameInstantAs(original.reservationStartAt());
+        assertThat(stillHeld.expiresAt()).isAtSameInstantAs(replacement.expiresAt());
         assertThat(confirmedAt()).isNull();
         assertThat(fenced()).isFalse();
         assertThat(jdbc.queryForObject("SELECT refund_required_at IS NOT NULL FROM payment WHERE id = ?",

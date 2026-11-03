@@ -1,5 +1,15 @@
 # 기능61 — 환불 예상액 조회 프런트 연동
 
+## 2026-11-03 조회 시점의 환불 예상액 확인
+
+현재 코드 `f12ebb2`의 `GET /api/user/reservations/{reservationId}/refund-preview`는 조회할 때마다 서버 `Clock`으로 환불 비율·추가 환불 가능액·설명을 계산한다. 예약일이 가까워져 취소 수수료가 늘어나는 정책이면 해당 조회 시점의 `refundRate`, `refundableAmount`, `nonRefundableAmount`, `policyDescription`, `calculatedAt`을 사용한다. `paidAmount`는 최초 결제액이며, 현재 매장 설정으로 기존 예약의 금액·정책을 덮어쓰지 않는다.
+
+본인 소유·시작 전·미입장 `CONFIRMED` 예약만 조회할 수 있다. 예약 전 매장별 금액·환불 기준 조회는 이 API의 범위가 아니며 기능33의 실제 설정 원본과 고객 조회가 별도로 필요하다.
+
+이번에는 업무 계산 로직을 변경하지 않고 같은 예약을 Asia/Seoul 자정 직전·직후 조회하는 회귀 테스트를 추가했다. 기존 1,000원 환불이 있는 10,000원 유연 정책 예약에서 추가 환불 가능액이 9,000원에서 4,000원으로 바뀌고, 최초 금액·기환불액이 유지되며 외부 PG 호출이 없는지 확인했다. [이번 검증 기록](../../work-log/2026-11-03-customer-reservation-query.md)을 따른다. 아래 날짜별 dev 미구현·Draft·미머지와 실행 보류 기록은 당시 상태로 보존한다.
+
+## 이전 작성 기록
+
 - 확인일: 2026-10-28
 - 기능 이슈: [#67](https://github.com/Techeer-2026-2-E/catchtable-backend/issues/67)
 - 정본: [기능61](https://app.notion.com/p/3d548d76fa3281699f09e28ed2198911), [Notion API 초안](https://app.notion.com/p/0a448d76fa32827ab9d681efb3756196)

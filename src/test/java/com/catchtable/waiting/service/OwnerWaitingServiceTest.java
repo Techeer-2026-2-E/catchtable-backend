@@ -17,6 +17,7 @@ import com.catchtable.waiting.repository.WaitingEndHistoryRepository;
 import com.catchtable.waiting.repository.WaitingRepository;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
@@ -449,6 +450,32 @@ class OwnerWaitingServiceTest {
         assertBusinessFailure(() -> service.callWaiting(other.getId(), waiting.getId()), ErrorCode.WAITING_NOT_FOUND);
         assertBusinessFailure(() -> service.callWaiting(owner.getId(), -1L), ErrorCode.WAITING_NOT_FOUND);
         assertThat(waitingRepository.findById(waiting.getId()).orElseThrow().getStatus()).isEqualTo(WaitingStatus.WAITING);
+    }
+
+    @Test
+    @DisplayName("호출 재전송은 호출 알림만 1회씩 보내고 만료시각을 유지한다")
+    void recallSendsOnlyCallNotificationAndKeepsExpiry() throws Exception {
+        Waiting waiting = waiting(1, WaitingStatus.WAITING);
+        service.callWaiting(owner.getId(), waiting.getId());
+        Waiting called = waitingRepository.findById(waiting.getId()).orElseThrow();
+
+        var first = service.recallWaiting(owner.getId(), waiting.getId());
+        var second = service.recallWaiting(owner.getId(), waiting.getId());
+
+        assertThat(first.recallCount()).isEqualTo(1);
+        assertThat(second.recallCount()).isEqualTo(2);
+        assertThat(second.callCount()).isEqualTo(1);
+        assertThat(second.expiresAt().toInstant()).isEqualTo(called.getCallExpiresAt().toInstant());
+        Waiting recalled = waitingRepository.findById(waiting.getId()).orElseThrow();
+        assertThat(recalled.getStatus()).isEqualTo(WaitingStatus.CALLED);
+        assertThat(recalled.getRecallCount()).isEqualTo(2);
+        assertThat(recalled.getLastRecalledAt()).isNotNull();
+        assertThat(recalled.getCallCount()).isEqualTo(1);
+        assertThat(recalled.getCalledAt().toInstant()).isEqualTo(called.getCalledAt().toInstant());
+        assertThat(recalled.getCallExpiresAt().toInstant()).isEqualTo(called.getCallExpiresAt().toInstant());
+        // 호출: 점주 1·고객 2(호출·순번), 재전송: 고객 호출 알림 1회씩
+        verify(ownerEmitter, times(1)).send(any(SseEmitter.SseEventBuilder.class));
+        verify(customerEmitter, times(4)).send(any(SseEmitter.SseEventBuilder.class));
     }
 
     // 응답 알림 1회

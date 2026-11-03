@@ -109,6 +109,7 @@ class UserStoreControllerTest {
                 .andExpect(jsonPath("$.categoryName").value("양식"))
                 .andExpect(jsonPath("$.address").value("서울 강남구"))
                 .andExpect(jsonPath("$.waitingAvailable").value(true))
+                .andExpect(jsonPath("$.reservationEnabled").value(true))
                 .andExpect(jsonPath("$.businessHours", hasSize(2)))
                 .andExpect(jsonPath("$.businessHours[0].dayOfWeek").value("MONDAY"))
                 .andExpect(jsonPath("$.businessHours[1].dayOfWeek").value("SUNDAY"))

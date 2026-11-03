@@ -25,8 +25,10 @@ import org.springframework.web.server.ResponseStatusException;
 import java.sql.SQLException;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.List;
 
+import static org.hamcrest.Matchers.nullValue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
@@ -95,7 +97,27 @@ class ReservationControllerContractTest {
                                 }
                                 """))
                 .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.status").value("CONFIRMED"));
+                .andExpect(jsonPath("$.status").value("CONFIRMED"))
+                .andExpect(jsonPath("$.checkedInAt").value(nullValue()))
+                .andExpect(jsonPath("$.completedAt").value(nullValue()));
+    }
+
+    @Test
+    void customerDetailIncludesRecordedVisitAndCompletionTimes() throws Exception {
+        given(reservationService.getReservation(1L, 10L))
+                .willReturn(customerResponse(ReservationStatus.COMPLETED, null, null));
+
+        mockMvc.perform(get("/api/user/reservations/10").header("X-Member-Id", 1L))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("COMPLETED"))
+                .andExpect(jsonPath("$.checkedInAt").value(
+                        START_AT.plusMinutes(5).format(DateTimeFormatter.ISO_OFFSET_DATE_TIME)))
+                .andExpect(jsonPath("$.completedAt").value(
+                        START_AT.plusHours(2).plusSeconds(30).format(DateTimeFormatter.ISO_OFFSET_DATE_TIME)));
+
+        mockMvc.perform(get("/api/user/reservations/10"))
+                .andExpect(status().isUnauthorized());
+        verify(reservationService).getReservation(1L, 10L);
     }
 
     @Test
@@ -236,7 +258,9 @@ class ReservationControllerContractTest {
                 START_AT.minusDays(2),
                 cancelledAt,
                 cancellationActor,
-                cancellationReason
+                cancellationReason,
+                status == ReservationStatus.COMPLETED ? START_AT.plusMinutes(5) : null,
+                status == ReservationStatus.COMPLETED ? START_AT.plusHours(2).plusSeconds(30) : null
         );
     }
 

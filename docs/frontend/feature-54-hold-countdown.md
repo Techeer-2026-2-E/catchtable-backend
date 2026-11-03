@@ -1,5 +1,7 @@
 # 기능54 — 테이블 선점 만료시간 표시 프런트 연동
 
+> 2026-11-03 현행 만료·승인 진행 중 0초 처리와 최신 프런트 호출부는 [기능10의 현재 계약](feature-10-deposit-payment.md#2026-11-03-현재-계약)을 따른다. 아래 날짜별 미연결·후보 표시는 당시 기록이다.
+
 - 확인일: 2026-10-27
 - 문서 작업 이슈: [#127](https://github.com/Techeer-2026-2-E/catchtable-backend/issues/127)
 - 명세: [기능54](https://app.notion.com/3d548d76fa3281a199abea9d67d1e616)

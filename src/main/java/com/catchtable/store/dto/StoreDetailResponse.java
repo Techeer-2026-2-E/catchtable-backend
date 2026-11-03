@@ -15,6 +15,7 @@ public record StoreDetailResponse (
         String phone,
         String imageUrl,
         boolean waitingAvailable,
+        boolean reservationEnabled,
         List<BusinessHourResponse> businessHours,   // 없는 요일은 휴무
         List<MenuResponse> menus
 ){
@@ -31,6 +32,7 @@ public record StoreDetailResponse (
                 store.getPhone(),
                 store.getImageUrl(),
                 store.isWaitingAvailable(),
+                store.getOwner() != null,
                 businessHours,
                 menus
         );

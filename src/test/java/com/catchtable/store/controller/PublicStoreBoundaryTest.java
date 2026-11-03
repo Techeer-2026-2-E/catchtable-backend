@@ -45,7 +45,8 @@ class PublicStoreBoundaryTest {
     @Test
     void publicStoreRemainsReadableButCannotBeConfigured() throws Exception {
         long store = store(null);
-        mvc.perform(get("/api/user/stores/{id}", store)).andExpect(status().isOk());
+        mvc.perform(get("/api/user/stores/{id}", store)).andExpect(status().isOk())
+                .andExpect(jsonPath("$.reservationEnabled").value(false));
         for (String resource : new String[]{"tables", "business-hours", "reservation-policy"}) {
             mvc.perform(get("/api/owner/stores/{id}/" + resource, store))
                     .andExpect(status().isNotFound()).andExpect(jsonPath("$.code").value("STORE_NOT_FOUND"));
@@ -84,6 +85,9 @@ class PublicStoreBoundaryTest {
                 """, store, date.getDayOfWeek().getValue());
         long menu = jdbc.queryForObject("INSERT INTO menu(store_id, name, price) VALUES (?, 'menu', 1000) RETURNING id",
                 Long.class, store);
+
+        mvc.perform(get("/api/user/stores/{id}", store)).andExpect(status().isOk())
+                .andExpect(jsonPath("$.reservationEnabled").value(false));
 
         mvc.perform(patch("/api/owner/stores/{id}/tables/{table}", store, table)
                         .contentType(MediaType.APPLICATION_JSON).content("{\"capacity\":6}"))

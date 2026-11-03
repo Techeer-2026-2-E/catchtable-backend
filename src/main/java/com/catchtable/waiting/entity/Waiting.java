@@ -98,6 +98,14 @@ public class Waiting extends BaseTimeEntity {
     @Column(name = "call_count", nullable = false)
     private int callCount;
 
+    // 호출 재전송 횟수
+    @Column(name = "recall_count", nullable = false)
+    private int recallCount;
+
+    // 마지막 재전송 시각
+    @Column(name = "last_recalled_at")
+    private OffsetDateTime lastRecalledAt;
+
     // 응답 시각
     @Column(name = "responded_at")
     private OffsetDateTime respondedAt;
@@ -174,6 +182,15 @@ public class Waiting extends BaseTimeEntity {
         // 재호출 시 응답 초기화
         respondedAt = null;
         arrivalIntent = null;
+    }
+
+    // 호출 재전송 (호출 정보·만료시각 유지)
+    public void recall(OffsetDateTime now) {
+        if (status != WaitingStatus.CALLED || callExpiresAt == null || !now.isBefore(callExpiresAt)) {
+            throw new BusinessException(ErrorCode.WAITING_NOT_RECALLABLE);
+        }
+        recallCount++;
+        lastRecalledAt = now;
     }
 
     // 연기 가능 검사 (대기 중·최대 2회)

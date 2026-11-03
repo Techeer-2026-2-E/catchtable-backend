@@ -13,6 +13,7 @@ import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMock
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.boot.test.mock.mockito.SpyBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.context.annotation.Primary;
@@ -23,8 +24,10 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.Clock;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -44,6 +47,7 @@ class ReservationRefundPreviewTest {
     @Autowired private ReservationService service;
     @Autowired private MockMvc mvc;
     @MockBean private TossPaymentsClient toss;
+    @SpyBean private Clock clock;
 
     private PaymentTestData data;
     private Long memberId;
@@ -82,6 +86,38 @@ class ReservationRefundPreviewTest {
         assertThat(changed.policyType().name()).isEqualTo("FLEXIBLE");
         assertThat(changed.refundRate()).isEqualTo(100);
         assertThat(changed.refundableAmount()).isEqualTo(9_001);
+        verifyNoInteractions(toss);
+    }
+
+    @Test
+    void recalculatesTheSameReservationsRefundAtTheSeoulDateBoundary() throws Exception {
+        Long reservationId = reservation(10_000L, "FLEXIBLE", true);
+        Long paymentId = data.payment(memberId, reservationId, "PARTIAL_REFUNDED", 1_000);
+        OffsetDateTime beforeMidnight = NOW.minusSeconds(1);
+        doReturn(beforeMidnight.toInstant()).when(clock).instant();
+
+        mvc.perform(get(path(reservationId)).header("X-Member-Id", memberId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.paidAmount").value(10_000))
+                .andExpect(jsonPath("$.policyType").value("FLEXIBLE"))
+                .andExpect(jsonPath("$.calculatedAt").value(
+                        beforeMidnight.format(DateTimeFormatter.ISO_OFFSET_DATE_TIME)))
+                .andExpect(jsonPath("$.refundRate").value(100))
+                .andExpect(jsonPath("$.refundableAmount").value(9_000));
+
+        doReturn(NOW.toInstant()).when(clock).instant();
+        mvc.perform(get(path(reservationId)).header("X-Member-Id", memberId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.paidAmount").value(10_000))
+                .andExpect(jsonPath("$.policyType").value("FLEXIBLE"))
+                .andExpect(jsonPath("$.calculatedAt").value(NOW.format(DateTimeFormatter.ISO_OFFSET_DATE_TIME)))
+                .andExpect(jsonPath("$.refundRate").value(50))
+                .andExpect(jsonPath("$.refundableAmount").value(4_000));
+
+        assertThat(jdbc.queryForObject("SELECT deposit_amount_snapshot FROM reservation WHERE id = ?",
+                Long.class, reservationId)).isEqualTo(10_000);
+        assertThat(jdbc.queryForObject("SELECT refunded_amount FROM payment WHERE id = ?",
+                Long.class, paymentId)).isEqualTo(1_000);
         verifyNoInteractions(toss);
     }
 

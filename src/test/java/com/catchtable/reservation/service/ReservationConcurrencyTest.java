@@ -32,9 +32,11 @@ class ReservationConcurrencyTest {
     private ReservationService reservationService;
 
     @ParameterizedTest
-    @CsvSource({"false,false", "true,true", "true,false"})
+    @CsvSource({"false,false,false", "true,true,false", "true,false,false",
+            "false,false,true", "true,true,true", "true,false,true"})
     @Timeout(15)
-    void onlyOneConcurrentRequestCanReserveTheLastTable(boolean firstHold, boolean secondHold) throws Exception {
+    void onlyOneConcurrentRequestCanReserveTheLastTable(boolean firstHold, boolean secondHold,
+                                                       boolean expiredHold) throws Exception {
         String suffix = UUID.randomUUID().toString();
         Long ownerId = insertMember("owner-" + suffix + "@example.com", "OWNER");
         Long customerId = insertMember("customer-" + suffix + "@example.com", "CUSTOMER");
@@ -62,6 +64,13 @@ class ReservationConcurrencyTest {
                 .withSecond(0)
                 .withNano(0);
         CreateReservationRequest request = new CreateReservationRequest(storeId, startAt, 4);
+        if (expiredHold) {
+            Long previousId = reservationService.createHold(customerId, request).holdId();
+            jdbcTemplate.update("""
+                    UPDATE reservation SET requested_at = requested_at - INTERVAL '10 minutes',
+                        hold_expires_at = hold_expires_at - INTERVAL '10 minutes' WHERE id = ?
+                    """, previousId);
+        }
         CountDownLatch ready = new CountDownLatch(2);
         CountDownLatch start = new CountDownLatch(1);
         ExecutorService executor = Executors.newFixedThreadPool(2);
@@ -95,7 +104,10 @@ class ReservationConcurrencyTest {
             assertThat((first.get() ? 1 : 0) + (second.get() ? 1 : 0)).isEqualTo(1);
             assertThat(jdbcTemplate.queryForObject(
                     "SELECT count(*) FROM reservation WHERE store_id = ?", Long.class, storeId
-            )).isEqualTo(1L);
+            )).isEqualTo(expiredHold ? 2L : 1L);
+            assertThat(jdbcTemplate.queryForObject(
+                    "SELECT count(*) FROM reservation WHERE store_id = ? AND status = 'EXPIRED'", Long.class, storeId
+            )).isEqualTo(expiredHold ? 1L : 0L);
         } finally {
             executor.shutdownNow();
             jdbcTemplate.update("DELETE FROM reservation WHERE store_id = ?", storeId);

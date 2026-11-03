@@ -1,5 +1,30 @@
 # 기능10 — 예약금 가결제 프런트 연동
 
+## 2026-11-03 현재 계약
+
+기준은 [백엔드 dev 5db45f0](https://github.com/Techeer-2026-2-E/catchtable-backend/commit/5db45f057fb593a71e6d28b787ba65ceff1f7375)다. prepare·승인·재확인·환불 실행과 예약 취소 정산은 dev에 반영됐다. 아래 날짜별 미구현·Draft·미머지 표시는 당시 기록으로 보존한다.
+
+**기능33의 실제 예약금 설정 공급자는 아직 없다.** 기본 공개 실행은 기존 무료 즉시확정·일반 선점이며, 일반 선점을 prepare로 유료 전환하면 `409 PAYMENT_MISMATCH`다. 임의 금액·정책으로 원본을 보충하지 않는다. 설정 저장·API·공급자는 기능33 담당 범위로 유지한다.
+
+| 흐름 | 현재 요청·응답과 화면 처리 |
+| --- | --- |
+| 선점 | `POST /api/user/reservations/holds`는 `X-Member-Id`와 기존 생성 본문으로 201을 반환한다. 본인 `GET`은 최초 `expiresAt`을 유지하고 `serverTime`·`remainingSeconds`를 제공한다. `DELETE` 성공·반복 해제는 204다. |
+| 결제 준비 | `POST /api/user/payments/prepare`, 본문은 `holdId`다. 저장된 유효 유료 선점만 신규 201·동일 READY 재사용 200이며 주문·금액·원래 5분을 유지한다. |
+| 승인·재확인 | `POST /api/user/payments/confirm`에 prepare의 `orderId`·`amount`와 결제창 인증 후 받은 `paymentKey`를 보낸다. 서버가 검증한 DONE만 예약을 확정한다. 결제 상세 GET과 본인 `POST /api/user/payments/{paymentId}/sync`로 결과를 확인한다. |
+| 만료·반환 | 신규 준비·승인은 최초 기한 안에서만 시작한다. 승인 진행·결과 불명은 0초와 PENDING_PAYMENT가 공존하므로 실패 처리·자리 반환·새 결제를 시작하지 않는다. 확인된 실패·취소 또는 미승인 만료 뒤 반환된 자리를 재배정한다. |
+| 환불 예상 | 본인 `GET /api/user/reservations/{reservationId}/refund-preview`의 `refundableAmount`는 현재 추가 환불 예상액이다. 조회 성공을 환불 실행으로 해석하지 않는다. |
+| 돈만 환불 | 본인 `POST /api/user/payments/{paymentId}/cancel`은 필수 `Idempotency-Key`·사유와 선택 양수 금액을 받는다. 돈 환불만으로 예약을 취소하지 않는다. 실행·취소 계약은 [기능60의 현재 계약](feature-60-refund-execution.md#2026-11-03-현재-계약)을 따른다. |
+
+시각은 오프셋을 포함한 같은 시간축으로 비교한다. 남은 초는 내림한 값이므로 만료 직전에도 0일 수 있다. 화면의 신규 결제 버튼은 0초에 차단하되, 이미 시작한 승인 결과는 별도로 확인한다. 재조회·prepare 재사용으로 기한을 연장하지 않는다.
+
+### 확인한 프런트 호출부와 남은 연결
+
+[프런트 dev 015f333](https://github.com/Techeer-2026-2-E/catchtable-frontend/commit/015f333aa2b2d4230560d69013136190b5ea2c87)의 [reservationApi](https://github.com/Techeer-2026-2-E/catchtable-frontend/blob/015f333aa2b2d4230560d69013136190b5ea2c87/src/features/reservation/api/reservationApi.ts)는 즉시확정 생성·조회·본문 없는 취소를 제공한다. 예약 상태 타입에는 PENDING_PAYMENT·EXPIRED가 반영돼 있다. 확인한 예약 API·화면에는 선점·prepare·confirm·환불 예상/실행·타이머 연결이 없다.
+
+고객과 [점주 취소 호출](https://github.com/Techeer-2026-2-E/catchtable-frontend/blob/015f333aa2b2d4230560d69013136190b5ea2c87/src/features/owner-reservation/api/ownerReservationApi.ts)은 환불용 멱등키를 보내지 않는다. [공통 클라이언트](https://github.com/Techeer-2026-2-E/catchtable-frontend/blob/015f333aa2b2d4230560d69013136190b5ea2c87/src/shared/lib/axios.ts)는 회원 헤더만 추가한다. 양수 환불이 필요한 예약 취소는 키를 연결하기 전까지 기존 409 보호가 유지된다. 무료 취소 계약은 유지한다.
+
+이번에는 전용 로컬 PostgreSQL16·fake/loopback과 실제 로컬 HTTP로 백엔드 계약을 확인했다. 프런트 소스는 읽기만 했으며 화면·실제 Toss·공유 DB·배포는 검증하지 않았다. 명령·결과·남은 범위는 [작업 기록](../../work-log/2026-11-03-phase2-local-verification.md)을 따른다.
+
 ## 2026-10-30 테스트 결제 환경 준비
 
 관련: [환경 안내 #225](https://github.com/Techeer-2026-2-E/catchtable-backend/issues/225), [공유 DB 점검 #224](https://github.com/Techeer-2026-2-E/catchtable-backend/issues/224), [상위 #65](https://github.com/Techeer-2026-2-E/catchtable-backend/issues/65).
