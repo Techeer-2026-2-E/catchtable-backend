@@ -8,6 +8,7 @@ import com.catchtable.payment.client.TossPaymentResponse;
 import com.catchtable.payment.client.TossPaymentsClient;
 import com.catchtable.payment.client.TossPaymentsException;
 import com.catchtable.payment.client.TossPaymentsUnknownResultException;
+import com.catchtable.payment.dto.RefundResult;
 import com.catchtable.payment.service.PaymentRefundService;
 import com.catchtable.payment.service.PaymentReconcileService;
 import com.catchtable.reservation.dto.OwnerReservationUpdateRequest;
@@ -403,6 +404,43 @@ class ReservationRefundExecutionTest {
                 .isEqualTo(1);
         verify(emitter, times(1)).send(any(SseEmitter.SseEventBuilder.class));
         assertThat(jdbc.queryForObject("SELECT refunded_amount FROM payment WHERE id = ?", Long.class, paymentId)).isEqualTo(5000);
+    }
+
+    @Test
+    @Timeout(25)
+    void lateCompletedResponseReplaysTheFirstResultAfterAnotherRefund() throws Exception {
+        paid("FLEXIBLE", 1, 0);
+        CountDownLatch entered = new CountDownLatch(1), release = new CountDownLatch(1);
+        when(toss.cancel(anyString(), eq(3000L), anyString(), eq("first"))).thenAnswer(call -> {
+            entered.countDown();
+            assertThat(release.await(10, TimeUnit.SECONDS)).isTrue();
+            return response(10000, 3000);
+        }).thenAnswer(call -> response(10000, 3000));
+        when(toss.cancel(anyString(), eq(2000L), anyString(), eq("second")))
+                .thenAnswer(call -> response(10000, 5000));
+        try (var executor = Executors.newSingleThreadExecutor()) {
+            var delayed = executor.submit(() -> executions.refund(memberId, paymentId, "first", "사유", 3000L));
+            assertThat(entered.await(10, TimeUnit.SECONDS)).isTrue();
+            RefundResult first;
+            Map<String, Object> completed;
+            try {
+                first = executions.refund(memberId, paymentId, "first", "사유", 3000L);
+                completed = jdbc.queryForMap("SELECT * FROM payment_refund WHERE payment_id = ? AND idempotency_key = 'first'", paymentId);
+                clock.set(NOW.plusSeconds(1));
+                assertThat(executions.refund(memberId, paymentId, "second", "사유", 2000L).totalRefundedAmount())
+                        .isEqualTo(5000);
+            } finally { release.countDown(); }
+            assertThat(delayed.get(10, TimeUnit.SECONDS)).isEqualTo(first);
+            assertThat(jdbc.queryForMap("SELECT * FROM payment_refund WHERE payment_id = ? AND idempotency_key = 'first'", paymentId))
+                    .isEqualTo(completed);
+        }
+        assertThat(jdbc.queryForObject("SELECT refunded_amount FROM payment WHERE id = ?", Long.class, paymentId))
+                .isEqualTo(5000);
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM payment_status_history WHERE payment_id = ?", Integer.class, paymentId))
+                .isEqualTo(2);
+        assertThat(requestCount()).isEqualTo(2);
+        assertThat(fenced()).isFalse();
+        assertPreserved();
     }
 
     @Test
