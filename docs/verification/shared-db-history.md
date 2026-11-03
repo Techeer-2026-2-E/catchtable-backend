@@ -1,5 +1,11 @@
 # 공유 DB 이력 사전 점검
 
+## 2026-11-03 로컬 확인
+
+[PR #226](https://github.com/Techeer-2026-2-E/catchtable-backend/pull/226)이 dev에 머지돼 점검 도구 이슈 #224는 종료됐다. 도구 제공 완료이며 실제 공유 DB 점검 완료를 뜻하지 않는다. 이번 후속은 사용자 결정에 따라 새 전용 로컬 PostgreSQL16만 사용했다. 공유 DB 사용 여부·접속 위치는 미확인이고 실제 연결하지 않았다.
+
+빈 DB·합성 데이터 DB·특수문자 스키마·존재하지 않는 스키마를 확인했고 스키마·Flyway 이력·데이터의 실행 전후 해시가 같았다. 관련 회귀와 로컬 앱 확인은 [작업 기록](../../work-log/2026-11-03-phase2-local-verification.md)에 남긴다. 기존 검증과 실제 환경 적용 판단을 구분한다.
+
 관련: [점검 도구 #224](https://github.com/Techeer-2026-2-E/catchtable-backend/issues/224), [예약금 #65](https://github.com/Techeer-2026-2-E/catchtable-backend/issues/65), [환불 #68](https://github.com/Techeer-2026-2-E/catchtable-backend/issues/68).
 
 ## 실행 범위

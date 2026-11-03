@@ -1,5 +1,7 @@
 # 기능56 — 선점 만료 후 재예약 프런트 연동
 
+> 2026-11-03 현행 승인 보호·만료·재예약과 최신 프런트 호출부는 [기능10의 현재 계약](feature-10-deposit-payment.md#2026-11-03-현재-계약)을 따른다. 아래 날짜별 미구현·후보 표시는 당시 기록이다.
+
 - 확인일: 2026-10-27
 - 문서 작업 이슈: [#129](https://github.com/Techeer-2026-2-E/catchtable-backend/issues/129)
 - 명세: [기능56](https://app.notion.com/3d548d76fa32813a94fbdec00b9f54e9)
