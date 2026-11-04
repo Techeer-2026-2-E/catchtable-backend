@@ -102,7 +102,7 @@ class PaymentReconcileServiceTest {
     @DisplayName("결과 불명 결제가 Toss에서 실패·만료면 실패로 확정하고 선점을 반환한다")
     void failedResultReleasesHold(String tossStatus, String expected) {
         Long paymentId = protectedPayment("TIMEOUT", "pk-1");
-        toss.query(data.orderId(paymentId), null, tossStatus, AMOUNT);
+        toss.query(data.orderId(paymentId), "pk-1", tossStatus, AMOUNT);
 
         service.reconcile(paymentId);
 
@@ -117,7 +117,7 @@ class PaymentReconcileServiceTest {
     @DisplayName("Toss도 승인 전이면 결제·선점을 그대로 두고, 선점 기한이 지나도 만료하지 않는다")
     void unresolvedPaymentKeepsHold(String status) {
         Long paymentId = protectedPayment(status, "pk-1");
-        toss.query(data.orderId(paymentId), null, "IN_PROGRESS", AMOUNT);
+        toss.query(data.orderId(paymentId), "pk-1", "IN_PROGRESS", AMOUNT);
         clock.set(NOW.plusMinutes(30));
 
         service.reconcile(paymentId);
@@ -170,7 +170,7 @@ class PaymentReconcileServiceTest {
         Long reservationId = data.hold(customerId, storeId, slot++);
         Long paymentId = data.payment(customerId, reservationId, "TIMEOUT", 0);
         data.protect(reservationId, paymentId, "pk-old", NOW.minusDays(16));
-        toss.query(data.orderId(paymentId), null, "EXPIRED", AMOUNT);
+        toss.query(data.orderId(paymentId), "pk-old", "EXPIRED", AMOUNT);
 
         service.reconcile(paymentId);
 

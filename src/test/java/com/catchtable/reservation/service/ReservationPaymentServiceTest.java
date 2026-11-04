@@ -592,7 +592,7 @@ class ReservationPaymentServiceTest {
         now.set(NOW.plusMinutes(5));
         var replacement = reservations.createHold(memberId,
                 new CreateReservationRequest(storeId, original.reservationStartAt(), 2));
-        when(toss.getByOrderId(orderId)).thenReturn(response("DONE"));
+        when(toss.getByPaymentKey(request().paymentKey())).thenReturn(response("DONE"));
 
         mvc.perform(post("/api/user/payments/{paymentId}/sync", paymentId).header("X-Member-Id", memberId))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.reservationId").value(reservationId))
@@ -625,7 +625,7 @@ class ReservationPaymentServiceTest {
         var original = reservations.getHold(memberId, reservationId);
         CountDownLatch entered = new CountDownLatch(1);
         CountDownLatch finish = new CountDownLatch(1);
-        when(toss.getByOrderId(orderId)).thenAnswer(call -> {
+        when(toss.getByPaymentKey(request().paymentKey())).thenAnswer(call -> {
             assertThat(TransactionSynchronizationManager.isActualTransactionActive()).isFalse();
             transactions.executeWithoutResult(status -> {
                 jdbc.queryForObject("SELECT id FROM reservation WHERE id = ? FOR UPDATE NOWAIT", Long.class, reservationId);
@@ -653,7 +653,7 @@ class ReservationPaymentServiceTest {
         assertThat(confirmed.reservationStartAt()).isAtSameInstantAs(original.reservationStartAt());
         assertThat(historyCount()).isEqualTo(2);
         verify(emitter, times(1)).send(any(SseEmitter.SseEventBuilder.class));
-        verify(toss, times(1)).getByOrderId(orderId);
+        verify(toss, times(1)).getByPaymentKey(request().paymentKey());
     }
 
     @ParameterizedTest
@@ -664,7 +664,7 @@ class ReservationPaymentServiceTest {
         assertFailure(() -> service.confirm(memberId, request()), ErrorCode.PAYMENT_RECONCILIATION_REQUIRED);
         var original = reservations.getHold(memberId, reservationId);
         now.set(NOW.plusMinutes(minutes));
-        when(toss.getByOrderId(orderId)).thenReturn(response("ABORTED"));
+        when(toss.getByPaymentKey(request().paymentKey())).thenReturn(response("ABORTED"));
 
         reconciler.reconcile(paymentId);
         assertThat(state()).isEqualTo(expected);

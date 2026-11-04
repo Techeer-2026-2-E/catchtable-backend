@@ -2,7 +2,7 @@
 
 ## 2026-11-04 현재 계약
 
-기준은 [dev e7c81cc](https://github.com/Techeer-2026-2-E/catchtable-backend/commit/e7c81ccb12c9bc141b177439d4c99d3dbdc131c1)다. [기능33 PR #242](https://github.com/Techeer-2026-2-E/catchtable-backend/pull/242)의 실제 매장 예약금 설정과 운영 `StoreDepositTermsReader`가 연결됐다. 빈 본문·해석 실패를 결과 불명으로 처리하는 [PR #235](https://github.com/Techeer-2026-2-E/catchtable-backend/pull/235)도 머지됐다. 아래 11월 3일 이전의 공급자 없음·PG 미검증·미머지 표시는 당시 기록이다.
+기반은 [dev a3ce022](https://github.com/Techeer-2026-2-E/catchtable-backend/commit/a3ce0224fdcbebb9694d06ef4d5f1daa48996976)다. [기능33 PR #242](https://github.com/Techeer-2026-2-E/catchtable-backend/pull/242)의 실제 매장 예약금 설정과 운영 `StoreDepositTermsReader`가 연결됐다. 빈 본문·해석 실패를 결과 불명으로 처리하는 [PR #235](https://github.com/Techeer-2026-2-E/catchtable-backend/pull/235)도 머지됐다. 아래 11월 3일 이전의 공급자 없음·PG 미검증·미머지 표시는 당시 기록이다.
 
 ### 실제 매장 설정으로 시작하는 결제
 
@@ -25,7 +25,13 @@
 - **실제 매장 설정부터 백엔드 흐름:** [통합 테스트 PR #243](https://github.com/Techeer-2026-2-E/catchtable-backend/pull/243)의 신규 4개가 실제 정책 API와 운영 리더를 사용해 prepare·중복 승인·변경 후 부분/전액 환불·거절 반환·결과 불명 보호를 확인한다. PG 응답만 fake다. 새 일회용 PostgreSQL16의 전체 빌드는 81클래스 859개·실패/오류/건너뜀0이다. [검증 기록](https://github.com/Techeer-2026-2-E/catchtable-backend/blob/38fe2b89f1b8cbadd58b620d0a237fc70ede42a9/work-log/2026-11-04-store-deposit-payment-flow.md)을 따른다.
 - **실제 Toss 독립 통신:** 11월 3일 사용자의 SDK 인증과 기존 Java 클라이언트로 승인·부분 취소·나머지/처음부터 전액 취소·같은 키 재요청·paymentKey 조회를 실행했다. 최종 잔액은 0원이다. Spring 앱·DB 없이 실행한 결과이며 [PR #238](https://github.com/Techeer-2026-2-E/catchtable-backend/pull/238)의 [기록](https://github.com/Techeer-2026-2-E/catchtable-backend/blob/24531dca1e64831b44ca802d96b6676611535241/work-log/2026-11-03-toss-independent-validation.md)에 원본 범위와 최초 실패·후속 성공을 보존했다.
 
-두 검증을 실제 매장 설정 → 서비스 앱 → Toss → 예약 취소까지 한 번에 실행한 결과로 합치지 않는다. 독립 PG 검증에 사용한 gsk 키는 orderId 조회를 지원하지 않아 `404 NOT_FOUND_MERCHANT`였으며, 이 복구 경로의 전체 검증에는 [API 개별 연동 sk 키](https://docs.tosspayments.com/reference/using-api/api-keys)가 필요하다. 제품 프런트·공유 DB 적용·배포도 별도 확인이다. 각 PR의 CI·리뷰·머지 상태는 해당 PR에서 확인한다.
+두 검증을 실제 매장 설정 → 서비스 앱 → Toss → 예약 취소까지 한 번에 실행한 결과로 합치지 않는다. 독립 PG 검증에 사용한 gsk 키는 orderId 조회를 지원하지 않아 `404 NOT_FOUND_MERCHANT`였다. 승인된 결제의 paymentKey 조회·승인·취소는 지원한다. 제품 프런트·공유 DB 적용·배포도 별도 확인이며 각 PR의 CI·리뷰·머지 상태는 해당 PR에서 확인한다.
+
+### 승인 응답이 유실된 예약의 재확인
+
+결제 행의 paymentKey가 아직 없어도 예약에 사전 저장한 승인 요청 키가 있고 결제 ID·주문번호가 같은 승인 요청이면, sync·자동 재확인·웹훅 처리에서 그 키로 paymentKey 조회를 사용한다. 승인 결과와 원래 예약 조건은 기존 정산 검증을 거치며, 조회 중 잠금이나 트랜잭션을 유지하지 않는다. 이미 저장된 결제 행의 키가 있으면 그 키가 우선이다. 따라서 이 원본을 가진 정상 예약금 흐름은 gsk 키로도 재확인할 수 있다.
+
+같은 요청임을 확인할 수 없거나 저장 원본이 없으면 기존 orderId 조회를 유지한다. 이 경로에는 [API 개별 연동 sk 키](https://docs.tosspayments.com/reference#orderid로-결제-조회)가 필요하며, 다른 승인 요청의 키를 빌리거나 임의 성공·실패로 처리하지 않는다. [승인 요청 키 복구 검증](../../work-log/65-request-key-recovery.md)에 회귀와 확인 범위를 남긴다.
 
 ## 2026-11-03 후속 — 독립 PG 검증과 키 제한
 
