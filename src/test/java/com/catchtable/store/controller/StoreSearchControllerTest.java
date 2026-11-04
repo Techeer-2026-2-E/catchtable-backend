@@ -1,5 +1,6 @@
 package com.catchtable.store.controller;
 
+import com.catchtable.payment.ReconcileTestClock;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
@@ -8,22 +9,20 @@ import jakarta.persistence.EntityManager;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.mock.mockito.SpyBean;
+import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.time.Clock;
-import java.time.Instant;
 import java.time.LocalDate;
+import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.hasSize;
-import static org.mockito.Mockito.doReturn;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
@@ -31,17 +30,18 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 @AutoConfigureMockMvc
 @Transactional
+@Import(ReconcileTestClock.Config.class)
 class StoreSearchControllerTest {
     @Autowired MockMvc mvc;
     @Autowired JdbcTemplate jdbc;
     @Autowired ObjectMapper mapper;
     @Autowired EntityManager entityManager;
-    @SpyBean Clock clock;
+    @Autowired ReconcileTestClock clock;
     private long owner;
 
     @BeforeEach
     void setUp() {
-        doReturn(Instant.parse("2026-10-28T01:00:00Z")).when(clock).instant();
+        clock.set(OffsetDateTime.parse("2026-10-28T10:00:00+09:00"));
         owner = jdbc.queryForObject("INSERT INTO member(name, phone, user_type) VALUES ('owner', '000', 'OWNER') RETURNING id",
                 Long.class);
     }

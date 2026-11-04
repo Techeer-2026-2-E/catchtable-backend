@@ -1,6 +1,7 @@
 package com.catchtable.reservation.service;
 
 import com.catchtable.payment.PaymentTestData;
+import com.catchtable.payment.ReconcileTestClock;
 import com.catchtable.payment.client.TossPaymentsClient;
 import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.BeforeEach;
@@ -11,23 +12,16 @@ import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.test.mock.mockito.MockBean;
-import org.springframework.boot.test.mock.mockito.SpyBean;
-import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
-import org.springframework.context.annotation.Primary;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.time.Clock;
 import java.time.OffsetDateTime;
-import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -36,7 +30,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @SpringBootTest
 @AutoConfigureMockMvc
 @Transactional
-@Import(ReservationRefundPreviewTest.FixedClock.class)
+@Import(ReconcileTestClock.Config.class)
 class ReservationRefundPreviewTest {
 
     private static final OffsetDateTime NOW = OffsetDateTime.parse("2030-01-20T00:00:00+09:00");
@@ -47,7 +41,7 @@ class ReservationRefundPreviewTest {
     @Autowired private ReservationService service;
     @Autowired private MockMvc mvc;
     @MockBean private TossPaymentsClient toss;
-    @SpyBean private Clock clock;
+    @Autowired private ReconcileTestClock clock;
 
     private PaymentTestData data;
     private Long memberId;
@@ -55,6 +49,7 @@ class ReservationRefundPreviewTest {
 
     @BeforeEach
     void setUp() {
+        clock.set(NOW);
         data = new PaymentTestData(jdbc);
         memberId = data.member("CUSTOMER");
         storeId = data.store(data.member("OWNER"));
@@ -94,7 +89,7 @@ class ReservationRefundPreviewTest {
         Long reservationId = reservation(10_000L, "FLEXIBLE", true);
         Long paymentId = data.payment(memberId, reservationId, "PARTIAL_REFUNDED", 1_000);
         OffsetDateTime beforeMidnight = NOW.minusSeconds(1);
-        doReturn(beforeMidnight.toInstant()).when(clock).instant();
+        clock.set(beforeMidnight);
 
         mvc.perform(get(path(reservationId)).header("X-Member-Id", memberId))
                 .andExpect(status().isOk())
@@ -105,7 +100,7 @@ class ReservationRefundPreviewTest {
                 .andExpect(jsonPath("$.refundRate").value(100))
                 .andExpect(jsonPath("$.refundableAmount").value(9_000));
 
-        doReturn(NOW.toInstant()).when(clock).instant();
+        clock.set(NOW);
         mvc.perform(get(path(reservationId)).header("X-Member-Id", memberId))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.paidAmount").value(10_000))
@@ -297,12 +292,4 @@ class ReservationRefundPreviewTest {
         return "/api/user/reservations/" + id + "/refund-preview";
     }
 
-    @TestConfiguration
-    static class FixedClock {
-        @Bean
-        @Primary
-        Clock testClock() {
-            return Clock.fixed(NOW.toInstant(), ZoneId.of("Asia/Seoul"));
-        }
-    }
 }
