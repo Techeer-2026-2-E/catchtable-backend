@@ -85,3 +85,20 @@ DB_USERNAME=catchtable DB_PASSWORD=catchtable TOSS_SECRET_KEY= ALIMTALK_ENABLED=
 ```
 
 위 결과는 기능 PR 코드의 로컬 검증이다. 이 문서 PR에서 앱 테스트를 다시 실행한 결과나 원격 CI 결과로 바꿔 읽지 않는다. 실제 SOLAPI 계정·승인 템플릿·사용자 수신·공유 DB 적용·프런트 통합·배포는 확인하지 않았다.
+
+## 프런트 원격 dev 대조 — 2026-11-05
+
+프런트 기준은 `dev@015f333aa2b2d4230560d69013136190b5ea2c87`, 백엔드 기준은 `dev@484daf3aa88913f382baf6468ace398653e16a0d`와 알림톡 PR #251의 `12da56c5`다. 소스 대조 결과이며 화면을 실행한 결과는 아니다.
+
+| 항목 | 확인한 연결 | 남은 연결 |
+| --- | --- | --- |
+| 최초 호출 | 점주 API의 `/call`, mutation과 호출 버튼이 있다 | 알림톡 최종 수신을 호출 성공 응답으로 표시하지 않는다 |
+| 고객 SSE | `WAITING_CALLED` 수신·토스트·예약/웨이팅 재조회 및 재연결 시 재조회가 있다 | 실제 실행 환경에서 수신·화면 갱신 확인 |
+| 점주 SSE | `WAITING_CHANGED`와 `connect` 때 목록 재조회가 있다 | 실제 실행 환경에서 목록 갱신 확인 |
+| 호출 재전송 | 백엔드 `/recall`과 응답 DTO가 있다 | 프런트 API 함수·mutation·버튼은 아직 없다 |
+
+기한을 유지하는 재전송은 `POST /api/owner/waitings/{waitingId}/recall`을 연결한다. 본문 없이 `X-Member-Id`를 전달한다. `CALLED`이며 만료 전일 때200, 그 외409 `WAITING_NOT_RECALLABLE`이다. 응답은 기존 호출 필드와 `recallCount`, `lastRecalledAt`이며 원래 `expiresAt`은 유지한다. `/call`은 호출 시각과 기한을 새로 정하므로 재전송 버튼에 대신 연결하면 동작이 달라진다.
+
+근거: [점주 API](https://github.com/Techeer-2026-2-E/catchtable-frontend/blob/015f333aa2b2d4230560d69013136190b5ea2c87/src/features/owner-waiting/api/ownerWaitingApi.ts), [점주 mutation·SSE](https://github.com/Techeer-2026-2-E/catchtable-frontend/blob/015f333aa2b2d4230560d69013136190b5ea2c87/src/features/owner-waiting/hooks/useOwnerWaitings.ts), [고객 SSE](https://github.com/Techeer-2026-2-E/catchtable-frontend/blob/015f333aa2b2d4230560d69013136190b5ea2c87/src/features/notification/hooks/useNotificationStream.ts), [알림 수신 후 재조회](https://github.com/Techeer-2026-2-E/catchtable-frontend/blob/015f333aa2b2d4230560d69013136190b5ea2c87/src/app/providers/RealtimeNotifications.tsx), [백엔드 호출·재전송](https://github.com/Techeer-2026-2-E/catchtable-backend/blob/484daf3aa88913f382baf6468ace398653e16a0d/src/main/java/com/catchtable/waiting/service/OwnerWaitingService.java).
+
+실제 SOLAPI 키나 웹훅 secret은 프런트에 전달하지 않는다. 발송과 결과 확인은 백엔드가 담당한다. 이번 대조에서 프런트 코드·목 서버·API·정책을 변경하지 않았다.
