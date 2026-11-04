@@ -5,7 +5,6 @@ import com.catchtable.payment.PaymentTestData;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
-import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -19,7 +18,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
-/** 어댑터 미연결 상태의 기존 동작은 명시적인 FREE 응답과 별도로 검증한다. */
+/** 예약금을 켜지 않은 매장은 운영 리더를 거쳐도 기존 무료 동작을 유지하고, 요청 값으로 유료가 되지 않는다. */
 @SpringBootTest(properties = {"reservation.hold-expiry-interval-ms=3600000", "reservation.completion-interval-ms=3600000"})
 @AutoConfigureMockMvc
 @Import({ReservationDepositConsumerTest.ClockFixture.class, FakeTossPaymentsClient.Config.class})
@@ -29,14 +28,12 @@ class ReservationDepositLegacyTest {
 
     @Autowired JdbcTemplate jdbc;
     @Autowired MockMvc mvc;
-    @Autowired ObjectProvider<ReservationDepositTermsReader> readers;
     @Autowired FakeTossPaymentsClient toss;
     @Autowired ReservationDepositConsumerTest.MutableClock clock;
     Long storeId;
 
     @BeforeEach
     void setUp() {
-        assertThat(readers.getIfAvailable()).isNull();
         clock.set(ReservationDepositConsumerTest.NOW);
         toss.reset();
         jdbc.update("""
@@ -52,7 +49,7 @@ class ReservationDepositLegacyTest {
 
     @ParameterizedTest
     @ValueSource(booleans = {false, true})
-    void noReaderKeepsLegacyDirectAndHoldFlowsWithoutInventingPaidTerms(boolean hold) throws Exception {
+    void freeStoreKeepsLegacyDirectAndHoldFlowsWithoutInventingPaidTerms(boolean hold) throws Exception {
         var response = mvc.perform(post("/api/user/reservations" + (hold ? "/holds" : ""))
                         .header("X-Member-Id", 1).contentType("application/json").content("""
                                 {"storeId":%d,"reservationStartAt":"%s","partySize":2,

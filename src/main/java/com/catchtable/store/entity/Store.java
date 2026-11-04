@@ -4,16 +4,20 @@ import com.catchtable.global.common.BaseTimeEntity;
 import com.catchtable.global.exception.BusinessException;
 import com.catchtable.global.exception.ErrorCode;
 import com.catchtable.member.entity.Member;
+import com.catchtable.reservation.entity.RefundPolicy;
 import jakarta.persistence.*;
 import lombok.AccessLevel;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
+import org.hibernate.annotations.DynamicUpdate;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 
+// 동시에 저장해도 서로의 설정을 예전 값으로 되돌리지 않도록 바뀐 컬럼만 저장한다.
 @Entity
+@DynamicUpdate
 @Table(name="store")
 @Getter
 @NoArgsConstructor(access= AccessLevel.PROTECTED)
@@ -68,6 +72,16 @@ public class Store extends BaseTimeEntity {
     @Column(name = "booking_deadline_minutes", nullable = false)
     private int bookingDeadlineMinutes;
 
+    @Column(name = "deposit_enabled", nullable = false)
+    private boolean depositEnabled;
+
+    @Column(name = "deposit_amount", nullable = false)
+    private long depositAmount;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "refund_policy", length = 20)
+    private RefundPolicy refundPolicy;
+
     @Column(name = "waiting_call_limit_minutes", nullable = false)
     private int waitingCallLimitMinutes;
 
@@ -110,6 +124,22 @@ public class Store extends BaseTimeEntity {
         this.arrivalGraceMinutes = arrivalGraceMinutes;
         this.bookingOpenDays = bookingOpenDays;
         this.bookingDeadlineMinutes = bookingDeadlineMinutes;
+    }
+
+    // 끄면 금액·정책을 비운다. 이미 만든 예약은 자기 스냅샷을 쓰므로 영향이 없다.
+    public void changeDepositPolicy(boolean enabled, Long amount, RefundPolicy refundPolicy) {
+        if (!enabled) {
+            this.depositEnabled = false;
+            this.depositAmount = 0;
+            this.refundPolicy = null;
+            return;
+        }
+        if (amount == null || amount <= 0 || refundPolicy == null) {
+            throw new BusinessException(ErrorCode.INVALID_DEPOSIT_POLICY);
+        }
+        this.depositEnabled = true;
+        this.depositAmount = amount;
+        this.refundPolicy = refundPolicy;
     }
 
     public void validateManaged() {
