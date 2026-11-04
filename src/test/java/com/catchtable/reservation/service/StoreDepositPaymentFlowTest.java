@@ -2,6 +2,7 @@ package com.catchtable.reservation.service;
 
 import com.catchtable.payment.FakeTossPaymentsClient;
 import com.catchtable.payment.PaymentTestData;
+import com.catchtable.payment.client.TossPaymentsException;
 import com.catchtable.payment.dto.PaymentConfirmRequest;
 import com.catchtable.payment.dto.PaymentPrepareResponse;
 import com.catchtable.reservation.dto.ReservationHoldResponse;
@@ -15,6 +16,7 @@ import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.mock.mockito.SpyBean;
 import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.annotation.DirtiesContext;
@@ -25,6 +27,8 @@ import java.util.ArrayList;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
@@ -40,7 +44,7 @@ class StoreDepositPaymentFlowTest {
     @Autowired ObjectMapper json;
     @Autowired ReservationDepositConsumerTest.MutableClock clock;
     @Autowired ReservationDepositTermsReader termsReader;
-    @Autowired FakeTossPaymentsClient toss;
+    @SpyBean FakeTossPaymentsClient toss;
     PaymentTestData data;
     Long memberId, storeId;
     final List<Long> mockMembers = new ArrayList<>();
@@ -154,17 +158,42 @@ class StoreDepositPaymentFlowTest {
         if (unknown) {
             clock.set(ReservationDepositConsumerTest.NOW.plusMinutes(6));
             holdRequest().andExpect(status().isConflict());
+            doThrow(new TossPaymentsException(404, "NOT_FOUND_MERCHANT", "gsk orderId 조회 미지원"))
+                    .when(toss).getByOrderId(prepared.orderId());
             toss.query(prepared.orderId(), "store-policy-key", "DONE", prepared.amount());
             mvc.perform(post("/api/user/payments/{id}/sync", prepared.paymentId()).header("X-Member-Id", memberId))
                     .andExpect(status().isOk()).andExpect(jsonPath("$.status").value("DONE"));
             assertThat(jdbc.queryForObject("SELECT status FROM reservation WHERE id = ?", String.class, hold.holdId()))
                     .isEqualTo("CONFIRMED");
+            verify(toss).getByPaymentKey("store-policy-key");
+            verify(toss, never()).getByOrderId(anyString());
+            assertThat(toss.confirmKeys()).hasSize(1);
         } else {
             assertThat(jdbc.queryForObject("SELECT status FROM reservation WHERE id = ?", String.class, hold.holdId()))
                     .isEqualTo("CANCELLED");
             var next = hold();
             assertThat(prepare(next.holdId(), 201).amount()).isEqualTo(10001);
         }
+    }
+
+    @Test
+    void unrelatedApprovalDoesNotSupplyAReconciliationKey() throws Exception {
+        policy("{\"depositEnabled\":true,\"depositAmount\":10001,\"refundPolicy\":\"STANDARD\"}");
+        var hold = hold();
+        var prepared = prepare(hold.holdId(), 201);
+        toss.failNext(FakeTossPaymentsClient.timeout());
+        confirm(prepared).andExpect(status().isConflict());
+        jdbc.update("UPDATE reservation SET approval_order_id = 'another-order' WHERE id = ?", hold.holdId());
+        doThrow(new TossPaymentsException(404, "NOT_FOUND_PAYMENT", "원장 미확인"))
+                .when(toss).getByOrderId(prepared.orderId());
+
+        mvc.perform(post("/api/user/payments/{id}/sync", prepared.paymentId()).header("X-Member-Id", memberId))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.status").value("TIMEOUT"));
+
+        verify(toss).getByOrderId(prepared.orderId());
+        verify(toss, never()).getByPaymentKey(anyString());
+        assertThat(jdbc.queryForObject("SELECT status FROM reservation WHERE id = ?", String.class, hold.holdId()))
+                .isEqualTo("PENDING_PAYMENT");
     }
 
     private void policy(String body) throws Exception {

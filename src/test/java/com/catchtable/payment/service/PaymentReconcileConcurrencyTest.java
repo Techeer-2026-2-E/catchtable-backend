@@ -109,7 +109,7 @@ class PaymentReconcileConcurrencyTest {
     void reconcileAndExpiryKeepProtectedHold() throws Exception {
         Long paymentId = data.payment(customerId, reservationId, "TIMEOUT", 0);
         data.protect(reservationId, paymentId, "pk-1", NOW.minusMinutes(1));
-        toss.query(data.orderId(paymentId), null, "IN_PROGRESS", AMOUNT);
+        toss.query(data.orderId(paymentId), "pk-1", "IN_PROGRESS", AMOUNT);
         toss.delay(200);
         clock.set(NOW.plusMinutes(30));
 

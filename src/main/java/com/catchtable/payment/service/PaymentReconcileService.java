@@ -117,8 +117,16 @@ public class PaymentReconcileService {
         PaymentRefund refund = refundRepository.findAllByPaymentIdOrderByIdAsc(paymentId).stream()
                 .filter(found -> found.getStatus().isInFlight())
                 .findFirst().orElse(null);
+        String paymentKey = payment.getPaymentKey();
+        var reservation = payment.getReservation();
+        String requestedKey = reservation == null ? null : reservation.getApprovalPaymentKey();
+        // 승인 응답이 유실돼도 예약에 사전 저장한 같은 요청의 키로 조회한다.
+        if (paymentKey == null && requestedKey != null && !requestedKey.isBlank()
+                && reservation.matchesPaymentApproval(paymentId, payment.getOrderId(), requestedKey)) {
+            paymentKey = requestedKey;
+        }
         boolean unresolved = payment.getStatus() == PaymentStatus.READY || payment.getStatus() == PaymentStatus.TIMEOUT;
-        return new Target(paymentId, payment.getMember().getId(), payment.getOrderId(), payment.getPaymentKey(),
+        return new Target(paymentId, payment.getMember().getId(), payment.getOrderId(), paymentKey,
                 unresolved, refund == null ? null : refund.getId());
     }
 
