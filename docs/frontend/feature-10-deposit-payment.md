@@ -27,6 +27,12 @@
 
 두 검증을 실제 매장 설정 → 서비스 앱 → Toss → 예약 취소까지 한 번에 실행한 결과로 합치지 않는다. 독립 PG 검증에 사용한 gsk 키는 orderId 조회를 지원하지 않아 `404 NOT_FOUND_MERCHANT`였으며, 이 복구 경로의 전체 검증에는 [API 개별 연동 sk 키](https://docs.tosspayments.com/reference/using-api/api-keys)가 필요하다. 제품 프런트·공유 DB 적용·배포도 별도 확인이다. 각 PR의 CI·리뷰·머지 상태는 해당 PR에서 확인한다.
 
+## 2026-11-03 후속 — 독립 PG 검증과 키 제한
+
+기능33을 기다리는 동안 공개 문서용 `test_gck`·`test_gsk`로 실제 Toss 테스트 승인·paymentKey 조회·부분/전액 취소와 같은 멱등키 재요청을 독립 검증했다. 저장소 밖 임시 페이지에서 사용자가 카드 인증했고 기존 백엔드 클라이언트를 호출했다. 실제 PG 관측과 전용 DB 회귀는 [작업 기록](../../work-log/2026-11-03-toss-independent-validation.md)에 구분해 남긴다. 실제 설정 원본부터 선점·prepare·예약 확정까지 연결한 결과는 아니다.
+
+`gsk`는 [공식 orderId 조회 API](https://docs.tosspayments.com/reference#orderid로-결제-조회)를 지원하지 않는다. 이번 실제 호출도 `404 NOT_FOUND_MERCHANT`였으며 이 API에는 API 개별 연동 `sk`가 필요하다. 현재 공통 재확인은 paymentKey가 없으면 orderId로 조회하므로 두 키 종류를 전체 복구 경로에서 동등하게 취급하면 안 된다. 아래 환경변수 안내의 키 종류별 지원 API 확인에 이 제한을 포함한다.
+
 ## 2026-11-03 현재 계약
 
 기준은 [백엔드 dev 5db45f0](https://github.com/Techeer-2026-2-E/catchtable-backend/commit/5db45f057fb593a71e6d28b787ba65ceff1f7375)다. prepare·승인·재확인·환불 실행과 예약 취소 정산은 dev에 반영됐다. 아래 날짜별 미구현·Draft·미머지 표시는 당시 기록으로 보존한다.
