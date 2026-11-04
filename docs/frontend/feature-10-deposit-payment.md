@@ -1,5 +1,11 @@
 # 기능10 — 예약금 가결제 프런트 연동
 
+## 2026-11-05 로컬 실행 확인
+
+기준 `dev@355a582`에서 실제 매장 정책 API → 유료 선점 → prepare의 최초 금액·주문·기한 유지, 실제 5분 만료 → 자리 복구 → 같은 시간 재선점을 확인했다. 의도적으로 존재하지 않는 테스트 paymentKey에 대한 **실제 Toss의 `404 NOT_FOUND_PAYMENT_SESSION`**도 결제 `FAILED`·예약 `CANCELLED`로 정산되고 반복 confirm은409, 같은 시간 재선점은 성공했다. 카드사 승인 거절을 재현한 결과는 아니다.
+
+기능33 구현 대기는 해소됐다. 공개 키의 SDK 초기화500 이후 API 개별 연동 테스트 키를 별도 확인해 결제창을 열었고, 임시 검증기의 본문 전달·시각 처리 오류를 보완했다. 새 선점의 준비 검사와 테스트 카드사 화면까지 확인한 뒤 사용자가 재인증을 나중에 진행하도록 선택했다. 실제 앱의 정상 승인·예약 확정·응답 유실/재시작 복구는 미수행이다. 환경·최초 실패·남은 조건은 [11월 5일 검증 기록](../../work-log/2026-11-05-p2-app-toss-verification.md)을 따른다. 아래 11월 4일 API 계약은 유지하며 이전 날짜의 미머지·공급자 없음 표시는 당시 기록이다.
+
 ## 2026-11-04 현재 계약
 
 기반은 [dev a3ce022](https://github.com/Techeer-2026-2-E/catchtable-backend/commit/a3ce0224fdcbebb9694d06ef4d5f1daa48996976)다. [기능33 PR #242](https://github.com/Techeer-2026-2-E/catchtable-backend/pull/242)의 실제 매장 예약금 설정과 운영 `StoreDepositTermsReader`가 연결됐다. 빈 본문·해석 실패를 결과 불명으로 처리하는 [PR #235](https://github.com/Techeer-2026-2-E/catchtable-backend/pull/235)도 머지됐다. 아래 11월 3일 이전의 공급자 없음·PG 미검증·미머지 표시는 당시 기록이다.
