@@ -2,6 +2,7 @@ package com.catchtable.store.entity;
 
 import com.catchtable.global.exception.BusinessException;
 import com.catchtable.global.exception.ErrorCode;
+import com.catchtable.reservation.entity.RefundPolicy;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -24,6 +25,49 @@ class StoreTest {
                 .build();
         store.changeReservationPolicy(120, 30, 10, 30, 60);
         return store;
+    }
+
+    @Test
+    @DisplayName("새 매장은 예약금을 받지 않는다")
+    void newStoreHasNoDeposit() {
+        Store store = store();
+
+        assertThat(store.isDepositEnabled()).isFalse();
+        assertThat(store.getDepositAmount()).isZero();
+        assertThat(store.getRefundPolicy()).isNull();
+    }
+
+    @Test
+    @DisplayName("예약금을 켜면 금액과 환불 정책을 저장하고, 끄면 비운다")
+    void changeDepositPolicy() {
+        Store store = store();
+
+        store.changeDepositPolicy(true, 10_000L, RefundPolicy.STANDARD);
+        assertThat(store.isDepositEnabled()).isTrue();
+        assertThat(store.getDepositAmount()).isEqualTo(10_000L);
+        assertThat(store.getRefundPolicy()).isEqualTo(RefundPolicy.STANDARD);
+
+        store.changeDepositPolicy(false, 5_000L, RefundPolicy.STRICT);
+        assertThat(store.isDepositEnabled()).isFalse();
+        assertThat(store.getDepositAmount()).isZero();
+        assertThat(store.getRefundPolicy()).isNull();
+    }
+
+    @Test
+    @DisplayName("예약금을 켜면서 금액이나 환불 정책이 잘못되면 거절하고 기존 값을 유지한다")
+    void rejectInvalidDepositPolicy() {
+        Store store = store();
+        store.changeDepositPolicy(true, 10_000L, RefundPolicy.STANDARD);
+
+        assertThatThrownBy(() -> store.changeDepositPolicy(true, 0L, RefundPolicy.STRICT))
+                .isInstanceOf(BusinessException.class);
+        assertThatThrownBy(() -> store.changeDepositPolicy(true, null, RefundPolicy.STRICT))
+                .isInstanceOf(BusinessException.class);
+        assertThatThrownBy(() -> store.changeDepositPolicy(true, 5_000L, null))
+                .isInstanceOf(BusinessException.class);
+
+        assertThat(store.getDepositAmount()).isEqualTo(10_000L);
+        assertThat(store.getRefundPolicy()).isEqualTo(RefundPolicy.STANDARD);
     }
 
     @Test

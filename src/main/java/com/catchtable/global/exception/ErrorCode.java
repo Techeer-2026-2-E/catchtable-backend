@@ -25,6 +25,7 @@ public enum ErrorCode {
     INTERNAL_SERVER_ERROR(HttpStatus.INTERNAL_SERVER_ERROR, "서버 오류가 발생했습니다."),
     INVALID_TABLE_CAPACITY(HttpStatus.BAD_REQUEST, "최소 인원은 1명 이상이고 최대 인원 이하여야 합니다."),
     INVALID_RESERVATION_POLICY(HttpStatus.BAD_REQUEST, "도착 유예시간은 이용시간보다 짧아야 합니다."),
+    INVALID_DEPOSIT_POLICY(HttpStatus.BAD_REQUEST, "예약금을 사용하면 금액은 1원 이상, 환불 정책은 필수입니다."),
     BOOKING_NOT_OPEN_YET(HttpStatus.BAD_REQUEST, "아직 예약을 받지 않는 날짜입니다."),
     BOOKING_DEADLINE_PASSED(HttpStatus.BAD_REQUEST, "예약 마감 시간이 지났습니다."),
     UNAUTHORIZED(HttpStatus.UNAUTHORIZED, "회원 식별 정보가 없습니다."),
