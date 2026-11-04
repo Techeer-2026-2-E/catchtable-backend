@@ -1,5 +1,32 @@
 # 기능10 — 예약금 가결제 프런트 연동
 
+## 2026-11-04 현재 계약
+
+기준은 [dev e7c81cc](https://github.com/Techeer-2026-2-E/catchtable-backend/commit/e7c81ccb12c9bc141b177439d4c99d3dbdc131c1)다. [기능33 PR #242](https://github.com/Techeer-2026-2-E/catchtable-backend/pull/242)의 실제 매장 예약금 설정과 운영 `StoreDepositTermsReader`가 연결됐다. 빈 본문·해석 실패를 결과 불명으로 처리하는 [PR #235](https://github.com/Techeer-2026-2-E/catchtable-backend/pull/235)도 머지됐다. 아래 11월 3일 이전의 공급자 없음·PG 미검증·미머지 표시는 당시 기록이다.
+
+### 실제 매장 설정으로 시작하는 결제
+
+점주 설정은 `GET/PUT /api/owner/stores/{storeId}/deposit-policy`다. PUT 본문은 다음 형식이다.
+
+```json
+{"depositEnabled":true,"depositAmount":10001,"refundPolicy":"STANDARD"}
+```
+
+사용 시 금액은 양수이고 정책은 `FLEXIBLE`·`STANDARD`·`STRICT` 중 하나다. 미사용은 `{"depositEnabled":false}`로 저장하며 응답의 금액은 0·정책은 null이다. 기존 매장은 V31에서 미사용으로 채워진다. 정책 컨트롤러의 현재 검사는 소유자가 있는 관리 매장 여부이며 JWT 사용자 권한과 연결된 API로 간주하지 않는다.
+
+- 유료 매장: 기존 즉시확정 생성은 `409 RESERVATION_PAYMENT_REQUIRED`다. `POST /api/user/reservations/holds` → `prepare` → Toss 인증 → `confirm` → 예약 확정 순서로 호출한다.
+- 무료 매장: 기존 무료 즉시확정·일반 선점 동작을 유지한다. 원본 없는 일반 선점을 prepare로 유료 전환하지 않는다.
+- 최초 선점에 저장한 **예약 건당 금액·환불 정책·5분 기한**을 사용한다. 인원수로 금액을 곱하거나 이후 매장 설정으로 기존 예약을 바꾸지 않는다. 화면은 결제 금액을 `prepare.amount`에서 받는다.
+
+회원 식별·동일 READY 주문 재사용·승인 중 선점 보호·환불 멱등키의 요청/응답은 아래 [11월 3일 계약](#2026-11-03-현재-계약)을 유지한다. 제품 프런트의 당시 호출부 조사도 11월 3일 스냅샷이며 이번에 화면을 다시 검증한 결과는 아니다.
+
+### 확인한 근거와 남은 검증
+
+- **실제 매장 설정부터 백엔드 흐름:** [통합 테스트 PR #243](https://github.com/Techeer-2026-2-E/catchtable-backend/pull/243)의 신규 4개가 실제 정책 API와 운영 리더를 사용해 prepare·중복 승인·변경 후 부분/전액 환불·거절 반환·결과 불명 보호를 확인한다. PG 응답만 fake다. 새 일회용 PostgreSQL16의 전체 빌드는 81클래스 859개·실패/오류/건너뜀0이다. [검증 기록](https://github.com/Techeer-2026-2-E/catchtable-backend/blob/38fe2b89f1b8cbadd58b620d0a237fc70ede42a9/work-log/2026-11-04-store-deposit-payment-flow.md)을 따른다.
+- **실제 Toss 독립 통신:** 11월 3일 사용자의 SDK 인증과 기존 Java 클라이언트로 승인·부분 취소·나머지/처음부터 전액 취소·같은 키 재요청·paymentKey 조회를 실행했다. 최종 잔액은 0원이다. Spring 앱·DB 없이 실행한 결과이며 [PR #238](https://github.com/Techeer-2026-2-E/catchtable-backend/pull/238)의 [기록](https://github.com/Techeer-2026-2-E/catchtable-backend/blob/24531dca1e64831b44ca802d96b6676611535241/work-log/2026-11-03-toss-independent-validation.md)에 원본 범위와 최초 실패·후속 성공을 보존했다.
+
+두 검증을 실제 매장 설정 → 서비스 앱 → Toss → 예약 취소까지 한 번에 실행한 결과로 합치지 않는다. 독립 PG 검증에 사용한 gsk 키는 orderId 조회를 지원하지 않아 `404 NOT_FOUND_MERCHANT`였으며, 이 복구 경로의 전체 검증에는 [API 개별 연동 sk 키](https://docs.tosspayments.com/reference/using-api/api-keys)가 필요하다. 제품 프런트·공유 DB 적용·배포도 별도 확인이다. 각 PR의 CI·리뷰·머지 상태는 해당 PR에서 확인한다.
+
 ## 2026-11-03 후속 — 독립 PG 검증과 키 제한
 
 기능33을 기다리는 동안 공개 문서용 `test_gck`·`test_gsk`로 실제 Toss 테스트 승인·paymentKey 조회·부분/전액 취소와 같은 멱등키 재요청을 독립 검증했다. 저장소 밖 임시 페이지에서 사용자가 카드 인증했고 기존 백엔드 클라이언트를 호출했다. 실제 PG 관측과 전용 DB 회귀는 [작업 기록](../../work-log/2026-11-03-toss-independent-validation.md)에 구분해 남긴다. 실제 설정 원본부터 선점·prepare·예약 확정까지 연결한 결과는 아니다.

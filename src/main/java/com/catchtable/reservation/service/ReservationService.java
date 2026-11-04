@@ -158,7 +158,7 @@ public class ReservationService {
     private ReservationDepositTermsReader.Terms readDepositTerms(Store lockedStore) {
         try {
             ReservationDepositTermsReader reader = depositTermsReader.getIfAvailable();
-            // 어댑터 연결 전에는 승인된 기존 무료 예약·일반 선점 동작을 유지한다.
+            // 리더가 없는 구성에서는 승인된 기존 무료 예약·일반 선점 동작을 유지한다.
             if (reader == null) return new ReservationDepositTermsReader.Terms(false, 0, null);
             ReservationDepositTermsReader.Terms terms = reader.read(lockedStore);
             if (terms != null) return terms;

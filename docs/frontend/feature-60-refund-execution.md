@@ -1,5 +1,15 @@
 # 기능60 — 전액·부분 환불 프런트 연동
 
+## 2026-11-04 실제 설정 연결과 기존 PG 검증
+
+[기능33 PR #242](https://github.com/Techeer-2026-2-E/catchtable-backend/pull/242)가 머지되어 실제 매장 설정에서 유료 선점·결제 준비를 시작할 수 있다. 환불 API·멱등키·REQUESTED/UNKNOWN 변경 동결과 취소 정산 계약은 아래 [11월 3일 계약](#2026-11-03-현재-계약)을 유지한다.
+
+[통합 테스트 PR #243](https://github.com/Techeer-2026-2-E/catchtable-backend/pull/243)은 테스트용 설정 공급자 대신 실제 정책 API·운영 리더를 사용한다. 최초 10,001원·STANDARD 스냅샷을 유지한 채 1,000원 부분 환불 후 고객 취소로 4,000원을 추가 정산하고, 설정을 끈 뒤 기존 STRICT 예약의 점주 취소로 원금 전액을 한 번 반환하는 흐름을 확인했다. 신규 4개와 전용 PostgreSQL16 전체 859개가 통과했다. 이 실행의 PG 응답은 fake다.
+
+**실제 Toss 승인·부분/전액 취소의 독립 검증은 11월 3일 이미 수행했다.** 같은 키 재요청·paymentKey 조회와 최종 잔액 0원까지의 결과는 [PR #238](https://github.com/Techeer-2026-2-E/catchtable-backend/pull/238)의 [검증 기록](https://github.com/Techeer-2026-2-E/catchtable-backend/blob/24531dca1e64831b44ca802d96b6676611535241/work-log/2026-11-03-toss-independent-validation.md)을 따른다. 부분 취소 이력 뒤 잔액이 0원이어도 Toss 상태는 `PARTIAL_CANCELED`일 수 있으며, 서버는 누적 환불액으로 `REFUNDED`를 정산한다. 이전 절의 실제 PG 미수행 표시는 이 독립 검증 전 기록이다.
+
+실제 설정을 사용하는 백엔드 fake 통합 검증과 독립 PG 검증을 서비스 앱부터 PG까지 한 번에 실행한 결과로 합치지 않는다. gsk의 orderId 조회 제한과 남은 범위는 [기능10의 현재 계약](feature-10-deposit-payment.md#2026-11-04-현재-계약)에 연결한다. 제품 프런트·공유 DB 적용·배포는 별도 확인이며 PR 상태는 해당 PR에서 확인한다.
+
 ## 2026-11-03 후속 — 실제 PG 환불 관측
 
 공개 테스트 키로 기존 Toss 클라이언트의 실제 승인·부분/누적 취소·전액 취소·동일 키 재요청을 독립 검증했다. 부분 취소 이력 뒤 잔액을 모두 취소한 실제 응답은 `PARTIAL_CANCELED`·잔액0원이었다. 기존 정산 서비스는 원결제액과 누적 환불액으로 `REFUNDED`를 계산하며, 이 응답과 반복 반영의 DB 회귀를 추가했다. 운영 코드는 변경하지 않았다.

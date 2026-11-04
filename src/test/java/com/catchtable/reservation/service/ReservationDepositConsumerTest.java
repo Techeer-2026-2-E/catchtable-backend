@@ -629,7 +629,7 @@ class ReservationDepositConsumerTest {
 
     @TestConfiguration
     static class SourceFixture {
-        @Bean TestTermsReader testTermsReader() { return new TestTermsReader(); }
+        @Bean @Primary TestTermsReader testTermsReader() { return new TestTermsReader(); }
     }
     static class TestTermsReader implements ReservationDepositTermsReader {
         final Map<Long, Supplier<Terms>> terms = new ConcurrentHashMap<>();

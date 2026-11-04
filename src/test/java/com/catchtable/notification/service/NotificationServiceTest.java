@@ -22,7 +22,9 @@ import static org.mockito.Mockito.verify;
 class NotificationServiceTest {
 
     private final SseEmitterRepository repository = new SseEmitterRepository();
-    private final NotificationService service = new NotificationService(repository);
+    // 항상 수신 허용
+    private final NotificationSettingService settings = mock(NotificationSettingService.class, invocation -> true);
+    private final NotificationService service = new NotificationService(repository, settings);
 
     private CustomerNotificationEvent confirmed(Long memberId) {
         return new CustomerNotificationEvent(memberId, NotificationType.RESERVATION_CONFIRMED, 10L, "예약이 확정되었습니다");

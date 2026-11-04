@@ -90,10 +90,10 @@ class WaitingQueueNotifierTest {
     private Long insertWaiting(Long storeId, LocalDate date, int waitNumber, WaitingStatus status) {
         Long memberId = insertMember("고객" + waitNumber, "CUSTOMER");
         return jdbcTemplate.queryForObject("""
-                INSERT INTO waiting (member_id, store_id, waiting_date, party_count, wait_number, status,
+                INSERT INTO waiting (member_id, store_id, waiting_date, party_count, wait_number, queue_order, status,
                                      created_at, updated_at)
-                VALUES (?, ?, ?, 2, ?, ?, now(), now())
-                RETURNING id""", Long.class, memberId, storeId, date, waitNumber, status.name());
+                VALUES (?, ?, ?, 2, ?, ?, ?, now(), now())
+                RETURNING id""", Long.class, memberId, storeId, date, waitNumber, waitNumber, status.name());
     }
 
     private Long memberOf(Long waitingId) {
