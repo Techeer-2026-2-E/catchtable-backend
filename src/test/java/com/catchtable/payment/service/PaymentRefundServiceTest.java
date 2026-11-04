@@ -4,6 +4,7 @@ import com.catchtable.global.exception.BusinessException;
 import com.catchtable.global.exception.ErrorCode;
 import com.catchtable.payment.FakeTossPaymentsClient;
 import com.catchtable.payment.PaymentTestData;
+import com.catchtable.payment.ReconcileTestClock;
 import com.catchtable.payment.dto.RefundResult;
 import com.catchtable.payment.entity.PaymentRefundStatus;
 import com.catchtable.payment.entity.PaymentStatus;
@@ -14,14 +15,11 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.mock.mockito.SpyBean;
 import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.transaction.support.TransactionTemplate;
 
-import java.time.Clock;
-import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.List;
@@ -29,12 +27,11 @@ import java.util.List;
 import static com.catchtable.payment.PaymentTestData.AMOUNT;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.Mockito.doReturn;
 
 // 트랜잭션 없음 (서비스가 트랜잭션 밖 호출만 허용), UUID 데이터는 매 테스트 후 정리
 @SpringBootTest
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
-@Import(FakeTossPaymentsClient.Config.class)
+@Import({FakeTossPaymentsClient.Config.class, ReconcileTestClock.Config.class})
 class PaymentRefundServiceTest {
 
     private static final String REASON = "고객 요청";
@@ -44,7 +41,7 @@ class PaymentRefundServiceTest {
     @Autowired TransactionTemplate transactionTemplate;
     @Autowired JdbcTemplate jdbc;
     @Autowired ObjectMapper mapper;
-    @SpyBean Clock clock;
+    @Autowired ReconcileTestClock clock;
 
     private final List<Long> members = new ArrayList<>();
     private PaymentTestData data;
@@ -54,6 +51,7 @@ class PaymentRefundServiceTest {
 
     @BeforeEach
     void setUp() {
+        clock.set(OffsetDateTime.parse("2026-10-28T16:27:31.123456789+09:00"));
         toss.reset();
         data = new PaymentTestData(jdbc);
         customerId = member("CUSTOMER");
@@ -82,7 +80,6 @@ class PaymentRefundServiceTest {
     @Test
     @DisplayName("같은 키 재요청은 Toss를 다시 부르지 않고 최초 결과를 반환한다")
     void sameKeyReturnsFirstResult() throws Exception {
-        doReturn(Instant.parse("2026-10-28T07:27:31.123456789Z")).when(clock).instant();
         Long paymentId = approved();
 
         RefundResult first = service.refund(customerId, paymentId, "key-1", REASON, 3_000L, AMOUNT);
