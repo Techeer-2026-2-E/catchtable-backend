@@ -52,17 +52,6 @@ public class ReservationRefundCalculator {
         if (daysBefore < 0) {
             throw new IllegalArgumentException("예약일이 지난 고객 취소는 처리할 수 없습니다.");
         }
-        return switch (policy) {
-            case FLEXIBLE -> daysBefore >= 1 ? 100 : 50;
-            case STANDARD -> {
-                if (daysBefore >= 2) yield 100;
-                yield daysBefore == 1 ? 50 : 0;
-            }
-            case STRICT -> {
-                if (daysBefore >= 3) yield 100;
-                if (daysBefore == 2) yield 50;
-                yield daysBefore == 1 ? 20 : 0;
-            }
-        };
+        return policy.customerRefundRate(daysBefore);
     }
 }

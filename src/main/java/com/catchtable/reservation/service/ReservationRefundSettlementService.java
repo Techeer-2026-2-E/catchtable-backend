@@ -59,7 +59,7 @@ public class ReservationRefundSettlementService {
         request.apply(refund);
         if (request.getStatus().isInFlight()) return;
         if (request.getStatus() == PaymentRefundStatus.COMPLETED
-                && request.getIntent() != ReservationRefundIntent.PAYMENT_ONLY
+                && request.getIntent().cancelsReservation()
                 && reservation.cancelAfterRefund(request.getIntent().actor(), request.getCancelReason(), now)) {
             canceled(reservation);
         }
