@@ -2,6 +2,7 @@ package com.catchtable.reservation.repository;
 
 import com.catchtable.payment.entity.PaymentRefundStatus;
 import com.catchtable.reservation.entity.ReservationRefundRequest;
+import com.catchtable.reservation.entity.ReservationRefundIntent;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -10,6 +11,7 @@ import java.util.Collection;
 import java.util.Optional;
 
 public interface ReservationRefundRequestRepository extends JpaRepository<ReservationRefundRequest, Long> {
+    Optional<ReservationRefundRequest> findFirstByPaymentIdAndIntentOrderByIdDesc(Long paymentId, ReservationRefundIntent intent);
     Optional<ReservationRefundRequest> findByReservationIdAndIdempotencyKey(Long reservationId, String key);
     Optional<ReservationRefundRequest> findFirstByReservationIdAndStatusInOrderByIdAsc(
             Long reservationId, Collection<PaymentRefundStatus> statuses);

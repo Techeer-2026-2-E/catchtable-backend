@@ -138,7 +138,13 @@ class PaymentPrepareServiceTest {
                 .andExpect(jsonPath("$.status").value("READY"))
                 .andExpect(jsonPath("$.expiresAt").value(EXPIRY.toInstant().toString()))
                 .andExpect(jsonPath("$.serverTime").value(NOW.format(DateTimeFormatter.ISO_OFFSET_DATE_TIME)))
-                .andExpect(jsonPath("$.remainingSeconds").value(240));
+                .andExpect(jsonPath("$.remainingSeconds").value(240))
+                .andExpect(jsonPath("$.refundPolicy").value("FLEXIBLE"))
+                .andExpect(jsonPath("$.refundPolicyName").value("유연"))
+                .andExpect(jsonPath("$.refundRules[0].minDaysBefore").value(1))
+                .andExpect(jsonPath("$.refundRules[0].refundRate").value(100))
+                .andExpect(jsonPath("$.refundRules[1].refundRate").value(50))
+                .andExpect(jsonPath("$.refundPolicyNotice").value(containsString("Asia/Seoul")));
         assertThat(paymentCount()).isEqualTo(1);
         assertThat(historyCount()).isEqualTo(1);
         assertThat(jdbc.queryForMap("""
