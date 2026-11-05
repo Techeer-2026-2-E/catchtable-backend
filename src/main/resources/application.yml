@@ -32,6 +32,18 @@ toss:
   connect-timeout: 5s
   read-timeout: 30s
 
+# 학습용 호출 알림. simulation은 외부 API 호출이나 비용이 없다.
+alimtalk:
+  enabled: ${ALIMTALK_ENABLED:false}
+  mode: ${ALIMTALK_MODE:simulation}
+  solapi:
+    base-url: ${SOLAPI_BASE_URL:https://api.solapi.com}
+    api-key: ${SOLAPI_API_KEY:}
+    api-secret: ${SOLAPI_API_SECRET:}
+    channel-id: ${SOLAPI_CHANNEL_ID:}
+    template-id: ${SOLAPI_TEMPLATE_ID:}
+    webhook-secret: ${SOLAPI_WEBHOOK_SECRET:}
+
 management:
   endpoints:
     web:
