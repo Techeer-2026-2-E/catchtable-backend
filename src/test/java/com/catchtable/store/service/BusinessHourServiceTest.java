@@ -2,7 +2,9 @@ package com.catchtable.store.service;
 
 import com.catchtable.reservation.repository.ReservationRepository;
 import com.catchtable.store.entity.BusinessHour;
+import com.catchtable.store.entity.SpecialBusinessDay;
 import com.catchtable.store.repository.BusinessHourRepository;
+import com.catchtable.store.repository.SpecialBusinessDayRepository;
 import com.catchtable.store.repository.StoreRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -10,6 +12,7 @@ import org.junit.jupiter.api.Test;
 
 import java.time.Clock;
 import java.time.DayOfWeek;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.Optional;
@@ -26,9 +29,10 @@ class BusinessHourServiceTest {
     private static final Long STORE_ID = 1L;
 
     private final BusinessHourRepository businessHourRepository = mock(BusinessHourRepository.class);
+    private final SpecialBusinessDayRepository specialBusinessDayRepository = mock(SpecialBusinessDayRepository.class);
     private final BusinessHourService service =
             new BusinessHourService(mock(StoreRepository.class), businessHourRepository,
-                    mock(ReservationRepository.class), Clock.systemUTC());
+                    specialBusinessDayRepository, mock(ReservationRepository.class), Clock.systemUTC());
 
     // 금 18:00~02:00 (브레이크 23:00~23:30), 토 휴무, 일 11:00~21:00 (브레이크 15:00~16:00)
     @BeforeEach
@@ -80,5 +84,30 @@ class BusinessHourServiceTest {
         assertThat(service.isOpenBetween(STORE_ID, at("2026-10-02T23:30"), at("2026-10-03T01:00"))).isTrue();
         // 토 01:00~02:30 → 마감(02:00)을 넘김
         assertThat(service.isOpenBetween(STORE_ID, at("2026-10-03T01:00"), at("2026-10-03T02:30"))).isFalse();
+    }
+
+    @Test
+    @DisplayName("특정일 휴무는 요일별 영업보다 우선한다")
+    void specialClosedDayOverridesWeeklyHours() {
+        LocalDate sunday = LocalDate.parse("2026-10-04");
+        when(specialBusinessDayRepository.findByStoreIdAndBusinessDate(STORE_ID, sunday))
+                .thenReturn(Optional.of(SpecialBusinessDay.closedDay(null, sunday)));
+
+        assertThat(service.getOpeningWindows(STORE_ID, sunday)).isEmpty();
+        assertThat(service.isOpen(STORE_ID, at("2026-10-04T12:00"))).isFalse();
+    }
+
+    @Test
+    @DisplayName("정기 휴무 요일도 특정일로 열 수 있고, 자정을 넘긴 새벽까지 이어진다")
+    void specialOpenDayOverridesWeeklyClosedDay() {
+        LocalDate saturday = LocalDate.parse("2026-10-03");
+        SpecialBusinessDay day = SpecialBusinessDay.closedDay(null, saturday);
+        day.changeToOpen(LocalTime.parse("20:00"), LocalTime.parse("01:00"), null, null);
+        when(specialBusinessDayRepository.findByStoreIdAndBusinessDate(STORE_ID, saturday))
+                .thenReturn(Optional.of(day));
+
+        assertThat(service.isOpen(STORE_ID, at("2026-10-03T21:00"))).isTrue();
+        assertThat(service.isOpen(STORE_ID, at("2026-10-04T00:30"))).isTrue();
+        assertThat(service.isOpen(STORE_ID, at("2026-10-04T01:00"))).isFalse();
     }
 }

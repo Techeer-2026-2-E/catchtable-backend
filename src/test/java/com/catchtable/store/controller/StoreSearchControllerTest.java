@@ -145,6 +145,50 @@ class StoreSearchControllerTest {
     }
 
     @Test
+    void specialClosedDayHidesStoreUntilItIsDeleted() throws Exception {
+        long id = store(owner);
+        hours(id, "2026-10-29", "10:00", "22:00", null, null, false);
+        assertSearch("2026-10-29", "12:00", List.of(id));
+
+        specialDay(id, "2026-10-29", true, null, null, null, null);
+        assertSearch("2026-10-29", "12:00", List.of());
+
+        jdbc.update("UPDATE special_business_day SET deleted_at = now() WHERE store_id = ?", id);
+        assertSearch("2026-10-29", "12:00", List.of(id));
+    }
+
+    @Test
+    void specialHoursReplaceWeeklyHoursAndOpenWeeklyClosedDays() throws Exception {
+        long shortened = store(owner);
+        hours(shortened, "2026-10-29", "10:00", "22:00", null, null, false);
+        specialDay(shortened, "2026-10-29", false, "10:00", "14:00", null, null);
+        assertSearch("2026-10-29", "12:00", List.of(shortened));
+        assertSearch("2026-10-29", "13:00", List.of());
+
+        long weeklyClosed = store(owner);
+        specialDay(weeklyClosed, "2026-10-30", false, "10:00", "17:00", "12:00", "13:00");
+        assertSearch("2026-10-30", "10:00", List.of(weeklyClosed));
+        assertSearch("2026-10-30", "11:00", List.of());
+        assertSearch("2026-10-30", "13:00", List.of(weeklyClosed));
+        assertSearch("2026-10-30", "15:00", List.of(weeklyClosed));
+        assertSearch("2026-10-30", "15:30", List.of());
+    }
+
+    @Test
+    void specialDayAppliesToOvernightHoursFromThePreviousDay() throws Exception {
+        long overnight = store(owner);
+        specialDay(overnight, "2026-10-31", false, "20:00", "02:00", null, null);
+        assertSearch("2026-11-01", "00:00", List.of(overnight));
+        assertSearch("2026-11-01", "00:30", List.of());
+
+        long closedOvernight = store(owner);
+        hours(closedOvernight, "2026-10-29", "18:00", "02:00", null, null, false);
+        assertSearch("2026-10-30", "00:00", List.of(closedOvernight));
+        specialDay(closedOvernight, "2026-10-29", true, null, null, null, null);
+        assertSearch("2026-10-30", "00:00", List.of());
+    }
+
+    @Test
     void invalidSearchAndPaginationInputsReturn400AndPastLastPageIsEmpty() throws Exception {
         for (String[] condition : new String[][]{
                 {"page", "-1"}, {"size", "0"}, {"size", "51"},
@@ -184,6 +228,13 @@ class StoreSearchControllerTest {
     private void table(long id, int number, int min, int capacity, String status) {
         jdbc.update("INSERT INTO store_table(store_id, table_number, min_capacity, capacity, status) VALUES (?, ?, ?, ?, ?)",
                 id, number, min, capacity, status);
+    }
+
+    private void specialDay(long id, String date, boolean closed, String opens, String closes, String breakStart, String breakEnd) {
+        jdbc.update("""
+                INSERT INTO special_business_day (store_id, business_date, closed, open_time, closing_time, break_start_time, break_end_time)
+                VALUES (?, CAST(? AS DATE), ?, CAST(? AS TIME), CAST(? AS TIME), CAST(? AS TIME), CAST(? AS TIME))
+                """, id, date, closed, opens, closes, breakStart, breakEnd);
     }
 
     private void hours(long id, String date, String opens, String closes, String breakStart, String breakEnd, boolean deleted) {

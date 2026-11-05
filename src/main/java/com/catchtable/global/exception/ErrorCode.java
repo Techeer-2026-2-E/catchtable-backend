@@ -22,6 +22,8 @@ public enum ErrorCode {
     INVALID_BUSINESS_HOUR(HttpStatus.BAD_REQUEST, "영업 시작 시각과 종료 시각이 같을 수 없습니다."),
     INVALID_BUSINESS_HOUR_PRECISION(HttpStatus.BAD_REQUEST, "영업시간은 분 단위로 입력해야 합니다."),
     INVALID_BREAK_TIME(HttpStatus.BAD_REQUEST, "브레이크타임은 시작·종료를 함께 입력하고 영업시간 안에 있어야 합니다."),
+    PAST_BUSINESS_DATE(HttpStatus.BAD_REQUEST, "지난 날짜의 영업시간은 변경할 수 없습니다."),
+    SPECIAL_BUSINESS_DAY_NOT_FOUND(HttpStatus.NOT_FOUND, "특정일 영업 설정을 찾을 수 없습니다."),
     INTERNAL_SERVER_ERROR(HttpStatus.INTERNAL_SERVER_ERROR, "서버 오류가 발생했습니다."),
     INVALID_TABLE_CAPACITY(HttpStatus.BAD_REQUEST, "최소 인원은 1명 이상이고 최대 인원 이하여야 합니다."),
     INVALID_RESERVATION_POLICY(HttpStatus.BAD_REQUEST, "도착 유예시간은 이용시간보다 짧아야 합니다."),

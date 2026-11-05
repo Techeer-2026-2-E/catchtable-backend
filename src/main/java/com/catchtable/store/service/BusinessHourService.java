@@ -9,8 +9,10 @@ import com.catchtable.store.dto.BusinessHourResponse;
 import com.catchtable.store.dto.BusinessHourUpdateRequest;
 import com.catchtable.store.dto.OpeningWindow;
 import com.catchtable.store.entity.BusinessHour;
+import com.catchtable.store.entity.SpecialBusinessDay;
 import com.catchtable.store.entity.Store;
 import com.catchtable.store.repository.BusinessHourRepository;
+import com.catchtable.store.repository.SpecialBusinessDayRepository;
 import com.catchtable.store.repository.StoreRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -38,6 +40,7 @@ public class BusinessHourService {
 
     private final StoreRepository storeRepository;
     private final BusinessHourRepository businessHourRepository;
+    private final SpecialBusinessDayRepository specialBusinessDayRepository;
     private final ReservationRepository reservationRepository;
     private final Clock clock;
 
@@ -91,33 +94,35 @@ public class BusinessHourService {
         existing.values().forEach(BusinessHour::delete);
         businessHourRepository.flush();
 
-        List<BusinessHour> updatedHours = businessHourRepository.findAllByStoreIdOrderByDayOfWeekAsc(storeId);
         // 저장은 아직 같은 트랜잭션 안이다. 충돌이 있으면 추가·변경·휴무 처리를 모두 롤백한다.
+        validateActiveReservationsCovered(storeId);
+        return businessHourRepository.findAllByStoreIdOrderByDayOfWeekAsc(storeId).stream()
+                .map(BusinessHourResponse::from)
+                .toList();
+    }
+
+    // 남아 있는 예약이 모두 영업 구간 안에 있는지 확인한다. 호출 전에 변경 내용을 flush해야 한다.
+    public void validateActiveReservationsCovered(Long storeId) {
         for (Reservation reservation : reservationRepository.findActiveForStore(storeId, OffsetDateTime.now(clock))) {
             LocalDateTime start = reservation.getReservationStartAt().atZoneSameInstant(STORE_ZONE).toLocalDateTime();
             LocalDateTime end = reservation.getReservationEndAt().atZoneSameInstant(STORE_ZONE).toLocalDateTime();
-            boolean covered = Stream.of(start.toLocalDate().minusDays(1), start.toLocalDate())
-                    .flatMap(date -> updatedHours.stream()
-                            .filter(hour -> hour.getDayOfWeek() == date.getDayOfWeek())
-                            .flatMap(hour -> hour.windowsOn(date).stream()))
-                    .anyMatch(window -> window.covers(start, end));
-            if (!covered) {
+            if (!isOpenBetween(storeId, start, end)) {
                 throw new BusinessException(ErrorCode.BUSINESS_HOUR_HAS_RESERVATIONS);
             }
         }
-        return updatedHours.stream()
-                .map(BusinessHourResponse::from)
-                .toList();
     }
 
     // ---- 예약(#6·#7)·웨이팅(#12)·검색(#2)에서 호출하는 조회 ----
     // 시각은 모두 매장 현지 시각(Asia/Seoul). 존재하지 않는 매장은 영업시간이 없으므로 항상 "영업 안 함"
 
     // 영업일 기준 영업 구간. 금요일 18:00~02:00 영업이면 금요일을 넣었을 때 토요일 02:00까지 포함된다
+    // 특정일 설정이 있으면 요일별 설정보다 우선한다. 특정일 휴무는 빈 목록이다.
     public List<OpeningWindow> getOpeningWindows(Long storeId, LocalDate businessDate) {
-        return businessHourRepository.findByStoreIdAndDayOfWeek(storeId, businessDate.getDayOfWeek())
-                .map(hour -> hour.windowsOn(businessDate))
-                .orElse(List.of());
+        return specialBusinessDayRepository.findByStoreIdAndBusinessDate(storeId, businessDate)
+                .map(SpecialBusinessDay::windows)
+                .orElseGet(() -> businessHourRepository.findByStoreIdAndDayOfWeek(storeId, businessDate.getDayOfWeek())
+                        .map(hour -> hour.windowsOn(businessDate))
+                        .orElse(List.of()));
     }
 
     // 그 시각에 영업 중인지 (웨이팅 신청 등). 전날 영업이 자정을 넘겨 이어지는 경우도 포함
