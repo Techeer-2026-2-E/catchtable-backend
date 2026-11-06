@@ -12,6 +12,7 @@ import com.catchtable.notification.entity.MemberNotificationSetting;
 import com.catchtable.notification.repository.MemberNotificationSettingRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Clock;
@@ -40,9 +41,11 @@ public class NotificationSettingService {
         return NotificationSettingResponse.from(find(memberId));
     }
 
-    // 발송 전 수신 여부 (점주 등 설정 없는 회원은 기본값)
+    // 발송 전 수신 여부 (필수는 조회 없이 통과, 설정 없는 회원은 기본값)
+    // 트랜잭션 미시작 (DB 연결 선점 방지)
+    @Transactional(propagation = Propagation.SUPPORTS)
     public boolean allows(Long memberId, NotificationType type) {
-        return find(memberId).allows(type);
+        return MemberNotificationSetting.isRequired(type) || find(memberId).allows(type);
     }
 
     private MemberNotificationSetting find(Long memberId) {
