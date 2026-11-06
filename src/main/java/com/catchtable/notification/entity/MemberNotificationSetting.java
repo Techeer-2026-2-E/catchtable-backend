@@ -37,8 +37,18 @@ public class MemberNotificationSetting {
         return setting;
     }
 
-    // 수신 여부 (필수·선택 구분은 여기 한 곳)
+    // 필수 알림 여부 (모두 꺼도 오는 알림, 조회 없이 판단)
+    public static boolean isRequired(NotificationType type) {
+        return allows(type, false, false);
+    }
+
+    // 수신 여부
     public boolean allows(NotificationType type) {
+        return allows(type, reservationEnabled, waitingEnabled);
+    }
+
+    // 필수·선택 구분 (여기 한 곳)
+    private static boolean allows(NotificationType type, boolean reservationEnabled, boolean waitingEnabled) {
         return switch (type) {
             // 필수 알림
             case WAITING_CALLED, WAITING_EXPIRED, WAITING_CANCELED, RESERVATION_CANCELED, WAITING_CHANGED -> true;
