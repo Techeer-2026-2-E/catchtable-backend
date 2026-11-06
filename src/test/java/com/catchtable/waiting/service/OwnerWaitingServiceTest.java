@@ -66,6 +66,7 @@ class OwnerWaitingServiceTest {
     private Member owner;
     private Member customer;
     private Store store;
+    private Long tableId;
     private SseEmitter ownerEmitter;
     private SseEmitter customerEmitter;
 
@@ -76,6 +77,7 @@ class OwnerWaitingServiceTest {
         store = storeRepository.save(Store.builder().owner(owner).name("테스트 매장")
                 .category(StoreCategory.values()[0]).address("서울시")
                 .reservationDurationMinutes(90).reservationSlotMinutes(30).arrivalGraceMinutes(10).build());
+        tableId = insertTable(store.getId(), 1, 4, "ACTIVE");
         ownerEmitter = mock(SseEmitter.class);
         customerEmitter = mock(SseEmitter.class);
         emitterRepository.save(owner.getId(), ownerEmitter);
@@ -88,6 +90,7 @@ class OwnerWaitingServiceTest {
         emitterRepository.delete(customer.getId(), customerEmitter);
         historyRepository.deleteAllInBatch();
         waitingRepository.deleteAllInBatch();
+        jdbc.update("delete from store_table where store_id = ?", store.getId());
         storeRepository.delete(store);
         memberRepository.deleteAll(members);
     }
@@ -531,7 +534,7 @@ class OwnerWaitingServiceTest {
         Waiting waiting = waiting(1, WaitingStatus.WAITING);
         service.callWaiting(owner.getId(), waiting.getId());
 
-        var response = service.enterWaiting(owner.getId(), waiting.getId());
+        var response = service.enterWaiting(owner.getId(), waiting.getId(), tableId);
 
         assertThat(response.waitingId()).isEqualTo(waiting.getId());
         assertThat(response.status()).isEqualTo(WaitingStatus.SEATED);
@@ -550,7 +553,7 @@ class OwnerWaitingServiceTest {
         service.callWaiting(owner.getId(), waiting.getId());
         waitingService.respondToCall(customer.getId(), waiting.getId());
 
-        assertThat(service.enterWaiting(owner.getId(), waiting.getId()).status()).isEqualTo(WaitingStatus.SEATED);
+        assertThat(service.enterWaiting(owner.getId(), waiting.getId(), tableId).status()).isEqualTo(WaitingStatus.SEATED);
         assertThat(waitingRepository.findById(waiting.getId()).orElseThrow().getRespondedAt()).isNotNull();
     }
 
@@ -560,7 +563,7 @@ class OwnerWaitingServiceTest {
         jdbc.update("update waiting set called_at = ?, call_expires_at = ?, call_count = 1 where id = ?",
                 OffsetDateTime.now(clock).minusMinutes(30), OffsetDateTime.now(clock).minusMinutes(20), waiting.getId());
 
-        assertThat(service.enterWaiting(owner.getId(), waiting.getId()).status()).isEqualTo(WaitingStatus.SEATED);
+        assertThat(service.enterWaiting(owner.getId(), waiting.getId(), tableId).status()).isEqualTo(WaitingStatus.SEATED);
     }
 
     @Test
@@ -568,12 +571,13 @@ class OwnerWaitingServiceTest {
         Waiting first = waiting(1, WaitingStatus.CALLED);
         waiting(2, WaitingStatus.WAITING);
 
-        service.enterWaiting(owner.getId(), first.getId());
+        service.enterWaiting(owner.getId(), first.getId(), tableId);
         OffsetDateTime enteredAt = waitingRepository.findById(first.getId()).orElseThrow().getEnteredAt();
-        var retried = service.enterWaiting(owner.getId(), first.getId());
+        var retried = service.enterWaiting(owner.getId(), first.getId(), tableId);
 
         assertThat(retried.status()).isEqualTo(WaitingStatus.SEATED);
         assertThat(retried.enteredAt().toInstant()).isEqualTo(enteredAt.toInstant());
+        assertThat(retried.tableId()).isEqualTo(tableId);
         verify(ownerEmitter, times(1)).send(any(SseEmitter.SseEventBuilder.class));
         verify(customerEmitter, times(1)).send(any(SseEmitter.SseEventBuilder.class));
     }
@@ -582,7 +586,7 @@ class OwnerWaitingServiceTest {
     @EnumSource(value = WaitingStatus.class, names = {"WAITING", "CANCELED", "NO_SHOW"})
     void cannotEnterUncalledOrEndedTeam(WaitingStatus status) throws Exception {
         Waiting waiting = waiting(1, status);
-        assertBusinessFailure(() -> service.enterWaiting(owner.getId(), waiting.getId()), ErrorCode.WAITING_NOT_ENTERABLE);
+        assertBusinessFailure(() -> service.enterWaiting(owner.getId(), waiting.getId(), tableId), ErrorCode.WAITING_NOT_ENTERABLE);
         Waiting unchanged = waitingRepository.findById(waiting.getId()).orElseThrow();
         assertThat(unchanged.getStatus()).isEqualTo(status);
         assertThat(unchanged.getEnteredAt()).isNull();
@@ -595,7 +599,7 @@ class OwnerWaitingServiceTest {
         Waiting next = waiting(2, WaitingStatus.WAITING);
         assertThat(queryService.getMyWaiting(customer.getId(), next.getId()).teamsAhead()).isEqualTo(1);
 
-        service.enterWaiting(owner.getId(), first.getId());
+        service.enterWaiting(owner.getId(), first.getId(), tableId);
 
         assertThat(service.getWaitings(owner.getId(), store.getId())).singleElement()
                 .satisfies(row -> assertThat(row.id()).isEqualTo(next.getId()));
@@ -608,10 +612,83 @@ class OwnerWaitingServiceTest {
     void enterChecksOwnerRoleAndStoreOwnership() {
         Waiting waiting = waiting(1, WaitingStatus.CALLED);
         Member other = member("다른 점주", UserType.OWNER);
-        assertBusinessFailure(() -> service.enterWaiting(customer.getId(), waiting.getId()), ErrorCode.FORBIDDEN_MEMBER_TYPE);
-        assertBusinessFailure(() -> service.enterWaiting(other.getId(), waiting.getId()), ErrorCode.WAITING_NOT_FOUND);
-        assertBusinessFailure(() -> service.enterWaiting(owner.getId(), -1L), ErrorCode.WAITING_NOT_FOUND);
+        assertBusinessFailure(() -> service.enterWaiting(customer.getId(), waiting.getId(), tableId), ErrorCode.FORBIDDEN_MEMBER_TYPE);
+        assertBusinessFailure(() -> service.enterWaiting(other.getId(), waiting.getId(), tableId), ErrorCode.WAITING_NOT_FOUND);
+        assertBusinessFailure(() -> service.enterWaiting(owner.getId(), -1L, tableId), ErrorCode.WAITING_NOT_FOUND);
         assertThat(waitingRepository.findById(waiting.getId()).orElseThrow().getStatus()).isEqualTo(WaitingStatus.CALLED);
+    }
+
+    @Test
+    @DisplayName("수용 가능한 테이블로 착석하면 SEATED가 되고 테이블이 연결된다")
+    void enterLinksTable() {
+        Waiting waiting = waiting(1, WaitingStatus.CALLED);
+
+        var response = service.enterWaiting(owner.getId(), waiting.getId(), tableId);
+
+        assertThat(response.tableId()).isEqualTo(tableId);
+        assertThat(response.tableNumber()).isEqualTo(1);
+        Waiting entered = waitingRepository.findById(waiting.getId()).orElseThrow();
+        assertThat(entered.getStatus()).isEqualTo(WaitingStatus.SEATED);
+        assertThat(entered.getTableId()).isEqualTo(tableId);
+    }
+
+    @Test
+    @DisplayName("인원을 수용할 수 없거나 운영 안 하는 테이블이면 409이고 바뀌지 않는다")
+    void enterRejectsUnseatableTable() throws Exception {
+        Waiting waiting = waiting(1, WaitingStatus.CALLED);
+        Long small = insertTable(store.getId(), 2, 1, "ACTIVE");
+        Long inactive = insertTable(store.getId(), 3, 4, "INACTIVE");
+
+        for (Long table : List.of(small, inactive)) {
+            assertBusinessFailure(() -> service.enterWaiting(owner.getId(), waiting.getId(), table),
+                    ErrorCode.WAITING_TABLE_NOT_SEATABLE);
+        }
+
+        Waiting unchanged = waitingRepository.findById(waiting.getId()).orElseThrow();
+        assertThat(unchanged.getStatus()).isEqualTo(WaitingStatus.CALLED);
+        assertThat(unchanged.getTableId()).isNull();
+        verify(ownerEmitter, never()).send(any(SseEmitter.SseEventBuilder.class));
+    }
+
+    @Test
+    @DisplayName("다른 매장 테이블이나 없는 테이블이면 404다")
+    void enterRejectsOtherStoreOrMissingTable() {
+        Waiting waiting = waiting(1, WaitingStatus.CALLED);
+        Long otherStore = jdbc.queryForObject("""
+                INSERT INTO store (
+                    owner_id, name, category, address, waiting_available,
+                    reservation_duration_minutes, reservation_slot_minutes, arrival_grace_minutes
+                )
+                VALUES (?, '다른 매장', 'KOREAN', 'Seoul', true, 90, 30, 10)
+                RETURNING id
+                """, Long.class, owner.getId());
+        try {
+            Long otherTable = insertTable(otherStore, 1, 4, "ACTIVE");
+
+            assertBusinessFailure(() -> service.enterWaiting(owner.getId(), waiting.getId(), otherTable),
+                    ErrorCode.TABLE_NOT_FOUND);
+            assertBusinessFailure(() -> service.enterWaiting(owner.getId(), waiting.getId(), -1L),
+                    ErrorCode.TABLE_NOT_FOUND);
+            assertThat(waitingRepository.findById(waiting.getId()).orElseThrow().getStatus())
+                    .isEqualTo(WaitingStatus.CALLED);
+        } finally {
+            jdbc.update("delete from store_table where store_id = ?", otherStore);
+            jdbc.update("delete from store where id = ?", otherStore);
+        }
+    }
+
+    @Test
+    @DisplayName("이미 착석한 웨이팅을 다른 테이블로 다시 요청하면 409이고 테이블은 그대로다")
+    void enterRetryWithOtherTableIsRejected() throws Exception {
+        Waiting waiting = waiting(1, WaitingStatus.CALLED);
+        Long other = insertTable(store.getId(), 2, 4, "ACTIVE");
+        service.enterWaiting(owner.getId(), waiting.getId(), tableId);
+
+        assertBusinessFailure(() -> service.enterWaiting(owner.getId(), waiting.getId(), other),
+                ErrorCode.WAITING_NOT_ENTERABLE);
+
+        assertThat(waitingRepository.findById(waiting.getId()).orElseThrow().getTableId()).isEqualTo(tableId);
+        verify(ownerEmitter, times(1)).send(any(SseEmitter.SseEventBuilder.class));
     }
 
     @Test
@@ -638,7 +715,7 @@ class OwnerWaitingServiceTest {
 
         assertBusinessFailure(() -> service.callWaiting(owner.getId(), waiting.getId()), ErrorCode.WAITING_NOT_CALLABLE);
         assertBusinessFailure(() -> waitingService.respondToCall(customer.getId(), waiting.getId()), ErrorCode.WAITING_NOT_RESPONDABLE);
-        assertBusinessFailure(() -> service.enterWaiting(owner.getId(), waiting.getId()), ErrorCode.WAITING_NOT_ENTERABLE);
+        assertBusinessFailure(() -> service.enterWaiting(owner.getId(), waiting.getId(), tableId), ErrorCode.WAITING_NOT_ENTERABLE);
         assertThat(waitingRepository.findById(waiting.getId()).orElseThrow().getStatus()).isEqualTo(WaitingStatus.CANCELED);
     }
 
@@ -676,6 +753,14 @@ class OwnerWaitingServiceTest {
         Waiting saved = waitingRepository.save(Waiting.create(customer, store, LocalDate.now(clock), 2, number));
         jdbc.update("update waiting set status = ? where id = ?", status.name(), saved.getId());
         return saved;
+    }
+
+    private Long insertTable(Long storeId, int number, int capacity, String status) {
+        return jdbc.queryForObject("""
+                INSERT INTO store_table (store_id, table_number, capacity, status)
+                VALUES (?, ?, ?, ?)
+                RETURNING id
+                """, Long.class, storeId, number, capacity, status);
     }
 
     private Member member(String name, UserType type) {
