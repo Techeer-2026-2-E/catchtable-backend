@@ -100,6 +100,7 @@ class AlimtalkDeliveryTest {
     void clean() {
         histories.deleteAllInBatch();
         waitings.deleteAllInBatch();
+        jdbc.update("delete from store_table where store_id = ?", store.getId());
         stores.delete(store);
         members.deleteAll(List.of(customer, owner));
     }
@@ -267,7 +268,10 @@ class AlimtalkDeliveryTest {
     @Test
     void seatingSkipsPendingDelivery() {
         var delivery = call();
-        service.enterWaiting(owner.getId(), waiting.getId());
+        Long tableId = jdbc.queryForObject(
+                "INSERT INTO store_table (store_id, table_number, capacity) VALUES (?, 1, 4) RETURNING id",
+                Long.class, store.getId());
+        service.enterWaiting(owner.getId(), waiting.getId(), tableId);
         dispatcher.poll();
         assertThat(latest(delivery).status()).isEqualTo("SKIPPED");
         verifyNoInteractions(gateway);

@@ -63,6 +63,9 @@ class WaitingAutoExpireConcurrencyTest {
                     VALUES (?, ?, 'KOREAN', 'Seoul', true, 90, 30, 10)
                     RETURNING id
                     """, Long.class, ownerId, "expiry-" + suffix);
+            Long tableId = jdbc.queryForObject(
+                    "INSERT INTO store_table (store_id, table_number, capacity) VALUES (?, 1, 4) RETURNING id",
+                    Long.class, storeId);
             // 공용 DB에 남은 만료 대상 선처리
             scheduler.expireCalledWaitings();
             OffsetDateTime now = OffsetDateTime.now(clock);
@@ -83,7 +86,7 @@ class WaitingAutoExpireConcurrencyTest {
                 var entry = executor.submit(() -> {
                     start.await();
                     try {
-                        ownerWaitingService.enterWaiting(ownerId, waitingId);
+                        ownerWaitingService.enterWaiting(ownerId, waitingId, tableId);
                         return true;
                     } catch (BusinessException exception) {
                         assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.WAITING_NOT_ENTERABLE);
@@ -114,6 +117,7 @@ class WaitingAutoExpireConcurrencyTest {
                 jdbc.update("delete from waiting_end_history where waiting_id in (select id from waiting where store_id = ?)",
                         storeId);
                 jdbc.update("delete from waiting where store_id = ?", storeId);
+                jdbc.update("delete from store_table where store_id = ?", storeId);
                 jdbc.update("delete from store where id = ?", storeId);
             }
             jdbc.update("delete from member where id in (?, ?)", ownerId, customerId);

@@ -44,6 +44,7 @@ public enum ErrorCode {
     WAITING_NOT_CALLABLE(HttpStatus.CONFLICT, "호출할 수 없는 웨이팅입니다."),
     WAITING_NOT_RESPONDABLE(HttpStatus.CONFLICT, "응답할 수 없는 웨이팅입니다."),
     WAITING_NOT_ENTERABLE(HttpStatus.CONFLICT, "입장 처리할 수 없는 웨이팅입니다."),
+    WAITING_TABLE_NOT_SEATABLE(HttpStatus.CONFLICT, "운영 중이 아니거나 신청 인원을 수용할 수 없는 테이블입니다."),
     WAITING_NOT_RECALLABLE(HttpStatus.CONFLICT, "호출 재전송할 수 없는 웨이팅입니다."),
     WAITING_NOT_DEFERRABLE(HttpStatus.CONFLICT, "순번을 연기할 수 없는 웨이팅입니다."),
     WAITING_DEFER_LIMIT_EXCEEDED(HttpStatus.CONFLICT, "순번은 최대 2회까지 연기할 수 있습니다."),

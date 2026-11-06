@@ -411,13 +411,19 @@ class OwnerWaitingControllerTest {
                 .andExpect(request().asyncStarted())
                 .andReturn();
         String path = "/api/owner/waitings/{waitingId}/enter";
+        StoreTable table = table(3, 1, 4, TableStatus.ACTIVE);
+        String body = "{\"tableId\":" + table.getId() + "}";
 
-        mockMvc.perform(post(path, waiting.getId()).header("X-Member-Id", owner.getId()))
+        mockMvc.perform(post(path, waiting.getId()).header("X-Member-Id", owner.getId())
+                        .contentType(MediaType.APPLICATION_JSON).content(body))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.waitingId").value(waiting.getId()))
                 .andExpect(jsonPath("$.status").value("SEATED"))
-                .andExpect(jsonPath("$.enteredAt").value("2030-01-11T00:05:00+09:00"));
-        mockMvc.perform(post(path, waiting.getId()).header("X-Member-Id", owner.getId()))
+                .andExpect(jsonPath("$.enteredAt").value("2030-01-11T00:05:00+09:00"))
+                .andExpect(jsonPath("$.tableId").value(table.getId()))
+                .andExpect(jsonPath("$.tableNumber").value(3));
+        mockMvc.perform(post(path, waiting.getId()).header("X-Member-Id", owner.getId())
+                        .contentType(MediaType.APPLICATION_JSON).content(body))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("SEATED"))
                 .andExpect(jsonPath("$.enteredAt").isNotEmpty());
@@ -436,19 +442,53 @@ class OwnerWaitingControllerTest {
         Waiting called = waiting(store, TODAY, 2, WaitingStatus.CALLED);
         Long otherOwner = member("다른 점주", UserType.OWNER).getId();
         String path = "/api/owner/waitings/{waitingId}/enter";
+        String body = "{\"tableId\":" + table(1, 1, 4, TableStatus.ACTIVE).getId() + "}";
 
-        mockMvc.perform(post(path, uncalled.getId()).header("X-Member-Id", owner.getId()))
+        mockMvc.perform(post(path, uncalled.getId()).header("X-Member-Id", owner.getId())
+                        .contentType(MediaType.APPLICATION_JSON).content(body))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("WAITING_NOT_ENTERABLE"));
-        mockMvc.perform(post(path, called.getId())).andExpect(status().isUnauthorized());
-        mockMvc.perform(post(path, called.getId()).header("X-Member-Id", customer.getId()))
+        mockMvc.perform(post(path, called.getId())
+                .contentType(MediaType.APPLICATION_JSON).content(body)).andExpect(status().isUnauthorized());
+        mockMvc.perform(post(path, called.getId()).header("X-Member-Id", customer.getId())
+                        .contentType(MediaType.APPLICATION_JSON).content(body))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("FORBIDDEN_MEMBER_TYPE"));
-        mockMvc.perform(post(path, called.getId()).header("X-Member-Id", otherOwner))
+        mockMvc.perform(post(path, called.getId()).header("X-Member-Id", otherOwner)
+                        .contentType(MediaType.APPLICATION_JSON).content(body))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value("WAITING_NOT_FOUND"));
-        mockMvc.perform(post(path, -1L).header("X-Member-Id", owner.getId()))
+        mockMvc.perform(post(path, -1L).header("X-Member-Id", owner.getId())
+                        .contentType(MediaType.APPLICATION_JSON).content(body))
                 .andExpect(status().isNotFound());
+    }
+
+    @Test
+    @DisplayName("착석 요청에 테이블이 없으면 400, 수용 불가 409, 없는 테이블 404다")
+    void enterValidatesTable() throws Exception {
+        Waiting called = waiting(store, TODAY, 1, WaitingStatus.CALLED);
+        Long small = table(1, 1, 1, TableStatus.ACTIVE).getId();
+        Long inactive = table(2, 1, 4, TableStatus.INACTIVE).getId();
+        String path = "/api/owner/waitings/{waitingId}/enter";
+
+        mockMvc.perform(post(path, called.getId()).header("X-Member-Id", owner.getId()))
+                .andExpect(status().isBadRequest());
+        mockMvc.perform(post(path, called.getId()).header("X-Member-Id", owner.getId())
+                        .contentType(MediaType.APPLICATION_JSON).content("{}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_INPUT"));
+        for (Long tableId : List.of(small, inactive)) {
+            mockMvc.perform(post(path, called.getId()).header("X-Member-Id", owner.getId())
+                            .contentType(MediaType.APPLICATION_JSON).content("{\"tableId\":" + tableId + "}"))
+                    .andExpect(status().isConflict())
+                    .andExpect(jsonPath("$.code").value("WAITING_TABLE_NOT_SEATABLE"));
+        }
+        mockMvc.perform(post(path, called.getId()).header("X-Member-Id", owner.getId())
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"tableId\":-1}"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("TABLE_NOT_FOUND"));
+        assertThat(waitingRepository.findById(called.getId()).orElseThrow().getStatus())
+                .isEqualTo(WaitingStatus.CALLED);
     }
 
     @Test

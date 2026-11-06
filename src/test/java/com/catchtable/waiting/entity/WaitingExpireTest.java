@@ -1,5 +1,6 @@
 package com.catchtable.waiting.entity;
 
+import com.catchtable.store.entity.StoreTable;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
@@ -59,7 +60,7 @@ class WaitingExpireTest {
         assertThat(waiting.getStatus()).isEqualTo(WaitingStatus.WAITING);
 
         Waiting seated = called();
-        seated.enter(EXPIRES_AT.plusMinutes(1));
+        seated.enter(StoreTable.builder().tableNumber(1).capacity(4).build(), EXPIRES_AT.plusMinutes(1));
         assertThat(seated.expire(later)).isNull();
         assertThat(seated.getStatus()).isEqualTo(WaitingStatus.SEATED);
 
