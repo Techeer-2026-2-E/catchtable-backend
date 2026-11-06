@@ -203,14 +203,15 @@ public class Waiting extends BaseTimeEntity {
         }
     }
 
-    // 바로 뒤 진행 중 팀과 순서 맞바꿈
-    public WaitingDeferHistory deferBehind(Waiting next, int beforePosition, Long actorId, OffsetDateTime now) {
+    // 바로 뒤 대기 중 팀과 순서 맞바꿈 (사이의 호출된 팀은 그대로)
+    public WaitingDeferHistory deferBehind(Waiting next, int beforePosition, int afterPosition,
+                                           Long actorId, OffsetDateTime now) {
         validateDeferrable();
         int order = queueOrder;
         queueOrder = next.queueOrder;
         next.queueOrder = order;
         deferCount++;
-        return WaitingDeferHistory.record(this, beforePosition, beforePosition + 1, actorId, now);
+        return WaitingDeferHistory.record(this, beforePosition, afterPosition, actorId, now);
     }
 
     // 방문 의사 응답

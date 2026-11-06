@@ -178,9 +178,12 @@ public class OwnerWaitingService {
                 .orElseThrow(() -> new BusinessException(ErrorCode.WAITING_NOT_DEFERRABLE));
         int beforePosition = (int) waitingRepository.countByStoreIdAndWaitingDateAndStatusInAndQueueOrderLessThan(
                 storeId, waiting.getWaitingDate(), WaitingStatus.ACTIVE, waiting.getQueueOrder()) + 1;
+        // 맞바꾼 뒤 순번 (next 자리 앞 진행 중 팀 수: 나 대신 next가 들어옴)
+        int afterPosition = (int) waitingRepository.countByStoreIdAndWaitingDateAndStatusInAndQueueOrderLessThan(
+                storeId, waiting.getWaitingDate(), WaitingStatus.ACTIVE, next.getQueueOrder()) + 1;
 
         WaitingDeferHistory history = deferHistoryRepository.save(
-                waiting.deferBehind(next, beforePosition, memberId, OffsetDateTime.now(clock)));
+                waiting.deferBehind(next, beforePosition, afterPosition, memberId, OffsetDateTime.now(clock)));
 
         eventPublisher.publishEvent(new CustomerNotificationEvent(
                 store.getOwner().getId(), NotificationType.WAITING_CHANGED, storeId,

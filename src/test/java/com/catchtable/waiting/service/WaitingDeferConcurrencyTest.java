@@ -99,6 +99,30 @@ class WaitingDeferConcurrencyTest {
         }
     }
 
+    @Test
+    @Timeout(20)
+    @DisplayName("연기 중 뒤 대기 팀이 호출돼도 다음 대기 팀과 맞바꾸고 순서가 중복·누락 없이 유지된다")
+    void deferAndCallNext() throws Exception {
+        String suffix = UUID.randomUUID().toString();
+        Long ownerId = insertMember("owner", "OWNER", suffix);
+        Long storeId = insertStore(ownerId, suffix);
+        try {
+            Long first = insertWaiting(storeId, 1, suffix);
+            Long second = insertWaiting(storeId, 2, suffix);
+            insertWaiting(storeId, 3, suffix);
+
+            List<Boolean> results = race(
+                    () -> ownerWaitingService.deferWaiting(ownerId, first),
+                    () -> ownerWaitingService.callWaiting(ownerId, second));
+
+            // 호출이 먼저여도 3번 팀과 맞바꿔 성공
+            assertThat(results).containsExactly(true, true);
+            assertQueueConsistent(storeId, 1);
+        } finally {
+            cleanUp(storeId, suffix);
+        }
+    }
+
     // 정렬 순서 = 1..전체 행 수, 진행 중 팀 순번 = 1..N, 연기 횟수 = 이력 수
     private void assertQueueConsistent(Long storeId, int defers) {
         List<Integer> orders = jdbc.queryForList(
