@@ -5,6 +5,8 @@ import com.catchtable.global.exception.BusinessException;
 import com.catchtable.global.exception.ErrorCode;
 import com.catchtable.member.entity.Member;
 import com.catchtable.store.entity.Store;
+import com.catchtable.store.entity.StoreTable;
+import com.catchtable.store.entity.TableStatus;
 import jakarta.persistence.*;
 import lombok.AccessLevel;
 import lombok.Getter;
@@ -119,6 +121,10 @@ public class Waiting extends BaseTimeEntity {
     @Column(name = "entered_at")
     private OffsetDateTime enteredAt;
 
+    // 착석 테이블
+    @Column(name = "table_id")
+    private Long tableId;
+
     private Waiting(Member member, Store store, LocalDate waitingDate, int partyCount, int waitNumber) {
         this.member = member;
         this.store = store;
@@ -231,16 +237,24 @@ public class Waiting extends BaseTimeEntity {
     }
 
     // 입장 처리
-    public boolean enter(OffsetDateTime now) {
+    public boolean enter(StoreTable table, OffsetDateTime now) {
         if (status == WaitingStatus.SEATED) {
+            // 같은 테이블 재요청만 멱등
+            if (!Objects.equals(tableId, table.getId())) {
+                throw new BusinessException(ErrorCode.WAITING_NOT_ENTERABLE);
+            }
             return false;
         }
         if (status != WaitingStatus.CALLED && status != WaitingStatus.CONFIRMED) {
             throw new BusinessException(ErrorCode.WAITING_NOT_ENTERABLE);
         }
+        if (table.getStatus() != TableStatus.ACTIVE || !table.canSeat(partyCount)) {
+            throw new BusinessException(ErrorCode.WAITING_TABLE_NOT_SEATABLE);
+        }
         // 늦은 도착 허용
         status = WaitingStatus.SEATED;
         enteredAt = now;
+        tableId = table.getId();
         return true;
     }
 
