@@ -66,11 +66,12 @@ public interface WaitingRepository extends JpaRepository<Waiting, Long> {
     @Query("select w.store.id from Waiting w where w.id = :waitingId and w.store.owner.id = :ownerId")
     Optional<Long> findStoreIdByIdAndOwnerId(@Param("waitingId") Long waitingId, @Param("ownerId") Long ownerId);
 
-    // 뒤 진행 중 팀 행 잠금 (정렬 순서는 매장 락 안에서만 변경)
+    // 뒤 대기 중 팀 행 잠금 (정렬 순서는 매장 락 안에서만 변경)
+    // LIMIT 없음: 잠금 대기 중 호출된 행이 빠져도 다음 대기 팀 선택
     @Query(value = """
             select * from waiting
             where store_id = :storeId and waiting_date = :waitingDate
-              and status in ('WAITING', 'CALLED', 'CONFIRMED') and queue_order > :queueOrder
+              and status = 'WAITING' and queue_order > :queueOrder
             order by queue_order
             for update
             """, nativeQuery = true)

@@ -34,7 +34,7 @@ class WaitingDeferTest {
         Waiting first = waiting(1);
         Waiting second = waiting(2);
 
-        WaitingDeferHistory history = first.deferBehind(second, 1, 7L, NOW);
+        WaitingDeferHistory history = first.deferBehind(second, 1, 2, 7L, NOW);
 
         assertThat(first.getQueueOrder()).isEqualTo(2);
         assertThat(second.getQueueOrder()).isEqualTo(1);
@@ -52,10 +52,10 @@ class WaitingDeferTest {
     @DisplayName("2회 연기 후 3번째 연기는 거부한다")
     void rejectsThirdDefer() {
         Waiting waiting = waiting(1);
-        waiting.deferBehind(waiting(2), 1, 7L, NOW);
-        waiting.deferBehind(waiting(3), 2, 7L, NOW);
+        waiting.deferBehind(waiting(2), 1, 2, 7L, NOW);
+        waiting.deferBehind(waiting(3), 2, 3, 7L, NOW);
 
-        assertFailure(() -> waiting.deferBehind(waiting(4), 3, 7L, NOW), ErrorCode.WAITING_DEFER_LIMIT_EXCEEDED);
+        assertFailure(() -> waiting.deferBehind(waiting(4), 3, 4, 7L, NOW), ErrorCode.WAITING_DEFER_LIMIT_EXCEEDED);
         assertThat(waiting.getDeferCount()).isEqualTo(2);
         assertThat(waiting.getQueueOrder()).isEqualTo(3);
     }
@@ -68,7 +68,7 @@ class WaitingDeferTest {
         Waiting next = waiting(2);
         ReflectionTestUtils.setField(waiting, "status", status);
 
-        assertFailure(() -> waiting.deferBehind(next, 1, 7L, NOW), ErrorCode.WAITING_NOT_DEFERRABLE);
+        assertFailure(() -> waiting.deferBehind(next, 1, 2, 7L, NOW), ErrorCode.WAITING_NOT_DEFERRABLE);
         assertThat(waiting.getQueueOrder()).isEqualTo(1);
         assertThat(next.getQueueOrder()).isEqualTo(2);
         assertThat(waiting.getDeferCount()).isZero();

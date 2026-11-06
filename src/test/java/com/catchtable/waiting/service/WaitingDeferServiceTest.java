@@ -124,6 +124,50 @@ class WaitingDeferServiceTest {
     }
 
     @Test
+    @DisplayName("사이에 호출된 팀이 있으면 건너뛰고 뒤 대기 팀과만 맞바꾼다")
+    void deferSkipsCalledTeam() {
+        Long me = insertWaiting(1, "WAITING");
+        Long called = insertWaiting(2, "CALLED");
+        Long next = insertWaiting(3, "WAITING");
+
+        WaitingDeferResponse response = service.deferWaiting(ownerId, me);
+
+        assertThat(response).isEqualTo(new WaitingDeferResponse(me, 1, 1, 1, 3));
+        assertThat(queue()).containsExactly(next, called, me);
+        assertThat(position(me)).isEqualTo(3);
+        assertThat(deferHistoryRepository.findAllByWaitingIdOrderByIdAsc(me))
+                .extracting("beforePosition", "afterPosition")
+                .containsExactly(tuple(1, 3));
+    }
+
+    @Test
+    @DisplayName("사이에 도착 확인한 팀이 있어도 건너뛰고 뒤 대기 팀과만 맞바꾼다")
+    void deferSkipsConfirmedTeam() {
+        Long me = insertWaiting(1, "WAITING");
+        Long confirmed = insertWaiting(2, "CONFIRMED");
+        Long next = insertWaiting(3, "WAITING");
+
+        WaitingDeferResponse response = service.deferWaiting(ownerId, me);
+
+        assertThat(response).isEqualTo(new WaitingDeferResponse(me, 1, 1, 1, 3));
+        assertThat(queue()).containsExactly(next, confirmed, me);
+    }
+
+    @Test
+    @DisplayName("뒤에 호출된 팀만 있으면 409이고 아무것도 바뀌지 않는다")
+    void onlyCalledTeamBehindCannotDefer() {
+        Long me = insertWaiting(1, "WAITING");
+        Long called = insertWaiting(2, "CALLED");
+
+        assertFailure(() -> service.deferWaiting(ownerId, me), ErrorCode.WAITING_NOT_DEFERRABLE);
+
+        assertThat(queue()).containsExactly(me, called);
+        assertThat(jdbc.queryForObject("select defer_count from waiting where id = ?", Integer.class, me))
+                .isZero();
+        assertThat(deferHistoryRepository.findAllByWaitingIdOrderByIdAsc(me)).isEmpty();
+    }
+
+    @Test
     @DisplayName("3번째 연기는 409이다")
     void thirdDeferIsRejected() {
         Long first = insertWaiting(1, "WAITING");
