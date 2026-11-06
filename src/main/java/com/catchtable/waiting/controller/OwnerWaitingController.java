@@ -9,6 +9,7 @@ import com.catchtable.waiting.dto.WaitingDeferResponse;
 import com.catchtable.waiting.dto.WaitingPolicyRequest;
 import com.catchtable.waiting.dto.WaitingPolicyResponse;
 import com.catchtable.waiting.dto.WaitingRecallResponse;
+import com.catchtable.waiting.dto.WaitingEnterRequest;
 import com.catchtable.waiting.dto.WaitingEnterResponse;
 import com.catchtable.waiting.dto.WaitingTerminationResponse;
 import com.catchtable.waiting.service.OwnerWaitingService;
@@ -99,7 +100,8 @@ public class OwnerWaitingController {
     }
 
     @PostMapping("/waitings/{waitingId}/enter")
-    public WaitingEnterResponse enterWaiting(@LoginMember Long memberId, @PathVariable Long waitingId) {
-        return ownerWaitingService.enterWaiting(memberId, waitingId);
+    public WaitingEnterResponse enterWaiting(@LoginMember Long memberId, @PathVariable Long waitingId,
+                                             @Valid @RequestBody WaitingEnterRequest request) {
+        return ownerWaitingService.enterWaiting(memberId, waitingId, request.tableId());
     }
 }

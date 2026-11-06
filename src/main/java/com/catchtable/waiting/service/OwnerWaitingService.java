@@ -149,16 +149,18 @@ public class OwnerWaitingService {
     }
 
     @Transactional
-    public WaitingEnterResponse enterWaiting(Long memberId, Long waitingId) {
+    public WaitingEnterResponse enterWaiting(Long memberId, Long waitingId, Long tableId) {
         Waiting waiting = findOwnerWaitingForUpdate(memberId, waitingId);
-        if (waiting.enter(OffsetDateTime.now(clock))) {
+        StoreTable table = storeTableRepository.findByIdAndStoreId(tableId, waiting.getStore().getId())
+                .orElseThrow(() -> new BusinessException(ErrorCode.TABLE_NOT_FOUND));
+        if (waiting.enter(table, OffsetDateTime.now(clock))) {
             Store store = waiting.getStore();
             eventPublisher.publishEvent(new CustomerNotificationEvent(
                     store.getOwner().getId(), NotificationType.WAITING_CHANGED, store.getId(),
                     "대기 목록이 변경되었습니다."));
             eventPublisher.publishEvent(new WaitingQueueChangedEvent(store.getId(), waiting.getWaitingDate()));
         }
-        return WaitingEnterResponse.from(waiting);
+        return WaitingEnterResponse.from(waiting, table);
     }
 
     // 매장 → 웨이팅 순서로 잠금 (신청과 동일)
