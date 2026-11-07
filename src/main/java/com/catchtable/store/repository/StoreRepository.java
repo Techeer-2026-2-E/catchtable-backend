@@ -53,27 +53,41 @@ public interface StoreRepository extends JpaRepository<Store,Long> {
                   AND CAST(c.start_at AS DATE) <= CAST(c.now_at AS DATE) + s.booking_open_days
                   AND c.start_at >= c.now_at + s.booking_deadline_minutes * INTERVAL '1 minute'
                   AND EXISTS (
-                      SELECT 1 FROM business_hour bh
-                      CROSS JOIN LATERAL (
+                      SELECT 1 FROM (
                           VALUES (CAST(c.start_at AS DATE)), (CAST(c.start_at AS DATE) - 1)
                       ) d(business_date)
+                      -- 특정일 설정이 있으면 요일별 설정보다 우선한다. 특정일 휴무는 행이 나오지 않는다.
                       CROSS JOIN LATERAL (
-                          SELECT d.business_date + bh.open_time AS opens_at,
-                                 d.business_date + bh.closing_time
-                                     + CASE WHEN bh.closing_time <= bh.open_time
+                          SELECT sbd.open_time, sbd.closing_time, sbd.break_start_time, sbd.break_end_time
+                          FROM special_business_day sbd
+                          WHERE sbd.store_id = s.id AND sbd.deleted_at IS NULL
+                            AND sbd.business_date = d.business_date AND sbd.closed = FALSE
+                          UNION ALL
+                          SELECT bh.open_time, bh.closing_time, bh.break_start_time, bh.break_end_time
+                          FROM business_hour bh
+                          WHERE bh.store_id = s.id AND bh.deleted_at IS NULL
+                            AND bh.day_of_week = EXTRACT(ISODOW FROM d.business_date)
+                            AND NOT EXISTS (
+                                SELECT 1 FROM special_business_day sbd
+                                WHERE sbd.store_id = s.id AND sbd.deleted_at IS NULL
+                                  AND sbd.business_date = d.business_date
+                            )
+                      ) h
+                      CROSS JOIN LATERAL (
+                          SELECT d.business_date + h.open_time AS opens_at,
+                                 d.business_date + h.closing_time
+                                     + CASE WHEN h.closing_time <= h.open_time
                                             THEN INTERVAL '1 day' ELSE INTERVAL '0 day' END AS closes_at,
-                                 d.business_date + bh.break_start_time
-                                     + CASE WHEN bh.break_start_time < bh.open_time
+                                 d.business_date + h.break_start_time
+                                     + CASE WHEN h.break_start_time < h.open_time
                                             THEN INTERVAL '1 day' ELSE INTERVAL '0 day' END AS break_starts_at,
-                                 d.business_date + bh.break_end_time
-                                     + CASE WHEN bh.break_end_time < bh.open_time
+                                 d.business_date + h.break_end_time
+                                     + CASE WHEN h.break_end_time < h.open_time
                                             THEN INTERVAL '1 day' ELSE INTERVAL '0 day' END AS break_ends_at
                       ) w
-                      WHERE bh.store_id = s.id AND bh.deleted_at IS NULL
-                        AND bh.day_of_week = EXTRACT(ISODOW FROM d.business_date)
-                        AND c.start_at >= w.opens_at
+                      WHERE c.start_at >= w.opens_at
                         AND c.start_at + s.reservation_duration_minutes * INTERVAL '1 minute' <= w.closes_at
-                        AND (bh.break_start_time IS NULL
+                        AND (h.break_start_time IS NULL
                             OR c.start_at + s.reservation_duration_minutes * INTERVAL '1 minute' <= w.break_starts_at
                             OR c.start_at >= w.break_ends_at)
                   )
