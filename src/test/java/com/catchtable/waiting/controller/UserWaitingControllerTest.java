@@ -6,6 +6,7 @@ import com.catchtable.member.repository.MemberRepository;
 import com.catchtable.store.entity.Store;
 import com.catchtable.store.entity.StoreCategory;
 import com.catchtable.store.repository.StoreRepository;
+import com.catchtable.waiting.WaitingBusinessHourFixture;
 import com.catchtable.waiting.entity.Waiting;
 import com.catchtable.waiting.entity.WaitingStatus;
 import com.catchtable.waiting.repository.WaitingEndHistoryRepository;
@@ -68,6 +69,7 @@ class UserWaitingControllerTest {
     @Autowired StoreRepository storeRepository;
     @Autowired MemberRepository memberRepository;
     @Autowired JdbcTemplate jdbcTemplate;
+    @Autowired Clock clock;
 
     private final List<Member> createdMembers = new ArrayList<>(); // 정리 대상 회원
     private final List<Store> createdStores = new ArrayList<>();   // 정리 대상 매장
@@ -85,6 +87,7 @@ class UserWaitingControllerTest {
     void tearDown() {
         historyRepository.deleteAllInBatch();
         waitingRepository.deleteAllInBatch();
+        createdStores.forEach(created -> WaitingBusinessHourFixture.clear(jdbcTemplate, created.getId()));
         storeRepository.deleteAll(createdStores);
         memberRepository.deleteAll(createdMembers);
         createdMembers.clear();
@@ -378,6 +381,7 @@ class UserWaitingControllerTest {
                 .reservationSlotMinutes(30)
                 .arrivalGraceMinutes(10)
                 .build());
+        WaitingBusinessHourFixture.openNow(jdbcTemplate, clock, saved.getId());
         createdStores.add(saved);
         return saved;
     }

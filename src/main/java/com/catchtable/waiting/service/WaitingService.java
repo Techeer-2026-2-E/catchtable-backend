@@ -8,6 +8,7 @@ import com.catchtable.notification.dto.CustomerNotificationEvent;
 import com.catchtable.notification.dto.NotificationType;
 import com.catchtable.store.entity.Store;
 import com.catchtable.store.repository.StoreRepository;
+import com.catchtable.store.service.BusinessHourService;
 import com.catchtable.waiting.dto.WaitingCreateResult;
 import com.catchtable.waiting.dto.WaitingRespondResponse;
 import com.catchtable.waiting.dto.WaitingQueueChangedEvent;
@@ -25,6 +26,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Clock;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
 import java.util.Optional;
 
@@ -37,6 +39,7 @@ public class WaitingService {
     private final WaitingEndHistoryRepository historyRepository;
     private final StoreRepository storeRepository;
     private final MemberRepository memberRepository;
+    private final BusinessHourService businessHourService;
     private final ApplicationEventPublisher eventPublisher;
     private final Clock clock;
 
@@ -67,6 +70,11 @@ public class WaitingService {
 
         // 3. 접수 마감 체크
         store.validateWaitingAvailable();
+
+        // 영업시간 체크 (특정일 설정 우선, 휴무일·브레이크·자정 넘김 포함)
+        if (!businessHourService.isOpen(storeId, LocalDateTime.now(clock))) {
+            throw new BusinessException(ErrorCode.WAITING_OUTSIDE_BUSINESS_HOURS);
+        }
 
         // 회원 조회
         Member member = memberRepository.findById(memberId)

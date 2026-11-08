@@ -10,6 +10,7 @@ import com.catchtable.store.entity.StoreTable;
 import com.catchtable.store.entity.TableStatus;
 import com.catchtable.store.repository.StoreRepository;
 import com.catchtable.store.repository.StoreTableRepository;
+import com.catchtable.waiting.WaitingBusinessHourFixture;
 import com.catchtable.waiting.entity.Waiting;
 import com.catchtable.waiting.entity.WaitingStatus;
 import com.catchtable.waiting.repository.WaitingRepository;
@@ -76,6 +77,7 @@ class OwnerWaitingControllerTest {
     @Autowired SseEmitterRepository emitterRepository;
     @Autowired JdbcTemplate jdbc;
     @Autowired TransactionTemplate transactions;
+    @Autowired Clock clock;
 
     private final List<Member> members = new ArrayList<>();
     private final List<Store> stores = new ArrayList<>();
@@ -102,6 +104,7 @@ class OwnerWaitingControllerTest {
         waitingRepository.deleteAllInBatch();
         for (Store saved : stores) {
             tableRepository.deleteAll(tableRepository.findAllByStoreIdOrderByTableNumberAsc(saved.getId()));
+            WaitingBusinessHourFixture.clear(jdbc, saved.getId());
         }
         storeRepository.deleteAll(stores);
         memberRepository.deleteAll(members);
@@ -594,6 +597,7 @@ class OwnerWaitingControllerTest {
                 .reservationDurationMinutes(90).reservationSlotMinutes(30).arrivalGraceMinutes(10).build();
         store.openWaiting();
         Store saved = storeRepository.save(store);
+        WaitingBusinessHourFixture.openNow(jdbc, clock, saved.getId());
         stores.add(saved);
         return saved;
     }

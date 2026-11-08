@@ -8,6 +8,7 @@ import com.catchtable.member.repository.MemberRepository;
 import com.catchtable.store.entity.Store;
 import com.catchtable.store.entity.StoreCategory;
 import com.catchtable.store.repository.StoreRepository;
+import com.catchtable.waiting.WaitingBusinessHourFixture;
 import com.catchtable.waiting.dto.WaitingCreateResult;
 import com.catchtable.waiting.entity.ArrivalIntent;
 import com.catchtable.waiting.entity.Waiting;
@@ -28,7 +29,9 @@ import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.time.Clock;
 import java.time.LocalDate;
+import java.time.LocalTime;
 import java.time.OffsetDateTime;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
@@ -71,6 +74,7 @@ class WaitingServiceTest {
                 .build();
         newStore.openWaiting();
         store = storeRepository.save(newStore);
+        WaitingBusinessHourFixture.openNow(jdbc, clock, store.getId());
     }
 
     // 데이터 정리 (웨이팅 → 매장 → 회원 순, FK 때문)
@@ -78,6 +82,7 @@ class WaitingServiceTest {
     void tearDown() {
         historyRepository.deleteAllInBatch();
         waitingRepository.deleteAllInBatch();
+        WaitingBusinessHourFixture.clear(jdbc, store.getId());
         storeRepository.delete(store);
         memberRepository.deleteAll(createdMembers);
         createdMembers.clear();
@@ -110,6 +115,46 @@ class WaitingServiceTest {
         assertThatThrownBy(() -> waitingService.createWaiting(customer.getId(), store.getId(), 2))
                 .isInstanceOf(BusinessException.class)
                 .extracting("errorCode").isEqualTo(ErrorCode.WAITING_CLOSED);
+    }
+
+    // 영업 시간 밖 → WAITING_OUTSIDE_BUSINESS_HOURS, 저장 안 됨
+    @Test
+    @DisplayName("영업 시간이 아니면 신청할 수 없고 웨이팅도 저장되지 않는다")
+    void create_outsideBusinessHours_fails() {
+        changeBusinessHoursToLaterToday();
+        Member customer = saveMember("고객");
+
+        assertThatThrownBy(() -> waitingService.createWaiting(customer.getId(), store.getId(), 2))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode").isEqualTo(ErrorCode.WAITING_OUTSIDE_BUSINESS_HOURS);
+        assertThat(waitingRepository.count()).isZero();
+    }
+
+    // 특정일 휴무가 요일별 영업시간보다 우선
+    @Test
+    @DisplayName("오늘이 특정일 휴무면 요일별 영업시간 안이어도 신청할 수 없다")
+    void create_specialClosedDay_fails() {
+        jdbc.update("insert into special_business_day (store_id, business_date, closed) values (?, ?, true)",
+                store.getId(), LocalDate.now(clock));
+        Member customer = saveMember("고객");
+
+        assertThatThrownBy(() -> waitingService.createWaiting(customer.getId(), store.getId(), 2))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode").isEqualTo(ErrorCode.WAITING_OUTSIDE_BUSINESS_HOURS);
+    }
+
+    // 진행 중 웨이팅 확인이 영업시간 체크보다 먼저 → 영업 종료 후 재시도도 같은 결과
+    @Test
+    @DisplayName("신청 뒤 영업이 끝나도 같은 인원으로 재시도하면 기존 웨이팅을 돌려준다")
+    void create_retryAfterBusinessHours_returnsExisting() {
+        Member customer = saveMember("고객");
+        WaitingCreateResult first = waitingService.createWaiting(customer.getId(), store.getId(), 2);
+
+        changeBusinessHoursToLaterToday();
+        WaitingCreateResult retry = waitingService.createWaiting(customer.getId(), store.getId(), 2);
+
+        assertThat(retry.created()).isFalse();
+        assertThat(retry.response().waitingId()).isEqualTo(first.response().waitingId());
     }
 
     // 없는 매장 → STORE_NOT_FOUND
@@ -416,6 +461,13 @@ class WaitingServiceTest {
     }
 
     // 접수 마감 헬퍼
+    // 영업시간을 지금보다 2~3시간 뒤로 바꿔 "지금은 영업 전" 상태로 만든다
+    private void changeBusinessHoursToLaterToday() {
+        jdbc.update("delete from business_hour where store_id = ?", store.getId());
+        LocalTime now = LocalTime.now(clock).truncatedTo(ChronoUnit.MINUTES);
+        WaitingBusinessHourFixture.saveAllDays(jdbc, store.getId(), now.plusHours(2), now.plusHours(3));
+    }
+
     private void closeWaiting() {
         Store found = storeRepository.findById(store.getId()).orElseThrow();
         found.closeWaiting();

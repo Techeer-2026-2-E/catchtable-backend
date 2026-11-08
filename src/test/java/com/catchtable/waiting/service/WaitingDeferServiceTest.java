@@ -4,6 +4,7 @@ import com.catchtable.global.exception.BusinessException;
 import com.catchtable.global.exception.ErrorCode;
 import com.catchtable.notification.dto.CustomerNotificationEvent;
 import com.catchtable.notification.dto.NotificationType;
+import com.catchtable.waiting.WaitingBusinessHourFixture;
 import com.catchtable.waiting.dto.OwnerWaitingResponse;
 import com.catchtable.waiting.dto.WaitingDeferResponse;
 import com.catchtable.waiting.dto.WaitingQueueChangedEvent;
@@ -58,6 +59,7 @@ class WaitingDeferServiceTest {
                 VALUES (?, ?, 'KOREAN', 'Seoul', true, 90, 30, 10)
                 RETURNING id
                 """, Long.class, ownerId, "defer-" + suffix);
+        WaitingBusinessHourFixture.openNow(jdbc, clock, storeId);
     }
 
     @AfterEach
@@ -65,6 +67,7 @@ class WaitingDeferServiceTest {
         jdbc.update("delete from waiting_defer_history where waiting_id in (select id from waiting where store_id = ?)",
                 storeId);
         jdbc.update("delete from waiting where store_id = ?", storeId);
+        WaitingBusinessHourFixture.clear(jdbc, storeId);
         jdbc.update("delete from store where id = ?", storeId);
         jdbc.update("delete from member where email like ?", "%-" + suffix + "@example.com");
     }
