@@ -60,6 +60,7 @@ public class SpecialBusinessDayService {
 
         // 충돌하면 예외가 나면서 위 저장까지 전부 롤백된다.
         businessHourService.validateActiveReservationsCovered(storeId);
+        validateWaitingsIfToday(storeId, businessDate);
         return SpecialBusinessDayResponse.from(day);
     }
 
@@ -75,6 +76,7 @@ public class SpecialBusinessDayService {
         specialBusinessDayRepository.flush();
 
         businessHourService.validateActiveReservationsCovered(storeId);
+        validateWaitingsIfToday(storeId, businessDate);
     }
 
     // 예약 생성의 공유 잠금과 맞물려, 검증 중 새 예약이 생기지 않게 한다.
@@ -85,10 +87,20 @@ public class SpecialBusinessDayService {
         return store;
     }
 
+    // 웨이팅은 당일 접수만 있으므로, 오늘이 아닌 날짜의 설정은 웨이팅과 충돌할 수 없다.
+    private void validateWaitingsIfToday(Long storeId, LocalDate businessDate) {
+        if (businessDate.equals(today())) {
+            businessHourService.validateActiveWaitingsCovered(storeId);
+        }
+    }
+
     private void validateNotPast(LocalDate businessDate) {
-        LocalDate today = OffsetDateTime.now(clock).atZoneSameInstant(STORE_ZONE).toLocalDate();
-        if (businessDate.isBefore(today)) {
+        if (businessDate.isBefore(today())) {
             throw new BusinessException(ErrorCode.PAST_BUSINESS_DATE);
         }
+    }
+
+    private LocalDate today() {
+        return OffsetDateTime.now(clock).atZoneSameInstant(STORE_ZONE).toLocalDate();
     }
 }

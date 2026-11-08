@@ -54,6 +54,10 @@ public interface WaitingRepository extends JpaRepository<Waiting, Long> {
     Optional<Waiting> findFirstByMemberIdAndStoreIdAndWaitingDateAndStatusIn(
             Long memberId, Long storeId, LocalDate waitingDate, Collection<WaitingStatus> statuses);
 
+    // 해당 날짜에 진행 중인 웨이팅이 있는지 (영업시간 변경 충돌 검사용)
+    boolean existsByStoreIdAndWaitingDateAndStatusIn(
+            Long storeId, LocalDate waitingDate, Collection<WaitingStatus> statuses);
+
     // 오늘 마지막 대기번호 (없으면 0)
     @Query("""
             select coalesce(max(w.waitNumber), 0)
