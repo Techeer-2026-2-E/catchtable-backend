@@ -9,6 +9,7 @@ import com.catchtable.notification.repository.SseEmitterRepository;
 import com.catchtable.store.entity.Store;
 import com.catchtable.store.entity.StoreCategory;
 import com.catchtable.store.repository.StoreRepository;
+import com.catchtable.waiting.WaitingBusinessHourFixture;
 import com.catchtable.waiting.entity.ArrivalIntent;
 import com.catchtable.waiting.entity.Waiting;
 import com.catchtable.waiting.entity.WaitingEndReason;
@@ -77,6 +78,7 @@ class OwnerWaitingServiceTest {
         store = storeRepository.save(Store.builder().owner(owner).name("테스트 매장")
                 .category(StoreCategory.values()[0]).address("서울시")
                 .reservationDurationMinutes(90).reservationSlotMinutes(30).arrivalGraceMinutes(10).build());
+        WaitingBusinessHourFixture.openNow(jdbc, clock, store.getId());
         tableId = insertTable(store.getId(), 1, 4, "ACTIVE");
         ownerEmitter = mock(SseEmitter.class);
         customerEmitter = mock(SseEmitter.class);
@@ -91,6 +93,7 @@ class OwnerWaitingServiceTest {
         historyRepository.deleteAllInBatch();
         waitingRepository.deleteAllInBatch();
         jdbc.update("delete from store_table where store_id = ?", store.getId());
+        WaitingBusinessHourFixture.clear(jdbc, store.getId());
         storeRepository.delete(store);
         memberRepository.deleteAll(members);
     }
