@@ -6,6 +6,7 @@ import com.catchtable.store.entity.SpecialBusinessDay;
 import com.catchtable.store.repository.BusinessHourRepository;
 import com.catchtable.store.repository.SpecialBusinessDayRepository;
 import com.catchtable.store.repository.StoreRepository;
+import com.catchtable.waiting.repository.WaitingRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -32,7 +33,8 @@ class BusinessHourServiceTest {
     private final SpecialBusinessDayRepository specialBusinessDayRepository = mock(SpecialBusinessDayRepository.class);
     private final BusinessHourService service =
             new BusinessHourService(mock(StoreRepository.class), businessHourRepository,
-                    specialBusinessDayRepository, mock(ReservationRepository.class), Clock.systemUTC());
+                    specialBusinessDayRepository, mock(ReservationRepository.class),
+                    mock(WaitingRepository.class), Clock.systemUTC());
 
     // 금 18:00~02:00 (브레이크 23:00~23:30), 토 휴무, 일 11:00~21:00 (브레이크 15:00~16:00)
     @BeforeEach

@@ -14,6 +14,8 @@ import com.catchtable.store.entity.Store;
 import com.catchtable.store.repository.BusinessHourRepository;
 import com.catchtable.store.repository.SpecialBusinessDayRepository;
 import com.catchtable.store.repository.StoreRepository;
+import com.catchtable.waiting.entity.WaitingStatus;
+import com.catchtable.waiting.repository.WaitingRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -42,6 +44,7 @@ public class BusinessHourService {
     private final BusinessHourRepository businessHourRepository;
     private final SpecialBusinessDayRepository specialBusinessDayRepository;
     private final ReservationRepository reservationRepository;
+    private final WaitingRepository waitingRepository;
     private final Clock clock;
 
     // TODO: 점주 본인 매장인지 확인 (로그인 기능 만든 후 작업)
@@ -96,6 +99,7 @@ public class BusinessHourService {
 
         // 저장은 아직 같은 트랜잭션 안이다. 충돌이 있으면 추가·변경·휴무 처리를 모두 롤백한다.
         validateActiveReservationsCovered(storeId);
+        validateActiveWaitingsCovered(storeId);
         return businessHourRepository.findAllByStoreIdOrderByDayOfWeekAsc(storeId).stream()
                 .map(BusinessHourResponse::from)
                 .toList();
@@ -109,6 +113,16 @@ public class BusinessHourService {
             if (!isOpenBetween(storeId, start, end)) {
                 throw new BusinessException(ErrorCode.BUSINESS_HOUR_HAS_RESERVATIONS);
             }
+        }
+    }
+
+    // 오늘 접수된 웨이팅이 있는데 지금이 영업 구간 밖이면 거절한다. 호출 전에 변경 내용을 flush해야 한다.
+    // 웨이팅은 정해진 시각이 없어 "지금 영업 중인지"만 본다. 점주 화면과 같이 오늘 날짜 웨이팅만 대상이다.
+    public void validateActiveWaitingsCovered(Long storeId) {
+        LocalDateTime now = OffsetDateTime.now(clock).atZoneSameInstant(STORE_ZONE).toLocalDateTime();
+        if (waitingRepository.existsByStoreIdAndWaitingDateAndStatusIn(storeId, now.toLocalDate(), WaitingStatus.ACTIVE)
+                && !isOpen(storeId, now)) {
+            throw new BusinessException(ErrorCode.BUSINESS_HOUR_HAS_WAITINGS);
         }
     }
 
