@@ -1,5 +1,6 @@
 package com.catchtable.store.repository;
 
+import com.catchtable.store.dto.MapStoreResponse;
 import com.catchtable.store.dto.NearbyStoreResponse;
 import com.catchtable.store.entity.StoreCategory;
 import lombok.RequiredArgsConstructor;
@@ -33,30 +34,34 @@ public class NearbyStoreRepository {
             LIMIT :limit OFFSET :offset
             """;
 
+    // 지도 목록용. 같은 반경 조건에 좌표·점주 여부를 더 읽는다
+    private static final String FIND_MAP_SQL = """
+            SELECT id, name, category, address, latitude, longitude, waiting_available, image_url,
+                   owner_id IS NOT NULL AS reservation_enabled, distance_m
+            FROM (
+                SELECT id, name, category, address, latitude, longitude, waiting_available, image_url, owner_id,
+                       2 *:earthRadius * asin(least(1.0, sqrt(
+                           power(sin(radians(latitude - :lat) / 2), 2)
+                           + cos(radians(:lat)) * cos(radians(latitude))
+                             * power(sin(radians(longitude - :lng) / 2), 2)))) AS distance_m
+                FROM store
+                WHERE latitude BETWEEN :minLat AND :maxLat
+                  AND longitude BETWEEN :minLng AND :maxLng
+            ) nearby
+            WHERE distance_m <= :radius
+            ORDER BY distance_m, id
+            LIMIT :limit OFFSET :offset
+            """;
+
     private final NamedParameterJdbcTemplate jdbcTemplate;
 
+    public List<MapStoreResponse> findMapStores(double lat, double lng, double radiusMeters, int limit, long offset) {
+        return jdbcTemplate.query(FIND_MAP_SQL, radiusParams(lat, lng, radiusMeters, limit, offset),
+                new MapStoreRowMapper());
+    }
+
     public List<NearbyStoreResponse> findNearby(double lat, double lng, double radiusMeters, int limit, long offset) {
-        double angularRadius = radiusMeters / EARTH_RADIUS_METERS;
-        double latDelta = Math.toDegrees(angularRadius);
-        double cosLat = Math.cos(Math.toRadians(lat));
-        // 극 근처에서는 경도 범위를 제한할 수 없다
-        double lngDelta = Math.sin(angularRadius) >= cosLat
-                ? 180.0
-                : Math.toDegrees(Math.asin(Math.sin(angularRadius) / cosLat));
-
-        MapSqlParameterSource params = new MapSqlParameterSource()
-                .addValue("earthRadius", EARTH_RADIUS_METERS)
-                .addValue("lat", lat)
-                .addValue("lng", lng)
-                .addValue("minLat", lat - latDelta)
-                .addValue("maxLat", lat + latDelta)
-                .addValue("minLng", lng - lngDelta)
-                .addValue("maxLng", lng + lngDelta)
-                .addValue("radius", radiusMeters)
-                .addValue("limit", limit)
-                .addValue("offset", offset);
-
-        return jdbcTemplate.query(FIND_NEARBY_SQL, params, (rs, rowNum) -> {
+        return jdbcTemplate.query(FIND_NEARBY_SQL, radiusParams(lat, lng, radiusMeters, limit, offset), (rs, rowNum) -> {
             StoreCategory category = StoreCategory.valueOf(rs.getString("category"));
             return new NearbyStoreResponse(
                     rs.getLong("id"),
@@ -68,5 +73,27 @@ public class NearbyStoreRepository {
                     rs.getString("image_url"),
                     (int) Math.round(rs.getDouble("distance_m")));
         });
+    }
+
+    private MapSqlParameterSource radiusParams(double lat, double lng, double radiusMeters, int limit, long offset) {
+        double angularRadius = radiusMeters / EARTH_RADIUS_METERS;
+        double latDelta = Math.toDegrees(angularRadius);
+        double cosLat = Math.cos(Math.toRadians(lat));
+        // 극 근처에서는 경도 범위를 제한할 수 없다
+        double lngDelta = Math.sin(angularRadius) >= cosLat
+                ? 180.0
+                : Math.toDegrees(Math.asin(Math.sin(angularRadius) / cosLat));
+
+        return new MapSqlParameterSource()
+                .addValue("earthRadius", EARTH_RADIUS_METERS)
+                .addValue("lat", lat)
+                .addValue("lng", lng)
+                .addValue("minLat", lat - latDelta)
+                .addValue("maxLat", lat + latDelta)
+                .addValue("minLng", lng - lngDelta)
+                .addValue("maxLng", lng + lngDelta)
+                .addValue("radius", radiusMeters)
+                .addValue("limit", limit)
+                .addValue("offset", offset);
     }
 }

@@ -1,6 +1,7 @@
 package com.catchtable.review.repository;
 
 import com.catchtable.review.dto.ReviewSummary;
+import com.catchtable.review.dto.StoreReviewStat;
 import com.catchtable.review.entity.Review;
 import jakarta.persistence.LockModeType;
 import org.springframework.data.domain.Pageable;
@@ -10,6 +11,8 @@ import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.util.Collection;
+import java.util.List;
 import java.util.Optional;
 
 public interface ReviewRepository extends JpaRepository<Review, Long> {
@@ -31,6 +34,17 @@ public interface ReviewRepository extends JpaRepository<Review, Long> {
         and r.deletedAt is null
 """)
     ReviewSummary summarizeByStoreId(@Param("storeId") Long storeId);
+
+    // 여러 매장의 별점 평균·리뷰 수를 한 번에 집계한다. 리뷰가 없는 매장은 결과에 나오지 않는다
+    @Query("""
+            select new com.catchtable.review.dto.StoreReviewStat(res.store.id, avg(r.rating), count(r))
+            from Review r
+            join r.reservation res
+            where res.store.id in :storeIds
+            and r.deletedAt is null
+            group by res.store.id
+            """)
+    List<StoreReviewStat> summarizeByStoreIds(@Param("storeIds") Collection<Long> storeIds);
 
     // 수정·삭제를 직렬화해 삭제 표시가 이전 수정에 덮이지 않게 한다.
     @Lock(LockModeType.PESSIMISTIC_WRITE)

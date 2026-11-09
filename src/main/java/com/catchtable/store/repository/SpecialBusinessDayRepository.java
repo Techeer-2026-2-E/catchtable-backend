@@ -4,6 +4,7 @@ import com.catchtable.store.entity.SpecialBusinessDay;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 import java.time.LocalDate;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -13,4 +14,8 @@ public interface SpecialBusinessDayRepository extends JpaRepository<SpecialBusin
     Optional<SpecialBusinessDay> findByStoreIdAndBusinessDate(Long storeId, LocalDate businessDate);
 
     List<SpecialBusinessDay> findAllByStoreIdOrderByBusinessDateAsc(Long storeId);
+
+    // 여러 매장의 특정일을 한 번에 읽는다 (지도 목록의 영업 상태 계산용)
+    List<SpecialBusinessDay> findAllByStoreIdInAndBusinessDateBetween(
+            Collection<Long> storeIds, LocalDate from, LocalDate to);
 }
