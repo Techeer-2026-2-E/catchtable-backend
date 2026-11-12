@@ -76,7 +76,8 @@ def main():
     snapshot(out / 'after', head, working=True)
     (out / 'input.patch').write_bytes(subprocess.check_output(['git', 'diff', '--binary', 'HEAD'], cwd=ROOT))
     warmup, samples = (0, 1) if args.smoke else (args.warmup, args.samples)
-    env = os.environ.copy()
+    # Inherited SPRING_* overrides would outrank the dedicated DB_* target below.
+    env = {k: v for k, v in os.environ.items() if not k.startswith('SPRING_')}
     env.update(DB_HOST='127.0.0.1', DB_PORT='55431', DB_NAME=DB,
                DB_USERNAME='catchtable', DB_PASSWORD=password,
                TOSS_SECRET_KEY='', TOSS_BASE_URL='http://127.0.0.1:19081',
