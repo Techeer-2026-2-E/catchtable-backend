@@ -13,7 +13,7 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
-public interface StoreTableRepository extends JpaRepository<StoreTable, Long> {
+public interface StoreTableRepository extends JpaRepository<StoreTable, Long>, StoreTableAvailabilityRepository {
 
     List<StoreTable> findAllByStoreIdOrderByTableNumberAsc(Long storeId);
 

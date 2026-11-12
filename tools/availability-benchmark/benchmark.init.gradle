@@ -1,0 +1,13 @@
+allprojects {
+    plugins.withId('java') {
+        sourceSets.test.java.srcDir(new File(System.getenv('AVAILABILITY_BENCH_TOOL'), 'src/test/java'))
+        tasks.named('test') {
+            // Each repetition must run with its own environment and produce fresh measurements.
+            outputs.upToDateWhen { false }
+            outputs.doNotCacheIf('Benchmark repetitions must execute, not restore results') { true }
+            minHeapSize = '512m'
+            maxHeapSize = '512m'
+            maxParallelForks = 1
+        }
+    }
+}
