@@ -15,6 +15,8 @@ public interface SpecialBusinessDayRepository extends JpaRepository<SpecialBusin
 
     List<SpecialBusinessDay> findAllByStoreIdOrderByBusinessDateAsc(Long storeId);
 
+    List<SpecialBusinessDay> findAllByStoreIdAndBusinessDateBetween(Long storeId, LocalDate from, LocalDate to);
+
     // 여러 매장의 특정일을 한 번에 읽는다 (지도 목록의 영업 상태 계산용)
     List<SpecialBusinessDay> findAllByStoreIdInAndBusinessDateBetween(
             Collection<Long> storeIds, LocalDate from, LocalDate to);

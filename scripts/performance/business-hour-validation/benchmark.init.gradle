@@ -1,0 +1,16 @@
+gradle.projectsEvaluated {
+    def project = gradle.rootProject
+    project.sourceSets.test.java.srcDir(System.getenv('B_BENCH_SOURCE_DIR'))
+    project.tasks.register('businessHourBenchmark', Test) {
+        testClassesDirs = project.sourceSets.test.output.classesDirs
+        classpath = project.sourceSets.test.runtimeClasspath
+        useJUnitPlatform()
+        filter { includeTestsMatching 'com.catchtable.store.service.BusinessHourValidationBenchmark' }
+        maxParallelForks = 1
+        minHeapSize = '512m'
+        maxHeapSize = '512m'
+        jvmArgs '-XX:ActiveProcessorCount=2'
+        outputs.upToDateWhen { false }
+        testLogging { events 'passed', 'failed'; exceptionFormat 'full' }
+    }
+}
