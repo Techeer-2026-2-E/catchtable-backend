@@ -21,14 +21,14 @@ B_PERF_SLOT_APPROVED=1 python3 scripts/performance/business-hour-validation/run.
 python3 scripts/performance/business-hour-validation/run.py summarize
 ```
 
-기본값은 활성 예약 `0,10,1000`, 조건별 워밍업 `10`, 측정 `100`, 반복 `3`회다. `B_BENCH_SIZES`, `B_BENCH_WARMUP`, `B_BENCH_SAMPLES`, `B_BENCH_REPEATS`로 조정할 수 있지만 before/after에 같은 값을 사용해야 한다. 2차 시작 시 `0`건·워밍업 `0`·표본 `1`·반복 `1`로 계측 런타임을 먼저 확인할 수 있다. 이 smoke 결과는 별도 보존하고 본 측정에 섞지 않는다. raw 파일이 있으면 도구는 덮어쓰지 않고 종료하므로 이전 결과를 먼저 다른 폴더에 보존한다.
+기본값은 활성 예약 `0,10,1000`, 조건별 워밍업 `10`, 측정 `100`, 반복 `3`회다. `B_BENCH_SIZES`, `B_BENCH_WARMUP`, `B_BENCH_SAMPLES`, `B_BENCH_REPEATS`로 조정할 수 있지만 before/after에 같은 값을 사용해야 한다. 두 환경 파일의 값이 다르면 `summarize`가 집계를 거부한다. 2차 시작 시 `0`건·워밍업 `0`·표본 `1`·반복 `1`로 계측 런타임을 먼저 확인할 수 있다. 이 smoke 결과는 별도 보존하고 본 측정에 섞지 않는다. raw 파일이 있으면 도구는 덮어쓰지 않고 종료하므로 이전 결과를 먼저 다른 폴더에 보존한다.
 
 2026-11-11의 기준 `a44952e37993e5003c860714f126057cd311dba5`에서 수행한 컴파일·smoke·본 측정은 [과거 작업 기록](../../../work-log/2026-11-11-business-hour-validation.md)에 남겼다. 그 기록의 raw·JUnit·환경 증거는 당시 로컬 `build` 경로에 있으며 이 PR에 포함하지 않는다. 이 분리본의 통과·성능 근거로 대체하지 않는다.
 
 ## 조건과 자원
 
-- 분리본 전용 PostgreSQL 16: 컨테이너 `ct-pr-b-20261113`, 볼륨 `ct-pr-b-20261113-data`, `localhost:55442/ct_pr_b`. 일회용 테스트 계정 `ct_pr_b`와 공개 로컬 전용 기본값 `ct_pr_b_local_only`를 사용한다. 스크립트는 이 대상 외 DB 환경변수를 사용하지 않는다. 2026-11-13 분리본 전체 build는 이 컨테이너에서 실행했고, 이 도구의 성능 명령은 여기서 실행하지 않았다.
-- Java 21, Gradle `--no-daemon --max-workers=2`, 측정 JVM `-Xms512m -Xmx512m -XX:ActiveProcessorCount=2`, Hikari 6개 연결.
+- 분리본 전용 PostgreSQL 16: 컨테이너 `ct-pr-b-20261113`, 볼륨 `ct-pr-b-20261113-data`, `localhost:55442/ct_pr_b`. 일회용 테스트 계정 `ct_pr_b`와 공개 로컬 전용 기본값 `ct_pr_b_local_only`를 사용한다. 스크립트는 이 대상의 `DB_*` 값만 넘기고 상속된 `SPRING_*` 환경변수는 제거한다. 2026-11-13 분리본 전체 build는 이 컨테이너에서 실행했고, 이 도구의 성능 명령은 여기서 실행하지 않았다.
+- Java 21. `JAVA_HOME`이 없으면 macOS의 `/usr/libexec/java_home -v 21`로 찾으므로 다른 OS에서는 `JAVA_HOME`을 직접 지정한다. Gradle `--no-daemon --max-workers=2`, 측정 JVM `-Xms512m -Xmx512m -XX:ActiveProcessorCount=2`, Hikari 6개 연결.
 - 고정 Clock `2030-01-07T03:00:00Z`, 매장 시간대 `Asia/Seoul`, `ddl-auto=validate`, 동일 V1~V35 Flyway.
 - 요일 설정 7행(08~22시), 활성 예약 N건을 14일에 분산(10~12시)하고 각 예약에 별도 테이블을 배정한다. 경쟁 요청은 비어 있는 첫 테이블에 14~16시 예약을 생성한다. 따라서 경쟁 예약 자체의 시간/테이블 충돌을 측정에 섞지 않는다.
 - 요일 교체(09~21시), 특정일 신규 설정(09~21시), 특정일 삭제(요일 기본값 복원)를 각각 단독/예약 생성 경합 조건으로 측정한다. 매 표본 직전 설정과 경쟁 예약을 JDBC로 복원하며 복원/fixture 생성은 계측 밖이다.

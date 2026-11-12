@@ -62,3 +62,13 @@ A PR과 같은 공통 테스트 보정 patch를 1회 적용했다. `BusinessHour
 과거 B 본 측정의 after 환경 파일과 비교해 서비스·fixture·benchmark Java·Gradle의 SHA가 같음을 확인했다. 저장소 파일의 차이는 기존 지도 기능의 `Collection` import·다중 매장 메서드뿐이며 B 단일 매장 메서드는 같다. 실행 도구는 BASE/예약 자원 상수만 바뀌고 계측 알고리즘은 같다. 따라서 과거 16,200기록은 역사적 근거로만 연결하고 새 성능 측정이나 smoke를 반복하지 않았다. 성능 명령·지표 한계는 [실행 안내](../scripts/performance/business-hour-validation/README.md)에 유지했다.
 
 01:44 KST에 14파일의 실행 전후 지문과 HEAD·브랜치·index 보존을 확인했다. 자기 JVM·앱18092/fake19092 listener·JDBC 세션·B fixture 매장 잔존은 모두 0이다. DB/volume은 보존했다. 이후에는 문서만 갱신했다.
+
+## 2026-11-13 덧붙임 — PR 리뷰 반영 (계측 도구)
+
+PR의 자동 리뷰 지적 3건을 계측 도구에 반영했다. 제품 코드와 테스트는 바꾸지 않았다.
+
+- `run.py`가 호출 환경을 그대로 Gradle에 넘겨, `SPRING_DATASOURCE_URL` 같은 값이 있으면 전용 DB가 아닌 곳에 fixture 쓰기와 Flyway가 실행될 수 있었다. 상속된 `SPRING_*` 환경변수를 제거한 뒤 전용 `DB_*` 값을 넣도록 했다.
+- `summarize`가 before/after 환경 파일의 규모·워밍업·표본·반복 값을 비교해 다르면 집계를 거부한다.
+- Java 탐색은 그대로 두고, macOS가 아니면 `JAVA_HOME`을 직접 지정해야 한다는 점을 [실행 안내](../scripts/performance/business-hour-validation/README.md)에 적었다.
+
+확인은 Python 구문 검사와 로컬 임시 폴더에서의 함수 단위 실행이다. 환경변수 제거와 전용 값 유지, 설정이 다를 때 거부, 같을 때 집계를 확인했다. 도구를 DB에 대해 실행하지는 않았고 새 성능 측정도 없다. 위 본문의 "실행 도구는 상수만 바뀌었다"는 설명은 이 덧붙임 이전 시점 기준이다.

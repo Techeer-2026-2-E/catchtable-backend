@@ -42,7 +42,8 @@ def prepare():
 
 
 def environment():
-    env = os.environ.copy()
+    # Inherited SPRING_* overrides would outrank the dedicated DB_* target below.
+    env = {k: v for k, v in os.environ.items() if not k.startswith('SPRING_')}
     env.update(DB_ENV)
     env['B_BENCH_SOURCE_DIR'] = str(HERE)
     if 'JAVA_HOME' not in env:
@@ -82,6 +83,10 @@ def provenance(target, variant, env):
 
 
 def summarize():
+    settings = [{k: json.loads((OUT / (v + '-environment.json')).read_text())[k]
+                 for k in ('sizes', 'warmup', 'samples', 'repeats')} for v in ('before', 'after')]
+    if settings[0] != settings[1]:
+        raise SystemExit('before/after measurement settings differ: {}'.format(settings))
     groups = {}
     for variant in ['before', 'after']:
         with (OUT / (variant + '-raw.csv')).open() as handle:
