@@ -11,9 +11,15 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Import;
+import org.springframework.context.annotation.Primary;
 import org.springframework.jdbc.core.JdbcTemplate;
 
+import java.time.Clock;
 import java.time.DayOfWeek;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.time.ZoneId;
@@ -28,6 +34,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 // 영업시간을 바꿀 때 오늘 접수된 웨이팅과 충돌하는지 검사한다.
 // 충돌 시 저장이 실제로 롤백되는지 봐야 하므로 @Transactional 없이 실제 커밋으로 검증한다.
 @SpringBootTest
+@Import(BusinessHourWaitingConflictTest.ClockConfiguration.class)
 class BusinessHourWaitingConflictTest {
 
     private static final ZoneId STORE_ZONE = ZoneId.of("Asia/Seoul");
@@ -35,6 +42,16 @@ class BusinessHourWaitingConflictTest {
     @Autowired private JdbcTemplate jdbc;
     @Autowired private BusinessHourService businessHourService;
     @Autowired private SpecialBusinessDayService specialBusinessDayService;
+    @Autowired private Clock clock;
+
+    @TestConfiguration
+    static class ClockConfiguration {
+        // 자정 직후의 "지금 ±1시간"은 전날 영업의 연장이므로 오늘 휴무와 충돌하지 않는다.
+        // 이 테스트는 당일 웨이팅 충돌을 보려는 것이므로 서비스와 fixture 모두 정오로 고정한다.
+        @Bean @Primary Clock waitingConflictClock() {
+            return Clock.fixed(Instant.parse("2030-01-07T03:00:00Z"), STORE_ZONE);
+        }
+    }
 
     private Long ownerId;
     private Long customerId;
@@ -56,8 +73,8 @@ class BusinessHourWaitingConflictTest {
                 VALUES (?, 'waiting conflict store', 'KOREAN', 'Seoul', true, 90, 30, 10)
                 RETURNING id
                 """, Long.class, ownerId);
-        today = LocalDate.now(STORE_ZONE);
-        now = LocalTime.now(STORE_ZONE).truncatedTo(ChronoUnit.MINUTES);
+        today = LocalDate.now(clock);
+        now = LocalTime.now(clock).truncatedTo(ChronoUnit.MINUTES);
         insertWeeklyHours(now.minusHours(1), now.plusHours(1));
     }
 
