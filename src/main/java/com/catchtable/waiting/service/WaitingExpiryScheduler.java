@@ -5,6 +5,8 @@ import com.catchtable.notification.dto.NotificationType;
 import com.catchtable.store.entity.Store;
 import com.catchtable.waiting.dto.WaitingQueueChangedEvent;
 import com.catchtable.waiting.entity.Waiting;
+import com.catchtable.waiting.dto.WaitingEventSnapshot;
+import com.catchtable.waiting.dto.WaitingEventReference;
 import com.catchtable.waiting.entity.WaitingEndHistory;
 import com.catchtable.waiting.repository.WaitingEndHistoryRepository;
 import com.catchtable.waiting.repository.WaitingRepository;
@@ -25,6 +27,7 @@ import java.time.OffsetDateTime;
 public class WaitingExpiryScheduler {
 
     private final WaitingRepository waitingRepository;
+    private final WaitingEventRecorder eventRecorder;
     private final WaitingEndHistoryRepository historyRepository;
     private final ApplicationEventPublisher eventPublisher;
     private final TransactionTemplate transactions;
@@ -51,20 +54,22 @@ public class WaitingExpiryScheduler {
 
     private boolean expire(Long waitingId, OffsetDateTime now) {
         Waiting waiting = waitingRepository.findByIdForUpdate(waitingId).orElse(null);
+        var before = waiting == null ? null : WaitingEventSnapshot.of(waiting);
         // 잠금 후 상태·기한 재확인
         WaitingEndHistory history = waiting == null ? null : waiting.expire(now);
         if (history == null) {
             return false;
         }
         historyRepository.save(history);
+        var event = eventRecorder.ended(history, before);
         Store store = waiting.getStore();
         eventPublisher.publishEvent(new CustomerNotificationEvent(
                 waiting.getMember().getId(), NotificationType.WAITING_EXPIRED, waiting.getId(),
-                "호출 후 응답·입장 기한이 지나 웨이팅이 종료되었습니다."));
+                "호출 후 응답·입장 기한이 지나 웨이팅이 종료되었습니다.").withWaitingEvent(event));
         eventPublisher.publishEvent(new CustomerNotificationEvent(
                 store.getOwner().getId(), NotificationType.WAITING_CHANGED, store.getId(),
-                "대기 목록이 변경되었습니다."));
-        eventPublisher.publishEvent(new WaitingQueueChangedEvent(store.getId(), waiting.getWaitingDate()));
+                "대기 목록이 변경되었습니다.").withWaitingEvent(event));
+        eventPublisher.publishEvent(new WaitingQueueChangedEvent(store.getId(), waiting.getWaitingDate()).withWaitingEvent(event));
         return true;
     }
 }

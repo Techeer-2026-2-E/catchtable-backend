@@ -11,6 +11,7 @@ import com.catchtable.payment.entity.Payment;
 import com.catchtable.payment.entity.PaymentRefund;
 import com.catchtable.payment.entity.PaymentStatus;
 import com.catchtable.payment.entity.PaymentStatusSource;
+import com.catchtable.payment.repository.PaymentReconcileJobRepository;
 import com.catchtable.payment.repository.PaymentRefundRepository;
 import com.catchtable.payment.repository.PaymentRepository;
 import com.catchtable.reservation.service.ReservationPaymentService;
@@ -45,6 +46,7 @@ public class PaymentReconcileService {
     private final TransactionTemplate transactionTemplate;
     private final ObjectMapper objectMapper;
     private final Clock clock;
+    private final PaymentReconcileJobRepository jobs;
 
     // 고객 재확인 (남의 결제 404, 고객 아니면 403)
     public PaymentDetailResponse sync(Long memberId, Long paymentId) {
@@ -53,31 +55,28 @@ public class PaymentReconcileService {
         return paymentService.getPayment(memberId, paymentId);
     }
 
-    // 웹훅: 본문은 결제 식별에만 사용 (PAYMENT_STATUS_CHANGED는 data, DEPOSIT_CALLBACK은 최상위), 실패는 로그만
+    // The body is an untrusted identifier hint, never a state update. No Toss signature contract exists here.
     public void handleWebhook(String body) {
-        try {
-            JsonNode root = objectMapper.readTree(body);
-            JsonNode data = root.path("data").isObject() ? root.path("data") : root;
-            String orderId = text(data, "orderId");
-            String paymentKey = text(data, "paymentKey");
-            Optional<Payment> payment = orderId != null ? paymentRepository.findByOrderId(orderId)
-                    : paymentKey != null ? paymentRepository.findByPaymentKey(paymentKey) : Optional.empty();
-            if (payment.isEmpty()) {
-                log.info("웹훅 대상 결제 없음 orderId={}", orderId);
-                return;
-            }
-            reconcile(payment.get().getId());
-        } catch (Exception exception) {
-            log.warn("웹훅 처리 실패: {}", exception.getMessage());
-        }
+        if (body == null || body.isBlank()) return;
+        JsonNode root;
+        try { root = objectMapper.readTree(body); }
+        catch (com.fasterxml.jackson.core.JsonProcessingException exception) { return; }
+        if (root == null || !root.isObject()) return;
+        JsonNode data = root.path("data").isObject() ? root.path("data") : root;
+        String orderId = text(data, "orderId");
+        String paymentKey = text(data, "paymentKey");
+        Optional<Payment> payment = orderId != null ? paymentRepository.findByOrderId(orderId)
+                : paymentKey != null ? paymentRepository.findByPaymentKey(paymentKey) : Optional.empty();
+        // Database failures deliberately escape: ACK only after the job commit.
+        payment.ifPresent(found -> jobs.enqueue(found.getId(), OffsetDateTime.now(clock), true));
     }
 
-    // 자동 재확인 (건별 커밋, 한 건 실패가 나머지를 막지 않음)
+    // 자동 재확인 대상 수집: 영속 job만 저장하고 PG 호출은 전용 워커로 넘긴다.
     public int reconcileTargets(int limit) {
         List<Long> targets = paymentRepository.findReconcileTargets(limit);
         for (Long paymentId : targets) {
             try {
-                reconcile(paymentId);
+                jobs.enqueue(paymentId, OffsetDateTime.now(clock), false);
             } catch (RuntimeException exception) {
                 log.warn("결제 재확인 실패 paymentId={}: {}", paymentId, exception.getMessage());
             }
@@ -86,7 +85,7 @@ public class PaymentReconcileService {
     }
 
     // Toss 원장 기준 결제·환불·예약 보정 (반복해도 같은 결과)
-    public void reconcile(Long paymentId) {
+    public boolean reconcile(Long paymentId) {
         if (TransactionSynchronizationManager.isActualTransactionActive()) {
             throw new IllegalStateException("결제 재확인은 트랜잭션 밖에서 호출");
         }
@@ -95,7 +94,7 @@ public class PaymentReconcileService {
         if (target.unresolved() || target.refundId() != null) {
             TossPaymentResponse toss = query(target);
             if (toss == null) {
-                return;
+                return false;
             }
             if (target.refundId() != null && toss.paymentStatus().isApproved()) {
                 recoverRefund(target, toss);
@@ -109,6 +108,8 @@ public class PaymentReconcileService {
                 paymentService.requireRefund(paymentId, "예약 확정 없이 확인된 승인");
             }
         });
+        Target remaining = transactionTemplate.execute(status -> target(paymentId));
+        return !remaining.unresolved() && remaining.refundId() == null;
     }
 
     private Target target(Long paymentId) {

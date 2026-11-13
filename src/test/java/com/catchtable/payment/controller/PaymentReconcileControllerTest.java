@@ -43,6 +43,8 @@ class PaymentReconcileControllerTest {
     @Autowired FakeTossPaymentsClient toss;
     @Autowired JdbcTemplate jdbc;
     @Autowired ReconcileTestClock clock;
+    @Autowired com.catchtable.payment.repository.PaymentReconcileJobRepository jobs;
+    @Autowired com.catchtable.payment.service.PaymentReconcileService reconciler;
 
     private final List<Long> members = new ArrayList<>();
     private PaymentTestData data;
@@ -118,6 +120,9 @@ class PaymentReconcileControllerTest {
                     .andExpect(status().isOk());
         }
 
+        assertThat(toss.queries()).isZero();
+        var claim = jobs.claim(NOW).orElseThrow();
+        jobs.finish(claim, NOW, reconciler.reconcile(claim.paymentId()), null);
         assertThat(paymentStatus()).isEqualTo("DONE");
         assertThat(reservationStatus()).isEqualTo("CONFIRMED");
         assertThat(jdbc.queryForObject("SELECT count(*) FROM payment_status_history WHERE payment_id = ?",
@@ -135,6 +140,9 @@ class PaymentReconcileControllerTest {
         mockMvc.perform(post("/api/user/webhooks/payments").contentType("application/json").content(body))
                 .andExpect(status().isOk());
 
+        assertThat(toss.queries()).isZero();
+        var claim = jobs.claim(NOW).orElseThrow();
+        jobs.finish(claim, NOW, reconciler.reconcile(claim.paymentId()), null);
         assertThat(paymentStatus()).isEqualTo("DONE");
     }
 

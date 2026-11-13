@@ -195,8 +195,11 @@ class WaitingDeferServiceTest {
         service.deferWaiting(ownerId, first);
 
         assertThat(events.stream(WaitingQueueChangedEvent.class))
+                .usingRecursiveFieldByFieldElementComparatorIgnoringFields("waitingEvent", "deliveryKey")
                 .containsExactly(new WaitingQueueChangedEvent(storeId, TODAY));
-        assertThat(events.stream(CustomerNotificationEvent.class))
+        assertThat(events.stream(CustomerNotificationEvent.class).map(event ->
+                new CustomerNotificationEvent(event.memberId(), event.type(), event.targetId(), event.message(), event.payload())))
+                .usingRecursiveFieldByFieldElementComparatorIgnoringFields("waitingEvent", "deliveryKey")
                 .containsExactly(new CustomerNotificationEvent(ownerId, NotificationType.WAITING_CHANGED, storeId,
                         "대기 목록이 변경되었습니다."));
     }

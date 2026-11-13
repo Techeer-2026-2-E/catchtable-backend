@@ -102,3 +102,13 @@ DB_USERNAME=catchtable DB_PASSWORD=catchtable TOSS_SECRET_KEY= ALIMTALK_ENABLED=
 근거: [점주 API](https://github.com/Techeer-2026-2-E/catchtable-frontend/blob/015f333aa2b2d4230560d69013136190b5ea2c87/src/features/owner-waiting/api/ownerWaitingApi.ts), [점주 mutation·SSE](https://github.com/Techeer-2026-2-E/catchtable-frontend/blob/015f333aa2b2d4230560d69013136190b5ea2c87/src/features/owner-waiting/hooks/useOwnerWaitings.ts), [고객 SSE](https://github.com/Techeer-2026-2-E/catchtable-frontend/blob/015f333aa2b2d4230560d69013136190b5ea2c87/src/features/notification/hooks/useNotificationStream.ts), [알림 수신 후 재조회](https://github.com/Techeer-2026-2-E/catchtable-frontend/blob/015f333aa2b2d4230560d69013136190b5ea2c87/src/app/providers/RealtimeNotifications.tsx), [백엔드 호출·재전송](https://github.com/Techeer-2026-2-E/catchtable-backend/blob/484daf3aa88913f382baf6468ace398653e16a0d/src/main/java/com/catchtable/waiting/service/OwnerWaitingService.java).
 
 실제 SOLAPI 키나 웹훅 secret은 프런트에 전달하지 않는다. 발송과 결과 확인은 백엔드가 담당한다. 이번 대조에서 프런트 코드·목 서버·API·정책을 변경하지 않았다.
+
+## 호출·재전송의 SSE 수용·전달 계약 — 2026-11-12
+
+`POST /api/owner/waitings/{waitingId}/call`과 `/recall`은 기존 `X-Member-Id` 점주 유형·매장 소유권 및 상태 검사를 유지한다. `/call`의 기존 설명은 [기능44의 SSE 보완](feature-44-owner-waiting-list.md#웨이팅-sse-전달-보완--2026-11-11)에도 있다. `/recall`의 만료 전 CALLED 조건, 200 응답 필드·원래 기한/응답 유지와 409 `WAITING_NOT_RECALLABLE`은 그대로다.
+
+업무 상태·V36 이력·SSE 작업을 같은 TX에서 저장한다. SSE 수용 한도에 걸리면 `503 WAITING_SSE_CAPACITY_EXCEEDED`, `Retry-After: 30`을 반환하고 해당 호출/재전송 TX 전체가 rollback된다. 호출 차수·재전송 횟수·기한 변경과 알림톡 enqueue 등 이 TX의 변경도 함께 취소된다. 보존 한도는 완료 이력까지 포함하므로 30초 뒤 자동으로 용량이 풀린다는 뜻이 아니다.
+
+503을 받으면 현재 상태·호출 차수·기한을 재조회하고 유효한 동작인지 확인한 뒤 안전하게 재시도한다. HTTP 응답 유실은 실패 확정이 아니며, `/call`을 무조건 다시 보내면 새 차수·시각·기한이 생긴다. `/recall`도 수락할 때마다 새 재전송 사건과 누적 횟수를 만들므로 HTTP 멱등 재요청으로 취급하지 않는다.
+
+업무 commit 뒤 전용 worker가 SSE를 비동기로 전달하므로 성공 HTTP보다 알림이 늦을 수 있다. 전송 실패로 이미 commit한 업무를 되돌리지 않으며, 호출 성공을 알림톡 최종 전달·고객 수신으로 표시하지 않는다. SSE 수신·재연결 후에는 현재 상태를 재조회한다. [현행 전달·용량·UNKNOWN 계약](../waiting-sse-durability.md)을 따른다.

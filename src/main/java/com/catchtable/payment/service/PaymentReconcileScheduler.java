@@ -17,7 +17,7 @@ public class PaymentReconcileScheduler {
     @Value("${payment.reconcile-batch-size:50}")
     private int batchSize;
 
-    @Scheduled(initialDelayString = "${payment.reconcile-interval-ms:60000}",
+    @Scheduled(scheduler="paymentTaskScheduler", initialDelayString = "${payment.reconcile-interval-ms:60000}",
             fixedDelayString = "${payment.reconcile-interval-ms:60000}")
     public int reconcile() {
         return reconcileService.reconcileTargets(batchSize);

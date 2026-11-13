@@ -52,7 +52,7 @@ public interface PaymentRepository extends JpaRepository<Payment, Long> {
     Optional<Long> findReservationIdById(@Param("paymentId") Long paymentId);
 
     // 재확인 대상: 결과 불명, 승인 진행 중 예약, 격리 예약, 진행 중 환불
-    // ponytail: id 순 고정 상한, 계속 불명인 건이 많아지면 마지막 확인 시각 순으로
+    // Fresh targets first, then oldest actual worker attempt (durable retry owns active jobs).
     @Query(value = """
             select p.id from payment p
             join reservation r on r.id = p.reservation_id
@@ -62,7 +62,8 @@ public interface PaymentRepository extends JpaRepository<Payment, Long> {
                    and p.status in ('DONE', 'PARTIAL_REFUNDED', 'REFUNDED'))
                or exists (select 1 from payment_refund f
                           where f.payment_id = p.id and f.status in ('REQUESTED', 'UNKNOWN'))
-            order by p.id
+            order by (select j.last_attempt_at from payment_reconcile_job j where j.payment_id=p.id)
+                     asc nulls first, p.id
             limit :limit
             """, nativeQuery = true)
     List<Long> findReconcileTargets(@Param("limit") int limit);

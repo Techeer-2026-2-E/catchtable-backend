@@ -29,8 +29,10 @@ spring:
 toss:
   secret-key: ${TOSS_SECRET_KEY:}
   base-url: ${TOSS_BASE_URL:https://api.tosspayments.com}
-  connect-timeout: 5s
-  read-timeout: 30s
+  connect-timeout: ${TOSS_CONNECT_TIMEOUT:5s}
+  read-timeout: ${TOSS_READ_TIMEOUT:30s}
+  call-timeout: ${TOSS_CALL_TIMEOUT:35s}
+  max-concurrent-calls: ${TOSS_MAX_CONCURRENT_CALLS:8} # immediate rejection, no in-memory queue
 
 # 학습용 호출 알림. simulation은 외부 API 호출이나 비용이 없다.
 alimtalk:
@@ -53,3 +55,16 @@ management:
 logging:
   level:
     com.catchtable: DEBUG
+
+# One durable waiting SSE sender; disabling delivery retains PENDING work (no legacy fallback).
+waiting:
+  sse:
+    delivery-enabled: ${WAITING_SSE_DELIVERY_ENABLED:true}
+    scheduling-enabled: ${WAITING_SSE_SCHEDULING_ENABLED:true}
+    poll-delay-ms: ${WAITING_SSE_POLL_DELAY_MS:100}
+    max-roots-per-poll: ${WAITING_SSE_MAX_ROOTS_PER_POLL:64}
+    max-run-millis: ${WAITING_SSE_MAX_RUN_MILLIS:250}
+    lease-seconds: ${WAITING_SSE_LEASE_SECONDS:30}
+    max-retained-roots: ${WAITING_SSE_MAX_RETAINED_ROOTS:100000}
+    max-targets-per-root: ${WAITING_SSE_MAX_TARGETS_PER_ROOT:10000}
+    max-message-bytes: ${WAITING_SSE_MAX_MESSAGE_BYTES:16384}

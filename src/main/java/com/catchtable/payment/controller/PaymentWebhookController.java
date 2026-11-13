@@ -15,7 +15,7 @@ public class PaymentWebhookController {
 
     private final PaymentReconcileService reconcileService;
 
-    /** Toss 결제 웹훅을 받아 해당 결제를 재조회하며, 본문과 처리 결과와 상관없이 200이다. */
+    /** 유효 식별 힌트의 재확인 job을 커밋한 뒤 200. 저장 실패는 5xx로 재전송을 요청한다. */
     @PostMapping("/payments")
     public ResponseEntity<Void> payments(@RequestBody(required = false) String body) {
         reconcileService.handleWebhook(body);

@@ -136,9 +136,13 @@ class OwnerReservationFeatureServiceTest {
                 .isInstanceOfSatisfying(ResponseStatusException.class,
                         exception -> assertThat(exception.getStatusCode()).isEqualTo(HttpStatus.CONFLICT));
 
-        assertThat(applicationEvents.stream(CustomerNotificationEvent.class).toList()).containsExactly(
+        var notifications = applicationEvents.stream(CustomerNotificationEvent.class).toList();
+        assertThat(notifications).hasSize(1); // Repeated cancellation still publishes only once.
+        var emitted = notifications.get(0);
+        assertThat(java.util.UUID.fromString(emitted.deliveryKey()).toString()).isEqualTo(emitted.deliveryKey());
+        assertThat(notifications).containsExactly(
                 new CustomerNotificationEvent(customer.getId(), NotificationType.RESERVATION_CANCELED,
-                        reservation.getId(), "점주가 예약을 취소했습니다. 사유: 매장 사정"));
+                        reservation.getId(), "점주가 예약을 취소했습니다. 사유: 매장 사정", null, null, emitted.deliveryKey()));
 
         // 연결이 끊겨 알림을 놓쳐도 DB에서 최신 상태와 최초 취소 사유를 다시 읽는다.
         entityManager.clear();

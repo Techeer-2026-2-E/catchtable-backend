@@ -86,10 +86,10 @@ class SseEmitterRepositoryTest {
         CountDownLatch adding = new CountDownLatch(1);
         CountDownLatch deleting = new CountDownLatch(1);
         CountDownLatch release = new CountDownLatch(1);
-        var list = new CopyOnWriteArrayList<SseEmitter>() {
+        var list = new CopyOnWriteArrayList<SseEmitterRepository.Connection>() {
             @Override
-            public boolean add(SseEmitter emitter) {
-                if (emitter == newConnection) {
+            public boolean add(SseEmitterRepository.Connection connection) {
+                if (connection.emitter() == newConnection) {
                     adding.countDown();
                     try {
                         if (!release.await(10, TimeUnit.SECONDS)) throw new AssertionError("save was not released");
@@ -98,11 +98,11 @@ class SseEmitterRepositoryTest {
                         throw new AssertionError(exception);
                     }
                 }
-                return super.add(emitter);
+                return super.add(connection);
             }
         };
-        list.add(oldConnection);
-        var members = (Map<Long, List<SseEmitter>>) ReflectionTestUtils.getField(repository, "emitters");
+        list.add(new SseEmitterRepository.Connection(java.util.UUID.randomUUID().toString(),oldConnection));
+        var members = (Map<Long, List<SseEmitterRepository.Connection>>) ReflectionTestUtils.getField(repository, "emitters");
         members.put(1L, list);
         try (var executor = Executors.newFixedThreadPool(2)) {
             var saving = executor.submit(() -> repository.save(1L, newConnection));

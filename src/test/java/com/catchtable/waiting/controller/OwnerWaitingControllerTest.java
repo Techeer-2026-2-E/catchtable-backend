@@ -40,6 +40,8 @@ import java.time.OffsetDateTime;
 import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.UUID;
 import java.nio.charset.StandardCharsets;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -55,6 +57,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @AutoConfigureMockMvc
 @Import(OwnerWaitingControllerTest.FixedTime.class)
 class OwnerWaitingControllerTest {
+    @Autowired com.catchtable.notification.durability.WaitingSseWorker sseWorker;
 
     private static final LocalDate TODAY = LocalDate.of(2030, 1, 11);
 
@@ -179,10 +182,16 @@ class OwnerWaitingControllerTest {
 
         transactions.executeWithoutResult(transaction -> {
             waitingService.createWaiting(customer.getId(), store.getId(), 2);
-            assertThat(streamContent(stream)).doesNotContain("WAITING_CHANGED");
+            var roots = jdbc.queryForList("SELECT id FROM waiting_sse_root WHERE store_id=?", UUID.class, store.getId());
+            assertThat(roots).hasSize(1);
+            com.catchtable.notification.durability.WaitingSseTestDrain.forStore(jdbc, sseWorker, store.getId())
+                    .assertStates(Map.of(roots.getFirst(), "PENDING"));
+            assertThat(new String(stream.getResponse().getContentAsByteArray(), StandardCharsets.UTF_8))
+                    .doesNotContain("WAITING_CHANGED");
             transaction.setRollbackOnly();
         });
 
+        assertThat(jdbc.queryForList("SELECT id FROM waiting_sse_root WHERE store_id=?", UUID.class, store.getId())).isEmpty();
         assertThat(streamContent(stream)).doesNotContain("WAITING_CHANGED");
         assertThat(waitingRepository.findAllByStoreIdAndWaitingDateAndStatusInOrderByQueueOrderAsc(
                 store.getId(), TODAY, WaitingStatus.ACTIVE)).isEmpty();
@@ -575,6 +584,7 @@ class OwnerWaitingControllerTest {
     }
 
     private String streamContent(MvcResult result) {
+        com.catchtable.notification.durability.WaitingSseTestDrain.forStore(jdbc,sseWorker,store.getId()).done();
         return new String(result.getResponse().getContentAsByteArray(), StandardCharsets.UTF_8);
     }
 

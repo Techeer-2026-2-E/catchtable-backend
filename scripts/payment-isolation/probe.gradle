@@ -1,0 +1,10 @@
+// Inject only the identical local probe, never alter a baseline production source.
+allprojects {
+    afterEvaluate {
+        sourceSets.test.java.srcDir(new File(rootDir, 'scripts/payment-isolation/java'))
+        tasks.register('probeClasspath') {
+            dependsOn testClasses
+            doLast { new File(buildDir, 'probe-classpath.txt').text = sourceSets.test.runtimeClasspath.asPath }
+        }
+    }
+}

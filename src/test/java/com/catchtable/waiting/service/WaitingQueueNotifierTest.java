@@ -47,8 +47,9 @@ class WaitingQueueNotifierTest {
     @Autowired
     private JdbcTemplate jdbcTemplate;
 
-    @MockBean
-    private NotificationService notificationService;
+    @Autowired private com.catchtable.notification.durability.WaitingSseWorker worker;
+    @Autowired private com.catchtable.notification.repository.SseEmitterRepository emitters;
+    @Autowired private com.fasterxml.jackson.databind.ObjectMapper mapper;
 
     private final List<Long> storeIds = new ArrayList<>();
     private final List<Long> memberIds = new ArrayList<>();
@@ -100,112 +101,83 @@ class WaitingQueueNotifierTest {
         return jdbcTemplate.queryForObject("SELECT member_id FROM waiting WHERE id = ?", Long.class, waitingId);
     }
 
+    private void publish(WaitingQueueChangedEvent event) {
+        transactionTemplate.executeWithoutResult(s -> publisher.publishEvent(event));
+    }
+    private void drain() {
+        com.catchtable.notification.durability.WaitingSseTestDrain.forStore(jdbcTemplate,worker,storeId).done();
+    }
     private List<CustomerNotificationEvent> sentEvents(int expectedCount) {
-        ArgumentCaptor<CustomerNotificationEvent> captor = ArgumentCaptor.forClass(CustomerNotificationEvent.class);
-        verify(notificationService, times(expectedCount)).send(captor.capture());
-        return captor.getAllValues();
+        drain();
+        var events=jdbcTemplate.query("""
+                SELECT t.member_id,t.waiting_id,t.message::text FROM waiting_sse_target t
+                JOIN waiting_sse_root r ON r.id=t.root_id WHERE r.store_id=?
+                ORDER BY (t.message->'payload'->>'currentPosition')::integer
+                """,(r,n)->{
+            try {
+                var json=mapper.readTree(r.getString(3));
+                var payload=mapper.treeToValue(json.get("payload"),WaitingPositionPayload.class);
+                return new CustomerNotificationEvent(r.getLong(1),NotificationType.WAITING_POSITION_CHANGED,r.getLong(2),null,payload);
+            } catch(Exception e) { throw new IllegalStateException(e); }
+        },storeId);
+        assertThat(events).hasSize(expectedCount);
+        return events;
     }
-
-    @Test
-    @DisplayName("진행 중 웨이팅에 접수순으로 순번·앞 팀 수를 각 고객에게 보낸다")
-    void sendPositionsInOrder() {
-        insertWaiting(storeId, TODAY, 1, WaitingStatus.SEATED);     // 종료 → 순번에서 빠짐
-        Long second = insertWaiting(storeId, TODAY, 2, WaitingStatus.CALLED);
-        Long third = insertWaiting(storeId, TODAY, 3, WaitingStatus.WAITING);
-        Long fourth = insertWaiting(storeId, TODAY, 4, WaitingStatus.CONFIRMED);
-
-        publisher.publishEvent(new WaitingQueueChangedEvent(storeId, TODAY));
-
-        List<CustomerNotificationEvent> events = sentEvents(3);
-        assertThat(events)
-                .extracting(CustomerNotificationEvent::memberId, CustomerNotificationEvent::targetId,
-                        CustomerNotificationEvent::payload)
-                .containsExactly(
-                        tuple(memberOf(second), second, new WaitingPositionPayload(second, 1, 0, WaitingStatus.CALLED)),
-                        tuple(memberOf(third), third, new WaitingPositionPayload(third, 2, 1, WaitingStatus.WAITING)),
-                        tuple(memberOf(fourth), fourth, new WaitingPositionPayload(fourth, 3, 2, WaitingStatus.CONFIRMED)));
-        assertThat(events).allSatisfy(event -> {
-            assertThat(event.type()).isEqualTo(NotificationType.WAITING_POSITION_CHANGED);
-            assertThat(event.message()).isNull();   // 화면 숫자 갱신용이라 문구 없음
-        });
+    @Test void positionsUseCurrentQueueAndPreservePayload() {
+        insertWaiting(storeId,TODAY,1,WaitingStatus.SEATED);
+        Long second=insertWaiting(storeId,TODAY,2,WaitingStatus.CALLED);
+        Long third=insertWaiting(storeId,TODAY,3,WaitingStatus.WAITING);
+        Long fourth=insertWaiting(storeId,TODAY,4,WaitingStatus.CONFIRMED);
+        publish(new WaitingQueueChangedEvent(storeId,TODAY));
+        assertThat(sentEvents(3)).extracting(CustomerNotificationEvent::memberId,CustomerNotificationEvent::targetId,CustomerNotificationEvent::payload)
+                .containsExactly(tuple(memberOf(second),second,new WaitingPositionPayload(second,1,0,WaitingStatus.CALLED)),
+                        tuple(memberOf(third),third,new WaitingPositionPayload(third,2,1,WaitingStatus.WAITING)),
+                        tuple(memberOf(fourth),fourth,new WaitingPositionPayload(fourth,3,2,WaitingStatus.CONFIRMED)));
     }
-
-    @Test
-    @DisplayName("종료된 웨이팅(취소·노쇼·착석)에는 보내지 않는다")
-    void skipEndedWaitings() {
-        insertWaiting(storeId, TODAY, 1, WaitingStatus.CANCELED);
-        insertWaiting(storeId, TODAY, 2, WaitingStatus.NO_SHOW);
-        insertWaiting(storeId, TODAY, 3, WaitingStatus.SEATED);
-        Long active = insertWaiting(storeId, TODAY, 4, WaitingStatus.WAITING);
-
-        publisher.publishEvent(new WaitingQueueChangedEvent(storeId, TODAY));
-
-        assertThat(sentEvents(1).get(0).payload())
-                .isEqualTo(new WaitingPositionPayload(active, 1, 0, WaitingStatus.WAITING));
+    @Test void endedTeamsAreExcluded() {
+        insertWaiting(storeId,TODAY,1,WaitingStatus.CANCELED);insertWaiting(storeId,TODAY,2,WaitingStatus.NO_SHOW);
+        insertWaiting(storeId,TODAY,3,WaitingStatus.SEATED);Long active=insertWaiting(storeId,TODAY,4,WaitingStatus.WAITING);
+        publish(new WaitingQueueChangedEvent(storeId,TODAY));
+        assertThat(sentEvents(1).getFirst().payload()).isEqualTo(new WaitingPositionPayload(active,1,0,WaitingStatus.WAITING));
     }
-
-    @Test
-    @DisplayName("다른 매장·다른 날짜의 대기열에는 보내지 않는다")
-    void onlyTargetQueue() {
-        Long target = insertWaiting(storeId, TODAY, 1, WaitingStatus.WAITING);
-        insertWaiting(storeId, TODAY.plusDays(1), 1, WaitingStatus.WAITING);   // 같은 매장, 다른 날
-        insertWaiting(insertStore(), TODAY, 1, WaitingStatus.WAITING);         // 다른 매장, 같은 날
-
-        publisher.publishEvent(new WaitingQueueChangedEvent(storeId, TODAY));
-
+    @Test void onlyRequestedStoreAndDate() {
+        Long target=insertWaiting(storeId,TODAY,1,WaitingStatus.WAITING);
+        insertWaiting(storeId,TODAY.plusDays(1),1,WaitingStatus.WAITING);
+        insertWaiting(insertStore(),TODAY,1,WaitingStatus.WAITING);
+        publish(new WaitingQueueChangedEvent(storeId,TODAY));
         assertThat(sentEvents(1)).extracting(CustomerNotificationEvent::targetId).containsExactly(target);
     }
-
-    @Test
-    @DisplayName("진행 중 웨이팅이 없으면 아무것도 보내지 않는다")
-    void emptyQueue() {
-        insertWaiting(storeId, TODAY, 1, WaitingStatus.SEATED);
-
-        publisher.publishEvent(new WaitingQueueChangedEvent(storeId, TODAY));
-
-        verify(notificationService, never()).send(any());
+    @Test void emptyQueueHasExplicitExpansionZero() {
+        insertWaiting(storeId,TODAY,1,WaitingStatus.SEATED);publish(new WaitingQueueChangedEvent(storeId,TODAY));sentEvents(0);
+        assertThat(jdbcTemplate.queryForObject("SELECT expected_targets FROM waiting_sse_root WHERE store_id=?",Integer.class,storeId)).isZero();
     }
-
-    @Test
-    @DisplayName("상태 변경 트랜잭션이 커밋된 뒤 바뀐 상태 기준으로 보낸다")
-    void sendAfterCommitWithChangedState() {
-        Long first = insertWaiting(storeId, TODAY, 1, WaitingStatus.WAITING);
-        Long second = insertWaiting(storeId, TODAY, 2, WaitingStatus.WAITING);
-
-        // 다른 기능(예: 착석 처리)이 상태를 바꾸고 같은 트랜잭션에서 발행하는 상황
-        transactionTemplate.executeWithoutResult(status -> {
-            jdbcTemplate.update("UPDATE waiting SET status = 'SEATED' WHERE id = ?", first);
-            publisher.publishEvent(new WaitingQueueChangedEvent(storeId, TODAY));
-            verify(notificationService, never()).send(any());   // 커밋 전에는 보내지 않는다
+    @Test void evaluatesCommittedProcessingStateAndSendsAfterCommit() {
+        Long first=insertWaiting(storeId,TODAY,1,WaitingStatus.WAITING);
+        Long second=insertWaiting(storeId,TODAY,2,WaitingStatus.WAITING);
+        transactionTemplate.executeWithoutResult(s->{
+            publisher.publishEvent(new WaitingQueueChangedEvent(storeId,TODAY));
+            assertThat(jdbcTemplate.queryForObject("SELECT count(*) FROM waiting_sse_target t JOIN waiting_sse_root r ON r.id=t.root_id WHERE r.store_id=?",Long.class,storeId)).isZero();
         });
-
-        assertThat(sentEvents(1).get(0).payload())
-                .isEqualTo(new WaitingPositionPayload(second, 1, 0, WaitingStatus.WAITING));
+        jdbcTemplate.update("UPDATE waiting SET status='SEATED' WHERE id=?",first);
+        assertThat(sentEvents(1).getFirst().payload()).isEqualTo(new WaitingPositionPayload(second,1,0,WaitingStatus.WAITING));
     }
-
-    @Test
-    @DisplayName("상태 변경 트랜잭션이 롤백되면 보내지 않는다")
-    void noSendOnRollback() {
-        insertWaiting(storeId, TODAY, 1, WaitingStatus.WAITING);
-
-        transactionTemplate.executeWithoutResult(status -> {
-            publisher.publishEvent(new WaitingQueueChangedEvent(storeId, TODAY));
-            status.setRollbackOnly();
-        });
-
-        verify(notificationService, never()).send(any());
+    @Test void rollbackHasNoRootOrTargets() {
+        insertWaiting(storeId,TODAY,1,WaitingStatus.WAITING);
+        transactionTemplate.executeWithoutResult(s->{publisher.publishEvent(new WaitingQueueChangedEvent(storeId,TODAY));s.setRollbackOnly();});
+        sentEvents(0);
+        assertThat(jdbcTemplate.queryForObject("SELECT count(*) FROM waiting_sse_root WHERE store_id=?",Long.class,storeId)).isZero();
     }
-
-    @Test
-    @DisplayName("한 고객 전송이 실패해도 나머지 고객에게는 보낸다")
-    void continueWhenOneFails() {
-        insertWaiting(storeId, TODAY, 1, WaitingStatus.WAITING);
-        insertWaiting(storeId, TODAY, 2, WaitingStatus.WAITING);
-        insertWaiting(storeId, TODAY, 3, WaitingStatus.WAITING);
-        doThrow(new IllegalStateException("전송 실패")).doNothing().when(notificationService).send(any());
-
-        publisher.publishEvent(new WaitingQueueChangedEvent(storeId, TODAY));
-
-        sentEvents(3);
+    @Test void failureOfOneRecipientDoesNotStopOthers() throws Exception {
+        var registered=new java.util.LinkedHashMap<Long,org.springframework.web.servlet.mvc.method.annotation.SseEmitter>();
+        for(int i=1;i<=3;i++) {
+            Long waiting=insertWaiting(storeId,TODAY,i,WaitingStatus.WAITING);Long member=memberOf(waiting);
+            var emitter=org.mockito.Mockito.mock(org.springframework.web.servlet.mvc.method.annotation.SseEmitter.class);
+            if(i==1) org.mockito.Mockito.doThrow(new IllegalStateException("closed")).when(emitter).send(any(org.springframework.web.servlet.mvc.method.annotation.SseEmitter.SseEventBuilder.class));
+            registered.put(member,emitter);emitters.save(member,emitter);
+        }
+        try {
+            publish(new WaitingQueueChangedEvent(storeId,TODAY));sentEvents(3);
+            assertThat(jdbcTemplate.queryForObject("SELECT count(*) FROM waiting_sse_target t JOIN waiting_sse_root r ON r.id=t.root_id WHERE r.store_id=? AND t.status='SENT'",Long.class,storeId)).isEqualTo(2);
+        } finally {registered.forEach(emitters::delete);}
     }
 }

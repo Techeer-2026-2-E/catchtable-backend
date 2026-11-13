@@ -1,5 +1,11 @@
 # 기능60 — 전액·부분 환불 프런트 연동
 
+## 2026-11-11 추가 — 환불 전송 한도와 동일 요청 재시도
+
+동기 환불·예약 취소의 PG 전송 용량이 없으면 `503 PAYMENT_CAPACITY_EXCEEDED`, `Retry-After: 1`을 반환한다. 이 요청의 PG 전송은 거절됐지만 **이미 저장한 예약 환불 의도·금액·사유·최초 요청시각·Idempotency-Key와 공통 REQUESTED는 유지**한다. 이전 요청이 UNKNOWN이면 그 상태도 유지한다. 이를 확정 환불 실패나 취소 완료로 표시하거나 새 키를 생성하지 않는다. 예약 변경 동결도 기존 REQUESTED/UNKNOWN 계약을 따른다.
+
+최소 1초 뒤 **같은 endpoint·본문·Idempotency-Key**로 재시도하고, 기존 `POST /api/user/payments/{paymentId}/sync` 및 결제 상세/환불 요청 조회로 결과를 확인한다. 기존 재확인은 PG 원장을 먼저 조회하고 원래 키·금액·의도와 15일 경계로 복구한다. 새 승인 한도 거절의 보호 미생성과 달리 환불은 최초 요청 기록을 보존한다. 이미 접수202된 `unconfirmed-refund`는 V33 outbox가 같은 명령을 인계하며 PG 한도 초과를 새 환불 요청으로 바꾸지 않는다. 전송 후 응답 유실은 기존 UNKNOWN/409, PG 확정 거절은 기존 FAILED/409로 구분한다. 구현·검증 및 미검증 범위는 [PG 장애 격리 작업 기록](../../work-log/2026-11-11-payment-isolation.md)을 따른다.
+
 ## 2026-11-05 추가 — 예약 미확정 승인 건
 
 사용자 결정으로 `refundRequired`인 미확정 승인 건에 고객 직접 전액 환불 요청을 추가했다. 기존 확정 예약의 정책 환불·취소 API는 유지한다. 새 경로는 `POST/GET /api/user/payments/{paymentId}/unconfirmed-refund`, 신규 접수202이며 아웃박스 커밋 뒤 기존 공통 환불·재확인으로 처리한다. 일반 취소 비율 대신 잔액 전부를 반환하고 기존 종결 예약이나 새 선점을 바꾸지 않는다. [상세 계약](unconfirmed-refund.md)을 따른다. 아래 실제 Toss 미검증 경계도 유지한다.

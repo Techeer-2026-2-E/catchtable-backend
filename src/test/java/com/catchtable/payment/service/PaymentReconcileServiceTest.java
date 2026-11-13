@@ -243,6 +243,16 @@ class PaymentReconcileServiceTest {
         toss.query(data.orderId(paymentId), "pk-2", "DONE", AMOUNT);
 
         service.reconcileTargets(1_000);
+        assertThat(toss.queries()).isZero();
+        var jobs = new com.catchtable.payment.repository.PaymentReconcileJobRepository(jdbc);
+        for (int i = 0; i < 20; i++) {
+            var claim = jobs.claim(NOW);
+            if (claim.isEmpty()) break;
+            boolean resolved = false;
+            try { resolved = service.reconcile(claim.get().paymentId()); }
+            catch (RuntimeException expectedBrokenTarget) { }
+            jobs.finish(claim.get(), NOW, resolved, null);
+        }
 
         assertThat(paymentStatus(broken)).isEqualTo("TIMEOUT");
         assertThat(paymentStatus(paymentId)).isEqualTo("DONE");

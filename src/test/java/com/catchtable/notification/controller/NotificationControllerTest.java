@@ -26,11 +26,30 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 // 실제 PostgreSQL(docker compose)에 Flyway 스키마로 실행
 @SpringBootTest
+@org.springframework.context.annotation.Import(com.catchtable.payment.ReconcileTestClock.Config.class)
+@org.springframework.test.annotation.DirtiesContext(classMode=org.springframework.test.annotation.DirtiesContext.ClassMode.AFTER_CLASS)
 @AutoConfigureMockMvc
 class NotificationControllerTest {
 
     private static final String SUBSCRIBE_URL = "/api/user/notifications/subscribe";
-    private static final Long MEMBER_ID = 900_101L;
+    private Long MEMBER_ID;
+    private Long storeId;
+    private Long waitingId;
+    @Autowired org.springframework.jdbc.core.JdbcTemplate jdbc;
+    @Autowired org.springframework.transaction.support.TransactionTemplate tx;
+    @Autowired com.catchtable.notification.durability.WaitingSseWorker worker;
+    @Autowired com.catchtable.payment.ReconcileTestClock clock;
+    @org.junit.jupiter.api.BeforeEach void fixture() {
+        clock.set(OffsetDateTime.parse("2026-10-11T18:00:00+09:00"));
+        MEMBER_ID=jdbc.queryForObject("INSERT INTO member(name,phone,user_type) VALUES('test','01000000000','CUSTOMER') RETURNING id",Long.class);
+        storeId=jdbc.queryForObject("INSERT INTO store(owner_id,name,category,address,reservation_duration_minutes,reservation_slot_minutes,arrival_grace_minutes) VALUES(?,'test','KOREAN','test',90,30,10) RETURNING id",Long.class,MEMBER_ID);
+        waitingId=jdbc.queryForObject("INSERT INTO waiting(member_id,store_id,waiting_date,party_count,wait_number,queue_order,status,call_count,called_at,call_expires_at,created_at,updated_at) VALUES(?,?,DATE '2026-10-11',2,12,12,'CALLED',1,?::timestamptz,?::timestamptz,now(),now()) RETURNING id",Long.class,MEMBER_ID,storeId,"2026-10-11T18:00:00+09:00","2026-10-11T18:10:00+09:00");
+    }
+    private void sendCall() {
+        tx.executeWithoutResult(s->publisher.publishEvent(WaitingCallNotification.of(MEMBER_ID,waitingId,12,"스케줄 청담",
+                OffsetDateTime.parse("2026-10-11T18:00:00+09:00"),OffsetDateTime.parse("2026-10-11T18:10:00+09:00"))));
+        com.catchtable.notification.durability.WaitingSseTestDrain.forStore(jdbc,worker,storeId).done();
+    }
 
     @Autowired
     private MockMvc mockMvc;
@@ -44,6 +63,9 @@ class NotificationControllerTest {
     @AfterEach
     void tearDown() {
         repository.findAllByMemberId(MEMBER_ID).forEach(emitter -> repository.delete(MEMBER_ID, emitter));
+        jdbc.update("DELETE FROM waiting WHERE id=?",waitingId);
+        jdbc.update("DELETE FROM store WHERE id=?",storeId);
+        jdbc.update("DELETE FROM member WHERE id=?",MEMBER_ID);
     }
 
     @Test
@@ -70,15 +92,13 @@ class NotificationControllerTest {
     void waitingCalled() throws Exception {
         MvcResult result = openConnection();
 
-        // 트랜잭션 밖 발행은 리스너가 바로 보낸다 (fallbackExecution)
-        publisher.publishEvent(WaitingCallNotification.of(MEMBER_ID, 30L, 12, "스케줄 청담",
-                OffsetDateTime.parse("2026-10-11T18:00:00+09:00"),
-                OffsetDateTime.parse("2026-10-11T18:10:00+09:00")));
+        // 업무 TX에 기록한 뒤 명시적으로 worker를 실행한다.
+        sendCall();
 
         // MockMvc 기본 문자셋(ISO-8859-1)으로 읽으면 한글이 깨지므로 UTF-8로 읽는다
         String body = result.getResponse().getContentAsString(StandardCharsets.UTF_8);
         assertThat(body).contains("event:WAITING_CALLED");
-        assertThat(body).contains("\"targetId\":30");
+        assertThat(body).contains("\"targetId\":"+waitingId);
         assertThat(body).contains("\"message\":\"12번 고객님, 18:10까지 스케줄 청담에 입장해 주세요.\"");
         assertThat(body).contains(
                 "\"status\":\"CALLED\"",
@@ -94,9 +114,7 @@ class NotificationControllerTest {
         MvcResult first = openConnection();
         MvcResult second = openConnection();
 
-        publisher.publishEvent(WaitingCallNotification.of(MEMBER_ID, 30L, 12, "스케줄 청담",
-                OffsetDateTime.parse("2026-10-11T18:00:00+09:00"),
-                OffsetDateTime.parse("2026-10-11T18:10:00+09:00")));
+        sendCall();
 
         assertThat(first.getResponse().getContentAsString()).containsOnlyOnce("event:WAITING_CALLED");
         assertThat(second.getResponse().getContentAsString()).containsOnlyOnce("event:WAITING_CALLED");

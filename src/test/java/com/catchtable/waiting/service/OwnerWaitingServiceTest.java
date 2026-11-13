@@ -50,6 +50,12 @@ import static org.mockito.Mockito.verify;
 
 @SpringBootTest
 class OwnerWaitingServiceTest {
+    @Autowired com.catchtable.notification.durability.WaitingSseWorker sseWorker;
+    @Autowired JdbcTemplate sseJdbc;
+    private void flushSse() {
+        com.catchtable.notification.durability.WaitingSseTestDrain.forStore(sseJdbc,sseWorker,store.getId()).done();
+    }
+
 
     @Autowired OwnerWaitingService service;
     @Autowired WaitingQueryService queryService;
@@ -148,6 +154,7 @@ class OwnerWaitingServiceTest {
 
             assertThat(queryService.getMyWaiting(remainingCustomer.getId(), next.getId()).currentPosition())
                     .isEqualTo(1);
+            flushSse();
             verify(remainingEmitter, times(1)).send(any(SseEmitter.SseEventBuilder.class));
             verifyOneTerminationNotification();
         } finally {
@@ -191,7 +198,9 @@ class OwnerWaitingServiceTest {
                     assertThat(history.getPreviousStatus()).isEqualTo(WaitingStatus.NO_SHOW);
                     assertThat(history.getPreviousReason()).isEqualTo(WaitingEndReason.AUTO_EXPIRED);
                 });
+        flushSse();
         verify(ownerEmitter, never()).send(any(SseEmitter.SseEventBuilder.class));
+        flushSse();
         verify(customerEmitter, never()).send(any(SseEmitter.SseEventBuilder.class));
     }
 
@@ -236,7 +245,9 @@ class OwnerWaitingServiceTest {
         });
         assertThat(waitingRepository.findById(waiting.getId()).orElseThrow().getStatus()).isEqualTo(WaitingStatus.WAITING);
         assertThat(historyRepository.count()).isZero();
+        flushSse();
         verify(ownerEmitter, never()).send(any(SseEmitter.SseEventBuilder.class));
+        flushSse();
         verify(customerEmitter, never()).send(any(SseEmitter.SseEventBuilder.class));
     }
 
@@ -277,6 +288,7 @@ class OwnerWaitingServiceTest {
         assertThat(historyRepository.findAllByWaitingIdOrderByIdAsc(waiting.getId())).hasSize(1);
         if (results.getFirst() == 1) {
             assertThat(ended.getEndedAt().toInstant()).isEqualTo(expiryTime.toInstant());
+            flushSse();
             verify(customerEmitter, never()).send(any(SseEmitter.SseEventBuilder.class));
         } else {
             assertThat(ended.getEndedAt().toInstant()).isAfter(expiryTime.toInstant());
@@ -401,7 +413,9 @@ class OwnerWaitingServiceTest {
         assertThat(called.getStatus()).isEqualTo(WaitingStatus.CALLED);
         assertThat(called.getCallCount()).isEqualTo(1);
         assertThat(Duration.between(called.getCalledAt(), called.getCallExpiresAt())).isEqualTo(Duration.ofMinutes(10));
+        flushSse();
         verify(ownerEmitter, times(1)).send(any(SseEmitter.SseEventBuilder.class));
+        flushSse();
         verify(customerEmitter, times(2)).send(any(SseEmitter.SseEventBuilder.class));
     }
 
@@ -445,6 +459,7 @@ class OwnerWaitingServiceTest {
         assertThat(unchanged.getStatus()).isEqualTo(status);
         assertThat(unchanged.getCallCount()).isZero();
         assertThat(unchanged.getCalledAt()).isNull();
+        flushSse();
         verify(customerEmitter, never()).send(any(SseEmitter.SseEventBuilder.class));
     }
 
@@ -480,7 +495,9 @@ class OwnerWaitingServiceTest {
         assertThat(recalled.getCalledAt().toInstant()).isEqualTo(called.getCalledAt().toInstant());
         assertThat(recalled.getCallExpiresAt().toInstant()).isEqualTo(called.getCallExpiresAt().toInstant());
         // 호출: 점주 1·고객 2(호출·순번), 재전송: 고객 호출 알림 1회씩
+        flushSse();
         verify(ownerEmitter, times(1)).send(any(SseEmitter.SseEventBuilder.class));
+        flushSse();
         verify(customerEmitter, times(4)).send(any(SseEmitter.SseEventBuilder.class));
     }
 
@@ -493,7 +510,9 @@ class OwnerWaitingServiceTest {
         waitingService.respondToCall(customer.getId(), waiting.getId());
         waitingService.respondToCall(customer.getId(), waiting.getId());
 
+        flushSse();
         verify(ownerEmitter, times(2)).send(any(SseEmitter.SseEventBuilder.class));
+        flushSse();
         verify(customerEmitter, times(2)).send(any(SseEmitter.SseEventBuilder.class));
     }
 
@@ -581,7 +600,9 @@ class OwnerWaitingServiceTest {
         assertThat(retried.status()).isEqualTo(WaitingStatus.SEATED);
         assertThat(retried.enteredAt().toInstant()).isEqualTo(enteredAt.toInstant());
         assertThat(retried.tableId()).isEqualTo(tableId);
+        flushSse();
         verify(ownerEmitter, times(1)).send(any(SseEmitter.SseEventBuilder.class));
+        flushSse();
         verify(customerEmitter, times(1)).send(any(SseEmitter.SseEventBuilder.class));
     }
 
@@ -593,6 +614,7 @@ class OwnerWaitingServiceTest {
         Waiting unchanged = waitingRepository.findById(waiting.getId()).orElseThrow();
         assertThat(unchanged.getStatus()).isEqualTo(status);
         assertThat(unchanged.getEnteredAt()).isNull();
+        flushSse();
         verify(ownerEmitter, never()).send(any(SseEmitter.SseEventBuilder.class));
     }
 
@@ -650,6 +672,7 @@ class OwnerWaitingServiceTest {
         Waiting unchanged = waitingRepository.findById(waiting.getId()).orElseThrow();
         assertThat(unchanged.getStatus()).isEqualTo(WaitingStatus.CALLED);
         assertThat(unchanged.getTableId()).isNull();
+        flushSse();
         verify(ownerEmitter, never()).send(any(SseEmitter.SseEventBuilder.class));
     }
 
@@ -691,6 +714,7 @@ class OwnerWaitingServiceTest {
                 ErrorCode.WAITING_NOT_ENTERABLE);
 
         assertThat(waitingRepository.findById(waiting.getId()).orElseThrow().getTableId()).isEqualTo(tableId);
+        flushSse();
         verify(ownerEmitter, times(1)).send(any(SseEmitter.SseEventBuilder.class));
     }
 
@@ -706,7 +730,9 @@ class OwnerWaitingServiceTest {
         assertThat(service.getWaitings(owner.getId(), store.getId())).singleElement()
                 .satisfies(row -> assertThat(row.id()).isEqualTo(next.getId()));
         assertThat(queryService.getMyWaiting(customer.getId(), next.getId()).teamsAhead()).isZero();
+        flushSse();
         verify(ownerEmitter, times(1)).send(any(SseEmitter.SseEventBuilder.class));
+        flushSse();
         verify(customerEmitter, times(1)).send(any(SseEmitter.SseEventBuilder.class));
     }
 
@@ -748,7 +774,9 @@ class OwnerWaitingServiceTest {
     }
 
     private void verifyOneTerminationNotification() throws Exception {
+        flushSse();
         verify(ownerEmitter, times(1)).send(any(SseEmitter.SseEventBuilder.class));
+        flushSse();
         verify(customerEmitter, times(1)).send(any(SseEmitter.SseEventBuilder.class));
     }
 

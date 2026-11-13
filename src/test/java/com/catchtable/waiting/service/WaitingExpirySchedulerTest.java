@@ -50,6 +50,12 @@ import static org.mockito.Mockito.verify;
 @SpringBootTest(properties = "waiting.expiry-interval-ms=3600000")
 @RecordApplicationEvents
 class WaitingExpirySchedulerTest {
+    @Autowired com.catchtable.notification.durability.WaitingSseWorker sseWorker;
+    @Autowired JdbcTemplate sseJdbc;
+    private void flushSse() {
+        com.catchtable.notification.durability.WaitingSseTestDrain.forStore(sseJdbc,sseWorker,store.getId()).done();
+    }
+
 
     private static final LocalDate TODAY = LocalDate.of(2030, 1, 11);
 
@@ -134,11 +140,16 @@ class WaitingExpirySchedulerTest {
                         tuple(expiredCustomer.getId(), NotificationType.WAITING_EXPIRED, overdue.getId()),
                         tuple(owner.getId(), NotificationType.WAITING_CHANGED, store.getId()));
         assertThat(events.stream(WaitingQueueChangedEvent.class))
+                .usingRecursiveFieldByFieldElementComparatorIgnoringFields("waitingEvent", "deliveryKey")
                 .containsExactly(new WaitingQueueChangedEvent(store.getId(), TODAY));
         // 만료 고객: 만료 알림 1건, 남은 고객: 순번 1건
+        flushSse();
         verify(emitters.get(expiredCustomer.getId()), times(1)).send(any(SseEmitter.SseEventBuilder.class));
+        flushSse();
         verify(emitters.get(owner.getId()), times(1)).send(any(SseEmitter.SseEventBuilder.class));
+        flushSse();
         verify(emitters.get(calledCustomer.getId()), times(1)).send(any(SseEmitter.SseEventBuilder.class));
+        flushSse();
         verify(emitters.get(waitingCustomer.getId()), times(1)).send(any(SseEmitter.SseEventBuilder.class));
     }
 
@@ -178,8 +189,11 @@ class WaitingExpirySchedulerTest {
         assertThat(waitingRepository.findById(otherDateWaiting.getId()).orElseThrow().getStatus())
                 .isEqualTo(WaitingStatus.WAITING);
         assertThat(events.stream(WaitingQueueChangedEvent.class))
+                .usingRecursiveFieldByFieldElementComparatorIgnoringFields("waitingEvent", "deliveryKey")
                 .containsExactly(new WaitingQueueChangedEvent(store.getId(), TODAY));
+        flushSse();
         verify(emitters.get(otherStoreCustomer.getId()), never()).send(any(SseEmitter.SseEventBuilder.class));
+        flushSse();
         verify(emitters.get(otherDateCustomer.getId()), never()).send(any(SseEmitter.SseEventBuilder.class));
     }
 
