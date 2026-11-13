@@ -10,7 +10,7 @@ import org.springframework.stereotype.Component;
 @ConditionalOnProperty(name="reservation.refund-outbox.scheduling-enabled",havingValue="true",matchIfMissing=true)
 public class ReservationRefundOutboxScheduler {
     private final ReservationRefundOutboxDispatcher dispatcher;
-    @Scheduled(fixedDelayString="${reservation.refund-outbox.poll-interval-ms:1000}",
+    @Scheduled(scheduler="paymentTaskScheduler", fixedDelayString="${reservation.refund-outbox.poll-interval-ms:1000}",
             initialDelayString="${reservation.refund-outbox.initial-delay-ms:1000}")
     public void dispatch() { dispatcher.poll(); }
 }

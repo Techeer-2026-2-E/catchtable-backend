@@ -4,6 +4,8 @@ import com.catchtable.global.exception.BusinessException;
 import com.catchtable.global.exception.ErrorCode;
 import com.catchtable.notification.dto.CustomerNotificationEvent;
 import com.catchtable.notification.dto.NotificationType;
+import com.catchtable.payment.client.PaymentCallGate;
+import com.catchtable.payment.client.PaymentCapacityExceededException;
 import com.catchtable.payment.dto.PaymentConfirmRequest;
 import com.catchtable.payment.dto.PaymentResponse;
 import com.catchtable.payment.entity.Payment;
@@ -28,6 +30,7 @@ import java.util.List;
 @RequiredArgsConstructor
 public class ReservationPaymentService {
 
+    private final PaymentCallGate paymentCallGate;
     private final ReservationRepository reservations;
     private final PaymentRepository payments;
     private final PaymentApprovalService approvals;
@@ -42,9 +45,31 @@ public class ReservationPaymentService {
             throw new IllegalStateException("결제 승인은 트랜잭션 밖에서 호출");
         }
         validateRequest(request);
+        PaymentResponse replay = completedReplay(memberId, request);
+        if (replay != null) return replay;
+        try {
+            // A new external approval still acquires admission BEFORE persisting approval protection.
+            return paymentCallGate.call(() -> confirmAdmitted(memberId, request));
+        } catch (PaymentCapacityExceededException rejected) {
+            // A concurrent result may have committed after the first replay check but before admission.
+            replay = completedReplay(memberId, request);
+            if (replay != null) return replay;
+            throw rejected;
+        }
+    }
+
+    private PaymentResponse completedReplay(Long memberId, PaymentConfirmRequest request) {
+        return transactions.execute(status -> {
+            // Reuse all existing checks under reservation -> payment locks, never a status-only shortcut.
+            Attempt attempt = prepare(memberId, request, true);
+            return attempt == null ? null : finish(memberId, attempt, request.amount());
+        });
+    }
+
+    private PaymentResponse confirmAdmitted(Long memberId, PaymentConfirmRequest request) {
         Attempt attempt;
         try {
-            attempt = transactions.execute(status -> prepare(memberId, request));
+            attempt = transactions.execute(status -> prepare(memberId, request, false));
         } catch (DataIntegrityViolationException exception) {
             throw new BusinessException(ErrorCode.PAYMENT_KEY_ALREADY_USED);
         }
@@ -65,12 +90,14 @@ public class ReservationPaymentService {
         return result;
     }
 
-    private Attempt prepare(Long memberId, PaymentConfirmRequest request) {
+    private Attempt prepare(Long memberId, PaymentConfirmRequest request, boolean completedOnly) {
         Long reservationId = payments.findReservationIdByOrderIdAndMemberId(request.orderId(), memberId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.PAYMENT_NOT_FOUND));
         Reservation reservation = lockReservation(memberId, reservationId);
         Payment payment = payments.findByOrderIdAndMemberIdForUpdate(request.orderId(), memberId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.PAYMENT_NOT_FOUND));
+        // The probe must not start a new approval or modify an earlier UNKNOWN attempt.
+        if (completedOnly && payment.getStatus() != PaymentStatus.DONE) return null;
         if (reservation.isApprovalQuarantined()) {
             throw new BusinessException(ErrorCode.PAYMENT_RECONCILIATION_REQUIRED);
         }

@@ -1,7 +1,8 @@
 package com.catchtable.payment.client;
 
 // Toss Payments 결제 API (v1)
-// 실패: TossPaymentsException, 결과 불명: TossPaymentsUnknownResultException
+// 전송 전 용량 거절: PaymentCapacityExceededException (재시도 가능)
+// PG 확정 실패: TossPaymentsException, 전송 후/전체 deadline 결과 불명: TossPaymentsUnknownResultException
 public interface TossPaymentsClient {
 
     // 승인 (멱등키 null이면 헤더 생략)

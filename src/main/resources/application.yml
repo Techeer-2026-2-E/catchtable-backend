@@ -29,8 +29,10 @@ spring:
 toss:
   secret-key: ${TOSS_SECRET_KEY:}
   base-url: ${TOSS_BASE_URL:https://api.tosspayments.com}
-  connect-timeout: 5s
-  read-timeout: 30s
+  connect-timeout: ${TOSS_CONNECT_TIMEOUT:5s}
+  read-timeout: ${TOSS_READ_TIMEOUT:30s}
+  call-timeout: ${TOSS_CALL_TIMEOUT:35s}
+  max-concurrent-calls: ${TOSS_MAX_CONCURRENT_CALLS:8} # immediate rejection, no in-memory queue
 
 # 학습용 호출 알림. simulation은 외부 API 호출이나 비용이 없다.
 alimtalk:

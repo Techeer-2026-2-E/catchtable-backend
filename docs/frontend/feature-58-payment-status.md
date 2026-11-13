@@ -136,9 +136,9 @@ Notion "결제 취소·환불" P2 초안과 다른 점:
 
 응답 유실·콜백 지연·처리 중단 뒤 Toss 원장을 서버에서 다시 조회해 결제·예약·선점을 맞춘다. 리다이렉트 성공 화면이나 웹훅 본문만으로 상태를 바꾸지 않는다. 재확인을 반복해도 결과·이력·알림은 같다.
 
-- `POST /api/user/payments/{paymentId}/sync`: 고객 재확인. `X-Member-Id` 필수, 응답은 결제 상세(`GET /{paymentId}`와 같은 형식). 없으면 `401 UNAUTHORIZED`, 고객이 아니면 `403 FORBIDDEN_MEMBER_TYPE`, 남의 결제는 `404 PAYMENT_NOT_FOUND`(Toss 호출 없음). Toss 조회가 실패하면 상태를 그대로 두고 200으로 현재 상세를 반환한다(`TIMEOUT`이면 아직 불명).
-- `POST /api/user/webhooks/payments`: Toss 웹훅. 본문에서 `orderId`(없으면 `paymentKey`)만 꺼내 결제를 찾고 Toss를 다시 조회한다. `PAYMENT_STATUS_CHANGED`는 `data.orderId`, 가상계좌 `DEPOSIT_CALLBACK`은 최상위 `orderId`. 서명 검증은 하지 않는다. 모르는 결제·잘못된 본문·처리 실패도 200(재전송 방지), 실패는 로그만 남긴다.
-- 자동 재확인: `payment.reconcile-interval-ms`(기본 60000) 간격, 한 번에 `payment.reconcile-batch-size`(기본 50)건, 건별 별도 커밋. 대상은 `TIMEOUT` 결제, 승인 시작 기록이 있는 `PENDING_PAYMENT` 예약의 결제, 격리 예약의 승인·불명 결제, `REQUESTED`·`UNKNOWN` 환불. `toss.secret-key`가 비어 있으면(로컬·테스트) 스케줄러가 꺼진다.
+- `POST /api/user/payments/{paymentId}/sync`: 고객 재확인. `X-Member-Id` 필수, 응답은 결제 상세(`GET /{paymentId}`와 같은 형식). 없으면 `401 UNAUTHORIZED`, 고객이 아니면 `403 FORBIDDEN_MEMBER_TYPE`, 남의 결제는 `404 PAYMENT_NOT_FOUND`(Toss 호출 없음). Toss 조회가 실패하면 상태를 그대로 두고 200으로 현재 상세를 반환한다(`TIMEOUT`이면 아직 불명). PG 전송 전 동시성 한도 거절은 `503 PAYMENT_CAPACITY_EXCEEDED`와 `Retry-After: 1`이다.
+- `POST /api/user/webhooks/payments`: Toss 웹훅. 본문에서 `orderId`(없으면 `paymentKey`)만 꺼내 결제를 찾고 영속 재확인 job을 저장한다. `PAYMENT_STATUS_CHANGED`는 `data.orderId`, 가상계좌 `DEPOSIT_CALLBACK`은 최상위 `orderId`. 서명 검증은 하지 않는다. 모르는 결제·잘못된 본문은 200이다. 알려진 결제는 영속 재확인 job 커밋 후 200이고 식별 조회·저장 실패는 5xx다. PG 조회와 결과 반영은 전용 워커가 수행한다(2026-11-11, [상세 계약](../../work-log/2026-11-11-payment-isolation.md)).
+- 자동 재확인: `payment.reconcile-interval-ms`(기본 60000) 간격, 한 번에 `payment.reconcile-batch-size`(기본 50)건, 건별 job 저장을 별도 커밋하고 전용 워커가 기존 재확인 서비스를 실행한다. 대상은 `TIMEOUT` 결제, 승인 시작 기록이 있는 `PENDING_PAYMENT` 예약의 결제, 격리 예약의 승인·불명 결제, `REQUESTED`·`UNKNOWN` 환불. `toss.secret-key`가 비어 있으면(로컬·테스트) 스케줄러가 꺼진다.
 - Toss 조회는 `READY`·`TIMEOUT` 결제와 진행 중 환불에만 한다. 그 외 최종 상태는 Toss를 부르지 않고 예약 쪽만 맞춘다. Toss 대시보드에서 직접 한 취소는 반영하지 않는다.
 - 트랜잭션 밖에서만 호출한다(안이면 `IllegalStateException`). Toss 조회 중 DB 잠금 없음, 반영은 `applyTossPayment(TOSS_QUERY)`와 예약→결제 행 잠금.
 
