@@ -117,6 +117,26 @@ class UserStoreControllerTest {
     }
 
     @Test
+    @DisplayName("매장 상세에 위도·경도를 담는다")
+    void detailIncludesCoordinates() throws Exception {
+        jdbcTemplate.update("UPDATE store SET latitude = 37.5446, longitude = 127.0559 WHERE id = ?", storeId);
+
+        mockMvc.perform(get("/api/user/stores/{storeId}", storeId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.latitude").value(37.5446))
+                .andExpect(jsonPath("$.longitude").value(127.0559));
+    }
+
+    @Test
+    @DisplayName("좌표가 없는 매장은 위도·경도를 null로 준다")
+    void detailCoordinatesNullWhenMissing() throws Exception {
+        mockMvc.perform(get("/api/user/stores/{storeId}", storeId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.latitude").value(nullValue()))
+                .andExpect(jsonPath("$.longitude").value(nullValue()));
+    }
+
+    @Test
     @DisplayName("소프트 삭제된 요일(휴무)은 영업시간에 나오지 않는다")
     void excludeDeletedHours() throws Exception {
         insertHour(1, "11:00", "22:00", false);
