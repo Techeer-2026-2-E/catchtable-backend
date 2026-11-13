@@ -13,6 +13,7 @@ Techeer 2026-2 E팀
 | 팀원의 도구 준비와 작업 순서 | [AI 협업 안내](docs/ai-workflow.md) |
 | 변경 이유와 검증 근거 | [작업 기록](work-log/README.md), [기존 개발 의사결정 기록](docs/development-decisions.md) |
 | 문서 차이와 결정·확인 경로 | [확인할 사항](docs/OPEN_ITEMS.md) |
+| EC2 배포(Docker Compose) | [배포 안내](deploy/README.md) |
 
 ## 작업 흐름
 

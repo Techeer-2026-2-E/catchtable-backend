@@ -1,0 +1,14 @@
+.git
+.gradle
+build
+.idea
+.vscode
+docs
+work-log
+tools
+scripts
+deploy
+*.md
+.env
+.env.*
+*.csv
