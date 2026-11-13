@@ -17,7 +17,9 @@ public record StoreDetailResponse (
         boolean waitingAvailable,
         boolean reservationEnabled,
         List<BusinessHourResponse> businessHours,   // 없는 요일은 휴무
-        List<MenuResponse> menus
+        List<MenuResponse> menus,
+        Double latitude,    // WGS84. 좌표가 없는 매장은 null
+        Double longitude
 ){
 
     public static StoreDetailResponse of(Store store, List<BusinessHourResponse> businessHours, List<MenuResponse> menus)
@@ -34,7 +36,9 @@ public record StoreDetailResponse (
                 store.isWaitingAvailable(),
                 store.getOwner() != null,
                 businessHours,
-                menus
+                menus,
+                store.getLatitude(),
+                store.getLongitude()
         );
 
     }
