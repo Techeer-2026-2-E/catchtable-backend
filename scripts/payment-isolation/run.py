@@ -165,8 +165,9 @@ def smoke(source,out,pg_delay_ms=2000,app_args=(),observer=None,on_started=None,
         app=start(source,out,'app-after-crash',True,app_args)
         approval_restart_pid=app.pid
         if on_restarted:on_restarted(app,out)
-        until(lambda:sql('SELECT status FROM payment WHERE id=1')=='DONE',10)
-        assert sql('SELECT status FROM reservation WHERE id=1')=='CONFIRMED'
+        # The payment is applied in its own transaction before the reservation settles; wait for the later one.
+        until(lambda:sql('SELECT status FROM reservation WHERE id=1')=='CONFIRMED',10)
+        assert sql('SELECT status FROM payment WHERE id=1')=='DONE'
         assert http(PG_PORT,'/__state')[1]['rows']['probe-key-1']['approvals']==1
         # Actual refund HTTP path, effect persisted at fake PG before response loss, then process restart.
         http(PG_PORT,'/__control',{'lose':True})
