@@ -108,6 +108,18 @@ class AlimtalkHttpFlowTest {
                     .header("X-Solapi-Event-Name", "SINGLE-REPORT").contentType(MediaType.APPLICATION_JSON)
                     .content(JSON.writeValueAsBytes(reports))).andExpect(status().isOk());
             assertThat(jdbc.queryForList("SELECT status FROM alimtalk_outbox", String.class)).containsOnly("SENT");
+            for (JsonNode request : REQUESTS) {
+                String id = request.path("customFields").path("outboxId").asText();
+                assertThat(jdbc.queryForList("""
+                        SELECT event_type FROM waiting_event WHERE source_type='ALIMTALK_OUTBOX'
+                            AND source_id=? ORDER BY id
+                        """, String.class, id)).containsExactly("ALIMTALK_PENDING", "ALIMTALK_PROCESSING",
+                        "ALIMTALK_ACCEPTED", "ALIMTALK_SENT");
+                assertThat(jdbc.queryForList("""
+                        SELECT details->>'customerReceipt' FROM waiting_event
+                        WHERE source_type='ALIMTALK_OUTBOX' AND source_id=?
+                        """, String.class, id)).containsOnly("UNKNOWN");
+            }
         } finally {
             histories.deleteAllInBatch();
             waitings.deleteAllInBatch();
@@ -118,7 +130,8 @@ class AlimtalkHttpFlowTest {
 
     private static HttpServer provider() {
         try {
-            var server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+            int port = Integer.parseInt(System.getenv().getOrDefault("WAITING_TEST_HTTP_PORT", "0"));
+            var server = HttpServer.create(new InetSocketAddress("127.0.0.1", port), 0);
             server.createContext("/messages/v4/send-many/detail", exchange -> {
                 JsonNode request = JSON.readTree(exchange.getRequestBody()).path("messages").get(0);
                 REQUESTS.add(request);

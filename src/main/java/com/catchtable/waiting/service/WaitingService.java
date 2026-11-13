@@ -15,6 +15,8 @@ import com.catchtable.waiting.dto.WaitingQueueChangedEvent;
 import com.catchtable.waiting.dto.WaitingResponse;
 import com.catchtable.waiting.dto.WaitingTerminationResponse;
 import com.catchtable.waiting.entity.Waiting;
+import com.catchtable.waiting.dto.WaitingEventSnapshot;
+import com.catchtable.waiting.dto.WaitingEventReference;
 import com.catchtable.waiting.entity.WaitingEndHistory;
 import com.catchtable.waiting.entity.WaitingStatus;
 import com.catchtable.waiting.repository.WaitingEndHistoryRepository;
@@ -36,6 +38,7 @@ import java.util.Optional;
 public class WaitingService {
 
     private final WaitingRepository waitingRepository;
+    private final WaitingEventRecorder eventRecorder;
     private final WaitingEndHistoryRepository historyRepository;
     private final StoreRepository storeRepository;
     private final MemberRepository memberRepository;
@@ -87,9 +90,10 @@ public class WaitingService {
         Waiting saved = waitingRepository.save(
                 Waiting.create(member, store, today, partyCount, nextNumber));
 
+        var event = eventRecorder.record(saved, "REGISTERED", "registered", OffsetDateTime.now(clock), memberId, null);
         eventPublisher.publishEvent(new CustomerNotificationEvent(
                 store.getOwner().getId(), NotificationType.WAITING_CHANGED, storeId,
-                "대기 목록이 변경되었습니다."));
+                "대기 목록이 변경되었습니다.").withWaitingEvent(event));
 
         return new WaitingCreateResult(toResponse(saved, storeId), true);
     }
@@ -100,12 +104,15 @@ public class WaitingService {
         Waiting waiting = waitingRepository.findByIdAndMemberIdForUpdate(waitingId, memberId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.WAITING_NOT_FOUND));
 
+        var before = WaitingEventSnapshot.of(waiting);
         // 첫 응답만 점주 알림
         if (waiting.respond(OffsetDateTime.now(clock))) {
+            var event = eventRecorder.record(waiting, "RESPONDED", "response:" + waiting.getCallCount(),
+                    waiting.getRespondedAt(), memberId, before);
             Store store = waiting.getStore();
             eventPublisher.publishEvent(new CustomerNotificationEvent(
                     store.getOwner().getId(), NotificationType.WAITING_CHANGED, store.getId(),
-                    "대기 목록이 변경되었습니다."));
+                    "대기 목록이 변경되었습니다.").withWaitingEvent(event));
         }
         return WaitingRespondResponse.from(waiting);
     }
@@ -116,15 +123,17 @@ public class WaitingService {
         Waiting waiting = waitingRepository.findByIdAndMemberIdForUpdate(waitingId, memberId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.WAITING_NOT_FOUND));
 
+        var before = WaitingEventSnapshot.of(waiting);
         WaitingEndHistory history = waiting.cancelByCustomer(memberId, OffsetDateTime.now(clock));
         // 처음 취소만 이력·알림
         if (history != null) {
             historyRepository.save(history);
+            var event = eventRecorder.ended(history, before);
             Store store = waiting.getStore();
             eventPublisher.publishEvent(new CustomerNotificationEvent(
                     store.getOwner().getId(), NotificationType.WAITING_CHANGED, store.getId(),
-                    "대기 목록이 변경되었습니다."));
-            eventPublisher.publishEvent(new WaitingQueueChangedEvent(store.getId(), waiting.getWaitingDate()));
+                    "대기 목록이 변경되었습니다.").withWaitingEvent(event));
+            eventPublisher.publishEvent(new WaitingQueueChangedEvent(store.getId(), waiting.getWaitingDate()).withWaitingEvent(event));
         }
         return WaitingTerminationResponse.from(waiting);
     }

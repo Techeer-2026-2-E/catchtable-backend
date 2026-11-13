@@ -134,6 +134,7 @@ class WaitingExpirySchedulerTest {
                         tuple(expiredCustomer.getId(), NotificationType.WAITING_EXPIRED, overdue.getId()),
                         tuple(owner.getId(), NotificationType.WAITING_CHANGED, store.getId()));
         assertThat(events.stream(WaitingQueueChangedEvent.class))
+                .usingRecursiveFieldByFieldElementComparatorIgnoringFields("waitingEvent")
                 .containsExactly(new WaitingQueueChangedEvent(store.getId(), TODAY));
         // 만료 고객: 만료 알림 1건, 남은 고객: 순번 1건
         verify(emitters.get(expiredCustomer.getId()), times(1)).send(any(SseEmitter.SseEventBuilder.class));
@@ -178,6 +179,7 @@ class WaitingExpirySchedulerTest {
         assertThat(waitingRepository.findById(otherDateWaiting.getId()).orElseThrow().getStatus())
                 .isEqualTo(WaitingStatus.WAITING);
         assertThat(events.stream(WaitingQueueChangedEvent.class))
+                .usingRecursiveFieldByFieldElementComparatorIgnoringFields("waitingEvent")
                 .containsExactly(new WaitingQueueChangedEvent(store.getId(), TODAY));
         verify(emitters.get(otherStoreCustomer.getId()), never()).send(any(SseEmitter.SseEventBuilder.class));
         verify(emitters.get(otherDateCustomer.getId()), never()).send(any(SseEmitter.SseEventBuilder.class));
