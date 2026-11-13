@@ -39,6 +39,15 @@ docker compose exec -T postgres psql -U catchtable -d catchtable < scripts/local
 
 목 매장은 `id=1`이고 매일 09:00~22:00에 운영한다. 2인·4인·6인 테이블이 하나씩 생성된다. 같은 목 데이터에는 재실행할 수 있다. 기존 계정·매장·테이블·영업시간이 목 데이터와 충돌하면 전체 삽입을 롤백하므로, 기존 데이터를 유지하고 별도의 빈 로컬 DB에서 실행한다.
 
+공공데이터 매장(서울시 일반음식점 인허가 CSV)과 데모 입점 매장은 목 데이터 다음에 넣는다. 목 매장이 `id=1`을 쓰므로 순서를 바꾸지 않는다.
+
+```bash
+./gradlew bootRun --args='--catchtable.store-import.path="/경로/서울시 일반음식점 인허가 정보.csv"'
+docker compose exec -T postgres psql -U catchtable -d catchtable < scripts/local-demo-seed.sql
+```
+
+데모 시드는 강남역·성수·홍대입구 근처 공공데이터 매장 일부(약 36곳)에 데모 점주(`demo-owner-*@local.test`)를 연결하고 테이블·영업시간·메뉴·방문 완료 예약·리뷰를 채운다. 메뉴·리뷰는 템플릿으로 만든 가짜 데이터라 로컬 확인용으로만 쓴다. 나머지 매장은 미입점(검색·지도만)으로 남는다. 목 점주(`id=2`)가 있으면 이 중 지역별 1곳(홍대 한식·성수 카페·강남역 일식)을 목 점주 매장으로 넘긴다. 프런트 `VITE_OWNER_STORE_IDS`에 그 매장 id를 넣어 점주 화면에서 확인한다. 두 단계 모두 다시 실행해도 데이터가 늘지 않는다.
+
 ## 점주 웨이팅과 예약 선점·변경
 
 정책 선택, 프런트 연동 계약, 팀 논의 대기 항목은 [개발 의사결정 기록](docs/development-decisions.md)에 모았다.
