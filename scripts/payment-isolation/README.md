@@ -48,6 +48,7 @@ fixture 규모는 회원2, 매장1, 테이블100, 선점100, 결제100, 웨이�
 - `summary.json`: API별 n, nearest-rank p50/p95/p99(ms), 2xx가 아닌 오류율. 네 조건·반복을 따로 보존하고 평균으로 꼬리 지연을 숨기지 않는다.
 - `resources.json`: Tomcat busy/current, Hikari active/pending, PG active/admitted/rejected, JVM thread, 공용 scheduler heartbeat 지연, fake PG active/peak/calls, `pg_stat_activity` active/idle-in-tx/Lock 대기 수. SQL 결과는 해당 DB 전체의 표본이며 profiler 수준의 모든 lock hold 시간을 뜻하지 않는다.
 - 메트릭 표본은 완료 후 250ms 간격으로 다시 수집한다. HTTP pool 포화 시 수집 자체가 늦어질 수 있으므로 실제 `at` 간격 및 `sampling_error`를 함께 본다. 기준본의 신규 PG 메트릭은 null이고 fake PG 값은 양쪽에서 있다.
+- 2026-11-13 보완: fake PG 상태 조회나 DB 조회가 실패해 표본 수집이 멈추면 `requests.json`·`resources.json`·`summary.json`은 그대로 남기고 실행을 실패로 끝낸다. smoke와 validate-baseline의 메트릭 확인은 측정값 목록을 받았을 때만 통과하며 `sampling_error`는 통과로 보지 않는다. 부하 결과에는 `sampling_error`를 계속 기록한다.
 - `environment.json`, 앱 로그, 별도 `pg-ledger.json`을 보존한다. 앱/PG는 도구가 만든 child PID만 종료하고 DB 컨테이너와 결과 스키마는 후속 검토를 위해 남긴다.
 
 동일 호스트에서 다른 작업의 CPU·DB·메모리 영향, 작은 fixture, 앱 내 프로세스 단위 cap, fake PG 동작은 실제 운영 부하와 다르다. 이번 1차는 비교 도구 준비와 기능 검증이며 성능 개선 수치는 없다.

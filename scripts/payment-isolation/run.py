@@ -111,7 +111,7 @@ def smoke(source,out,pg_delay_ms=2000,app_args=(),observer=None,on_started=None,
         for path in ('/api/user/stores?size=10','/api/user/reservations/1','/api/user/waitings/1'):
             assert http(APP_PORT,path,headers={'X-Member-Id':'1'})[0]==200,path
         probe={n:metric(n) for n in ('tomcat.threads.busy','hikaricp.connections.active','probe.scheduler.lag.ms','payment.pg.active')}
-        assert all(v is not None for v in probe.values()),probe
+        assert all(isinstance(v,list) for v in probe.values()),probe
         (out/'metric-availability.json').write_text(json.dumps(probe))
         http(PG_PORT,'/__control',{'lose':True})
         status,result=http(APP_PORT,'/api/user/payments/confirm',{'orderId':'probe-order-1','paymentKey':'probe-key-1','amount':10000},{'X-Member-Id':'1'})
@@ -220,14 +220,16 @@ def measure(out,delay_ms,requests,rate,warmup):
                 futures.append(pool.submit(one,i,scheduled))
             return [f.result() for f in futures]
     phase(warmup)
-    samples=[]; halted=threading.Event()
+    samples=[]; halted=threading.Event(); sampler_failure=[]
     names=['tomcat.threads.busy','tomcat.threads.current','hikaricp.connections.active','hikaricp.connections.pending',
            'payment.pg.active','payment.pg.admitted','payment.pg.rejected','probe.scheduler.lag.ms','jvm.threads.live']
     def sample():
-        while not halted.is_set():
-            row={'at':time.time(),'metrics':{n:metric(n) for n in names},'fake_pg':http(PG_PORT,'/__state')[1]}
-            row['db']=sql("SELECT json_build_object('active',count(*) FILTER(WHERE state='active'),'idle_in_tx',count(*) FILTER(WHERE state='idle in transaction'),'lock_waiters',count(*) FILTER(WHERE wait_event_type='Lock')) FROM pg_stat_activity WHERE datname=current_database()")
-            samples.append(row); halted.wait(.25)
+        try:
+            while not halted.is_set():
+                row={'at':time.time(),'metrics':{n:metric(n) for n in names},'fake_pg':http(PG_PORT,'/__state')[1]}
+                row['db']=sql("SELECT json_build_object('active',count(*) FILTER(WHERE state='active'),'idle_in_tx',count(*) FILTER(WHERE state='idle in transaction'),'lock_waiters',count(*) FILTER(WHERE wait_event_type='Lock')) FROM pg_stat_activity WHERE datname=current_database()")
+                samples.append(row); halted.wait(.25)
+        except Exception as error:sampler_failure.append(error)
     sampler=threading.Thread(target=sample); sampler.start()
     try:rows=phase(requests)
     finally:halted.set();sampler.join()
@@ -239,6 +241,8 @@ def measure(out,delay_ms,requests,rate,warmup):
                        'error_rate':sum(not 200<=r['status']<300 for r in selected)/len(selected)}
     (out/'requests.json').write_text(json.dumps(rows));(out/'resources.json').write_text(json.dumps(samples))
     (out/'summary.json').write_text(json.dumps(summary,indent=2));print(json.dumps(summary))
+    # A dead sampler leaves a truncated resource series; keep the files above as evidence but do not report success.
+    if sampler_failure:raise RuntimeError('resource sampler stopped early; resources.json is partial') from sampler_failure[0]
 
 def baseline(out):
     source=out/'baseline';source.mkdir()
@@ -270,7 +274,7 @@ if __name__=='__main__':
                 checks={path:http(APP_PORT,path,headers={'X-Member-Id':'1'})[0] for path in paths}
                 checks['webhook']=http(APP_PORT,'/api/user/webhooks/payments',{'orderId':'probe-order-2'})[0]
                 assert set(checks.values())=={200},checks
-                assert metric('probe.scheduler.lag.ms') is not None
+                assert isinstance(metric('probe.scheduler.lag.ms'),list)
                 (out/'baseline-fixture.json').write_text(json.dumps(checks,indent=2))
                 print(json.dumps(checks))
             finally:stop(app)
