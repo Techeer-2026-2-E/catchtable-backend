@@ -240,20 +240,22 @@ class PaymentIsolationIntegrationTest {
     }
 
     @Test void delayedApprovalHasNoDatabaseTransactionOrRowLocksAndUnknownRecovers() throws Exception {
-        delay=700;
+        delay=700; var release=holdAdmittedCalls();
         try (var executor=Executors.newSingleThreadExecutor()) {
             var pending=executor.submit(() -> { try { approve(); } catch (BusinessException expected) { } });
-            assertThat(entered.await(2,TimeUnit.SECONDS)).isTrue();
-            // A truly separate JDBC connection must be able to lock BOTH rows while PG is blocked.
-            try (var connection=source.getConnection(); var statement=connection.createStatement()) {
-                connection.setAutoCommit(false); statement.execute("SET LOCAL lock_timeout='100ms'");
-                statement.execute("SELECT id FROM reservation WHERE id="+reservation+" FOR UPDATE NOWAIT");
-                statement.execute("SELECT id FROM payment WHERE id="+payment+" FOR UPDATE NOWAIT");
-                statement.execute("SELECT payment_id FROM payment_reconcile_job WHERE payment_id="+payment+" FOR UPDATE NOWAIT");
-                assertThat(jdbc.queryForObject("SELECT count(*) FROM pg_stat_activity WHERE datname=current_database() AND pid<>pg_backend_pid() AND state='idle in transaction'",Integer.class)).isEqualTo(1);
-                connection.rollback();
-            }
-            assertThatThrownBy(() -> client.getByOrderId(order)).isInstanceOf(PaymentCapacityExceededException.class);
+            try {
+                assertThat(entered.await(2,TimeUnit.SECONDS)).isTrue();
+                // A truly separate JDBC connection must be able to lock BOTH rows while PG is blocked.
+                try (var connection=source.getConnection(); var statement=connection.createStatement()) {
+                    connection.setAutoCommit(false); statement.execute("SET LOCAL lock_timeout='100ms'");
+                    statement.execute("SELECT id FROM reservation WHERE id="+reservation+" FOR UPDATE NOWAIT");
+                    statement.execute("SELECT id FROM payment WHERE id="+payment+" FOR UPDATE NOWAIT");
+                    statement.execute("SELECT payment_id FROM payment_reconcile_job WHERE payment_id="+payment+" FOR UPDATE NOWAIT");
+                    assertThat(jdbc.queryForObject("SELECT count(*) FROM pg_stat_activity WHERE datname=current_database() AND pid<>pg_backend_pid() AND state='idle in transaction'",Integer.class)).isEqualTo(1);
+                    connection.rollback();
+                }
+                assertThatThrownBy(() -> client.getByOrderId(order)).isInstanceOf(PaymentCapacityExceededException.class);
+            } finally { release.countDown(); }
             pending.get(2,TimeUnit.SECONDS);
         }
         assertThat(state("payment",payment)).isEqualTo("TIMEOUT");
@@ -268,7 +270,7 @@ class PaymentIsolationIntegrationTest {
             if (!refund) {
                 jdbc.update("UPDATE payment SET status='TIMEOUT',payment_key=NULL,approved_at=NULL,method=NULL WHERE id=?",payment);
             }
-            delay=700; entered=new CountDownLatch(1);
+            delay=700; entered=new CountDownLatch(1); var release=holdAdmittedCalls();
             try (var executor=Executors.newSingleThreadExecutor()) {
                 var pending=executor.submit(() -> {
                     try {
@@ -276,14 +278,16 @@ class PaymentIsolationIntegrationTest {
                         else reconciler.reconcile(payment);
                     } catch (BusinessException expected) { }
                 });
-                assertThat(entered.await(2,TimeUnit.SECONDS)).isTrue();
-                try (var connection=source.getConnection(); var statement=connection.createStatement()) {
-                    connection.setAutoCommit(false);
-                    statement.execute("SELECT id FROM reservation WHERE id="+reservation+" FOR UPDATE NOWAIT");
-                    statement.execute("SELECT id FROM payment WHERE id="+payment+" FOR UPDATE NOWAIT");
-                    statement.execute("SELECT id FROM payment_refund WHERE payment_id="+payment+" FOR UPDATE NOWAIT");
-                    connection.rollback();
-                }
+                try {
+                    assertThat(entered.await(2,TimeUnit.SECONDS)).isTrue();
+                    try (var connection=source.getConnection(); var statement=connection.createStatement()) {
+                        connection.setAutoCommit(false);
+                        statement.execute("SELECT id FROM reservation WHERE id="+reservation+" FOR UPDATE NOWAIT");
+                        statement.execute("SELECT id FROM payment WHERE id="+payment+" FOR UPDATE NOWAIT");
+                        statement.execute("SELECT id FROM payment_refund WHERE payment_id="+payment+" FOR UPDATE NOWAIT");
+                        connection.rollback();
+                    }
+                } finally { release.countDown(); }
                 pending.get(2,TimeUnit.SECONDS);
             }
             await().atMost(Duration.ofSeconds(2)).until(() -> active.get()==0);
@@ -427,6 +431,25 @@ class PaymentIsolationIntegrationTest {
         final String key,order; String status="IN_PROGRESS"; long refunded; int approvals,cancels;
         final Set<String> keys=new HashSet<>();
         Ledger(String key,String order) { this.key=key; this.order=order; }
+    }
+    /**
+     * Parks an admitted PG call inside the gate until the test releases it. The 300ms read timeout that these tests
+     * rely on for the TIMEOUT outcome would otherwise free the permit while the test is still observing.
+     */
+    CountDownLatch holdAdmittedCalls() {
+        var release=new CountDownLatch(1);
+        org.mockito.Mockito.doAnswer(invocation -> invocation.getArgument(0) instanceof Held ? invocation.callRealMethod()
+                : gate.call(new Held(invocation.getArgument(0),release))).when(gate).call(org.mockito.ArgumentMatchers.any());
+        return release;
+    }
+    record Held(java.util.function.Supplier<Object> action, CountDownLatch release) implements java.util.function.Supplier<Object> {
+        public Object get() {
+            try { return action.get(); }
+            finally {
+                try { if (!release.await(10,TimeUnit.SECONDS)) throw new AssertionError("held PG call was never released"); }
+                catch (InterruptedException e) { Thread.currentThread().interrupt(); }
+            }
+        }
     }
     static class Busy implements AutoCloseable {
         final CountDownLatch release=new CountDownLatch(1);

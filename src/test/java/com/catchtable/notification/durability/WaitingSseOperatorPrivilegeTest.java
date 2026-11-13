@@ -56,6 +56,10 @@ class WaitingSseOperatorPrivilegeTest {
                 sql.execute("GRANT SELECT(id,target_id,status,marked_at,observed_at,customer_receipt) ON waiting_sse_attempt TO "+role);
                 sql.execute("GRANT SELECT(id,root_id,target_id,phase,reason,last_confirmed_stage,recorded_at) ON waiting_sse_observation TO "+role);
                 sql.execute("GRANT SELECT(id,retained_roots) ON waiting_sse_capacity TO "+role);
+                String viewOwner; // the role that really owns the fixture views; its name depends on the test database account
+                try(var rows=sql.executeQuery("SELECT viewowner FROM pg_views WHERE schemaname='"+schema+"' AND viewname='waiting_sse_root_operator'")) {
+                    assertThat(rows.next()).isTrue();viewOwner=rows.getString(1);
+                }
                 var credentials=new Properties();credentials.setProperty("user",role);credentials.setProperty("password",password);credentials.setProperty("currentSchema",schema);
                 try(Connection reader=DriverManager.getConnection(owner.getMetaData().getURL(),credentials);var read=reader.createStatement()) {
                     assertThat(reader.isReadOnly()).isFalse(); // ACL denial, not a read-only transaction.
@@ -63,8 +67,11 @@ class WaitingSseOperatorPrivilegeTest {
                         assertThat(flags.next()).isTrue();assertThat(flags.getString(1)).isEqualTo(role);
                         for(int i=2;i<=5;i++)assertThat(flags.getBoolean(i)).isFalse();
                     }
-                    try(var flags=read.executeQuery("SELECT has_schema_privilege(current_schema(),'CREATE'),pg_has_role(current_user,'catchtable','MEMBER')")) {
-                        flags.next();assertThat(flags.getBoolean(1)).isFalse();assertThat(flags.getBoolean(2)).isFalse();
+                    try(var membership=reader.prepareStatement("SELECT has_schema_privilege(current_schema(),'CREATE'),pg_has_role(current_user,?,'MEMBER')")) {
+                        membership.setString(1,viewOwner);
+                        try(var flags=membership.executeQuery()) {
+                            flags.next();assertThat(flags.getBoolean(1)).isFalse();assertThat(flags.getBoolean(2)).isFalse();
+                        }
                     }
                     read.execute("PREPARE timeline(bigint,bigint,integer) AS "+Files.readString(Path.of("scripts/waiting-sse-journal.sql")));
                     try(var rows=read.executeQuery("EXECUTE timeline(1,1,500)")) {
