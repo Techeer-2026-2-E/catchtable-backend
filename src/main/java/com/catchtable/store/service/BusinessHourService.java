@@ -28,9 +28,11 @@ import java.time.OffsetDateTime;
 import java.time.ZoneId;
 import java.util.EnumMap;
 import java.util.EnumSet;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeSet;
 import java.util.stream.Stream;
 
 @Service
@@ -107,13 +109,51 @@ public class BusinessHourService {
 
     // 남아 있는 예약이 모두 영업 구간 안에 있는지 확인한다. 호출 전에 변경 내용을 flush해야 한다.
     public void validateActiveReservationsCovered(Long storeId) {
-        for (Reservation reservation : reservationRepository.findActiveForStore(storeId, OffsetDateTime.now(clock))) {
+        List<Reservation> reservations = reservationRepository.findActiveForStore(storeId, OffsetDateTime.now(clock));
+        if (reservations.isEmpty()) {
+            return;
+        }
+
+        // 전날의 자정 넘김 영업까지 포함한다. 예약 수와 관계없이 설정 조회는 두 번이다.
+        TreeSet<LocalDate> businessDates = new TreeSet<>();
+        for (Reservation reservation : reservations) {
+            LocalDate date = reservation.getReservationStartAt().atZoneSameInstant(STORE_ZONE).toLocalDate();
+            businessDates.add(date.minusDays(1));
+            businessDates.add(date);
+        }
+        Map<LocalDate, List<OpeningWindow>> windows = loadOpeningWindows(storeId, businessDates);
+
+        for (Reservation reservation : reservations) {
             LocalDateTime start = reservation.getReservationStartAt().atZoneSameInstant(STORE_ZONE).toLocalDateTime();
             LocalDateTime end = reservation.getReservationEndAt().atZoneSameInstant(STORE_ZONE).toLocalDateTime();
-            if (!isOpenBetween(storeId, start, end)) {
+            LocalDate date = start.toLocalDate();
+            boolean covered = Stream.concat(windows.get(date.minusDays(1)).stream(), windows.get(date).stream())
+                    .anyMatch(window -> window.covers(start, end));
+            if (!covered) {
                 throw new BusinessException(ErrorCode.BUSINESS_HOUR_HAS_RESERVATIONS);
             }
         }
+    }
+
+    // 호출부에서 flush한 뒤 같은 매장 잠금 안에서 읽는다. 삭제된 행은 @SQLRestriction으로 제외한다.
+    // 이 Map은 검증 한 번에만 사용하고 다음 요청이나 설정 변경으로 넘기지 않는다.
+    private Map<LocalDate, List<OpeningWindow>> loadOpeningWindows(Long storeId, TreeSet<LocalDate> dates) {
+        Map<DayOfWeek, BusinessHour> weekly = new EnumMap<>(DayOfWeek.class);
+        businessHourRepository.findAllByStoreIdOrderByDayOfWeekAsc(storeId)
+                .forEach(hour -> weekly.put(hour.getDayOfWeek(), hour));
+        Map<LocalDate, SpecialBusinessDay> special = new HashMap<>();
+        specialBusinessDayRepository.findAllByStoreIdAndBusinessDateBetween(storeId, dates.first(), dates.last())
+                .forEach(day -> special.put(day.getBusinessDate(), day));
+
+        Map<LocalDate, List<OpeningWindow>> windows = new HashMap<>();
+        for (LocalDate date : dates) {
+            SpecialBusinessDay day = special.get(date);
+            BusinessHour hour = weekly.get(date.getDayOfWeek());
+            // 특정일 휴무(빈 목록)도 요일별 설정보다 우선한다.
+            windows.put(date, day != null ? day.windows()
+                    : hour != null ? hour.windowsOn(date) : List.of());
+        }
+        return windows;
     }
 
     // 오늘 접수된 웨이팅이 있는데 지금이 영업 구간 밖이면 거절한다. 호출 전에 변경 내용을 flush해야 한다.
