@@ -20,8 +20,8 @@ import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.List;
+import java.util.stream.IntStream;
 
 @Service
 @RequiredArgsConstructor
@@ -47,7 +47,7 @@ public class ReservationAvailabilityService {
 
         LocalDateTime dayStart = date.atStartOfDay();
         LocalDateTime dayEnd = date.plusDays(1).atStartOfDay();
-        List<AvailabilityResponse.Slot> slots = new ArrayList<>();
+        List<OffsetDateTime> candidates = new ArrayList<>();
         // 전날 밤 영업이 자정을 넘긴 경우 조회 날짜의 새벽 슬롯도 포함한다.
         List<OpeningWindow> windows = new ArrayList<>(businessHourService.getOpeningWindows(storeId, date.minusDays(1)));
         windows.addAll(businessHourService.getOpeningWindows(storeId, date));
@@ -63,13 +63,14 @@ public class ReservationAvailabilityService {
                     continue;
                 }
                 OffsetDateTime startAt = start.atZone(STORE_ZONE).toOffsetDateTime();
-                long count = storeTableRepository.countAvailable(storeId, partySize, startAt,
-                        startAt.plusMinutes(store.getReservationDurationMinutes()), nowAt);
-                slots.add(new AvailabilityResponse.Slot(startAt, count, count > 0));
+                candidates.add(startAt);
             }
         }
-        List<AvailabilityResponse.Slot> ordered = slots.stream().distinct()
-                .sorted(Comparator.comparing(AvailabilityResponse.Slot::reservationStartAt))
+        List<OffsetDateTime> starts = candidates.stream().distinct().sorted().toList();
+        List<Long> counts = storeTableRepository.countAvailableBySlots(storeId, partySize, starts,
+                store.getReservationDurationMinutes(), nowAt);
+        List<AvailabilityResponse.Slot> ordered = IntStream.range(0, starts.size())
+                .mapToObj(i -> new AvailabilityResponse.Slot(starts.get(i), counts.get(i), counts.get(i) > 0))
                 .toList();
         return new AvailabilityResponse(storeId, date, partySize, ordered);
     }

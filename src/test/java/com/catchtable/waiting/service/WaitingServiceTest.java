@@ -45,8 +45,21 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 // 웨이팅 신청 서비스 테스트
 // @Transactional 없음 → 동시성 테스트에서 스레드 간 커밋 데이터 공유 필요, 직접 정리
-@SpringBootTest
+@SpringBootTest(properties = "waiting.expiry-interval-ms=3600000")
+@org.springframework.context.annotation.Import(WaitingServiceTest.FixedTime.class)
 class WaitingServiceTest {
+
+    // Keep the all-days +/- one-hour fixture away from midnight so the previous
+    // business day's overnight window cannot invalidate the special-day assertion.
+    @org.springframework.boot.test.context.TestConfiguration
+    static class FixedTime {
+        @org.springframework.context.annotation.Bean
+        @org.springframework.context.annotation.Primary
+        Clock testClock() {
+            return Clock.fixed(java.time.Instant.parse("2030-01-20T03:00:00Z"), java.time.ZoneId.of("Asia/Seoul"));
+        }
+    }
+
 
     @Autowired WaitingService waitingService;
     @Autowired WaitingRepository waitingRepository;
