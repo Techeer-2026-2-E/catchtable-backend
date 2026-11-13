@@ -42,7 +42,7 @@ docker compose exec -T postgres psql -U catchtable -d catchtable < scripts/local
 공공데이터 매장(서울시 일반음식점 인허가 CSV)과 데모 입점 매장은 목 데이터 다음에 넣는다. 목 매장이 `id=1`을 쓰므로 순서를 바꾸지 않는다.
 
 ```bash
-./gradlew bootRun --args='--catchtable.store-import.path=/경로/서울시 일반음식점 인허가 정보.csv'
+./gradlew bootRun --args='--catchtable.store-import.path="/경로/서울시 일반음식점 인허가 정보.csv"'
 docker compose exec -T postgres psql -U catchtable -d catchtable < scripts/local-demo-seed.sql
 ```
 

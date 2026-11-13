@@ -92,6 +92,9 @@ BEGIN
     WHERE rn <= CASE WHEN category IN ('CHINESE', 'ETC') THEN 1 ELSE 2 END;
 
     SELECT count(*) INTO v_store_count FROM demo_store;
+    IF v_store_count = 0 THEN
+        RAISE EXCEPTION '강남역·성수·홍대입구 근처에 미입점 공공데이터 매장이 없습니다. CSV 적재 범위를 확인하세요.';
+    END IF;
 
     -- 매장마다 데모 점주 1명
     INSERT INTO member (email, password, name, phone, user_type)
@@ -273,14 +276,15 @@ BEGIN
 END
 $$;
 
--- 확인용: 지역별 데모 매장
-SELECT s.id, s.name, s.category, s.waiting_available,
+-- 확인용: 데모 매장과 목 점주(owner_id=2) 매장. owner_id=2인 id를 프런트 VITE_OWNER_STORE_IDS에 넣는다
+SELECT s.id, s.owner_id, s.name, s.category, s.waiting_available,
        (SELECT count(*) FROM menu WHERE store_id = s.id) AS menus,
        (SELECT count(*) FROM review r JOIN reservation res ON res.id = r.reservation_id
         WHERE res.store_id = s.id) AS reviews
 FROM store s
-JOIN member m ON m.id = s.owner_id
+LEFT JOIN member m ON m.id = s.owner_id
 WHERE m.email LIKE 'demo-owner-%@local.test'
-ORDER BY s.id;
+   OR (s.owner_id = 2 AND s.external_id IS NOT NULL)
+ORDER BY s.owner_id, s.id;
 
 COMMIT;
