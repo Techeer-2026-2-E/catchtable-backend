@@ -43,7 +43,7 @@ public class MapStoreEnricher {
     }
 
     // 리뷰 목록 API(ReviewService)와 같은 규칙: 소수 첫째 자리까지 반올림
-    private static Double roundRating(Double average) {
+    static Double roundRating(Double average) {
         if (average == null) {
             return null;
         }

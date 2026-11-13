@@ -3,6 +3,8 @@ package com.catchtable.store.service;
 
 import com.catchtable.global.exception.BusinessException;
 import com.catchtable.global.exception.ErrorCode;
+import com.catchtable.review.dto.StoreReviewStat;
+import com.catchtable.review.repository.ReviewRepository;
 import com.catchtable.store.dto.*;
 import com.catchtable.store.entity.Store;
 import com.catchtable.store.entity.StoreCategory;
@@ -20,7 +22,9 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 
 @Service
@@ -31,6 +35,8 @@ public class StoreService {
     private final StoreRepository storeRepository;
     private final BusinessHourRepository businessHourRepository;
     private final MenuRepository menuRepository;
+    private final StoreOpenStatusService storeOpenStatusService;
+    private final ReviewRepository reviewRepository;
     private final Clock clock;
 
     public StoreDetailResponse getStoreDetail(Long storeId)
@@ -74,7 +80,7 @@ public class StoreService {
         List<StoreSummaryResponse> stores = slice.getContent().stream()
                 .map(StoreSummaryResponse::of)
                 .toList();
-        return new StoreListResponse(stores, condition.page(), condition.size(), slice.hasNext());
+        return new StoreListResponse(withStats(stores), condition.page(), condition.size(), slice.hasNext());
     }
 
     private StoreListResponse searchWithFilter(StoreSearchCondition condition)
@@ -88,6 +94,28 @@ public class StoreService {
         boolean hasNext = matches.size() > condition.size();
         List<StoreSummaryResponse> stores = matches.stream().limit(condition.size())
                 .map(StoreSummaryResponse::of).toList();
-        return new StoreListResponse(stores, condition.page(), condition.size(), hasNext);
+        return new StoreListResponse(withStats(stores), condition.page(), condition.size(), hasNext);
+    }
+
+    // 한 페이지 매장의 영업 상태·별점을 id 목록으로 한 번씩만 읽어 채운다 (지도 목록 MapStoreEnricher와 같은 규칙)
+    private List<StoreSummaryResponse> withStats(List<StoreSummaryResponse> stores)
+    {
+        if (stores.isEmpty()) {
+            return stores;
+        }
+        List<Long> storeIds = stores.stream().map(StoreSummaryResponse::id).toList();
+        Map<Long, OpenStatusInfo> statuses = storeOpenStatusService.getOpenStatuses(storeIds);
+        Map<Long, StoreReviewStat> reviews = new HashMap<>();
+        reviewRepository.summarizeByStoreIds(storeIds).forEach(stat -> reviews.put(stat.storeId(), stat));
+
+        return stores.stream()
+                .map(store -> {
+                    StoreReviewStat review = reviews.get(store.id());
+                    return store.withOpenStatusAndReview(
+                            statuses.get(store.id()),
+                            review == null ? null : MapStoreEnricher.roundRating(review.averageRating()),
+                            review == null ? 0 : review.reviewCount());
+                })
+                .toList();
     }
 }
