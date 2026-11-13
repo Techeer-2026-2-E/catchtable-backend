@@ -93,3 +93,8 @@ PG delay/timeout을 늘리거나 서버 응답을 강제로 붙잡는 gate는 �
 2026-11-11 최종 I 재통합에서는 Gradle build 인수에 `-Dorg.gradle.java.installations.auto-download=false`를 추가했다.
 이는 캐시된 Java21 사용을 명시하는 도구 보완이며 compare의 함수·요청/지연/표본 조건은 그대로다.
 최종 C 묶음 저장을 포함한 전체1,083개와 강화된 restart는 위 [통합 검증 도구](../backend-improvement-integration/README.md)의 최종 절을 따른다.
+
+
+2026-11-11 durable SSE 후속 I 검증은 [최종 통합 도구](../backend-improvement-integration/README.md)의
+`verify_sse.py`를 사용한다. smoke에 선택적 start/kill/restart callback과 I opt-in 계측을 추가했으며,
+기존 PG 동일 요청 미응답·결제/환불 효과·상태 단언과 compare 경로는 유지한다. F 전체부하를 재실행하지 않는다.

@@ -54,3 +54,7 @@
 근거: [점주 목록 정렬·연기 서비스](https://github.com/Techeer-2026-2-E/catchtable-backend/blob/484daf3aa88913f382baf6468ace398653e16a0d/src/main/java/com/catchtable/waiting/service/OwnerWaitingService.java), [연기 응답](https://github.com/Techeer-2026-2-E/catchtable-backend/blob/484daf3aa88913f382baf6468ace398653e16a0d/src/main/java/com/catchtable/waiting/dto/WaitingDeferResponse.java), [프런트 점주 목록 화면](https://github.com/Techeer-2026-2-E/catchtable-frontend/blob/015f333aa2b2d4230560d69013136190b5ea2c87/src/pages/owner/waitings/OwnerWaitingsPage.tsx#L68), [프런트 점주 API](https://github.com/Techeer-2026-2-E/catchtable-frontend/blob/015f333aa2b2d4230560d69013136190b5ea2c87/src/features/owner-waiting/api/ownerWaitingApi.ts), [점주 SSE](https://github.com/Techeer-2026-2-E/catchtable-frontend/blob/015f333aa2b2d4230560d69013136190b5ea2c87/src/features/owner-waiting/hooks/useOwnerWaitings.ts).
 
 이번 변경은 소스 대조와 문서 작성이다. 테스트를 새로 실행하거나 프런트 코드·백엔드 정렬·연기 정책을 변경하지 않았다. 실제 화면·공유 DB 적용·배포는 확인하지 않았다.
+
+## 웨이팅 SSE 전달 보완 — 2026-11-11
+
+웨이팅 업무와 알림 작업을 함께 저장하고 전용 worker가 비동기로 전달하므로 HTTP 응답보다 알림이 늦을 수 있다. 이벤트명·payload·수신 설정 정책과 재연결 후 재조회 계약은 유지한다. 용량 초과 시 관련 업무는 rollback되고 `503 WAITING_SSE_CAPACITY_EXCEEDED`와 `Retry-After: 30`을 반환한다. 재시도 전에 현재 상태를 조회하며, 고객 수신 보장이나 과거 이벤트 재생으로 해석하지 않는다. [동작·운영 계약](../waiting-sse-durability.md)을 참고한다.

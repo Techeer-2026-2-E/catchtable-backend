@@ -24,7 +24,7 @@ class NotificationServiceTest {
     private final SseEmitterRepository repository = new SseEmitterRepository();
     // 항상 수신 허용
     private final NotificationSettingService settings = mock(NotificationSettingService.class, invocation -> true);
-    private final NotificationService service = new NotificationService(repository, settings);
+    private final NotificationService service = new NotificationService(repository, settings, mock(com.catchtable.notification.durability.WaitingSseJournal.class));
 
     private CustomerNotificationEvent confirmed(Long memberId) {
         return new CustomerNotificationEvent(memberId, NotificationType.RESERVATION_CONFIRMED, 10L, "예약이 확정되었습니다");

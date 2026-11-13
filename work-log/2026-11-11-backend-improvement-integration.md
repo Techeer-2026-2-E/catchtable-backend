@@ -150,3 +150,57 @@ A/B/C/D 부하를 재실행하지 않았다. C batch의 표본관찰31,200행/�
 최종86개 파일 지문/복구 tar, 전체 src 지문·원본XML·overlap JSON·로그·SQL과 실행 명령을 담았다.
 상세 보고는 COORD `reports/I.md` 최신 절을 따른다. 로컬 재통합 검증은 완료했으며 관리자 최종 근거 리뷰와
 그 이후 사용자 의사결정 감사가 남는다. CI·프런트·실공급사·공유DB·배포·커밋/게시를 완료로 주장하지 않는다.
+
+
+## 2026-11-11 durable SSE 최종 통합 — 1,126개·V39·PG/SSE 실제 재시작 완료
+
+Task `task_b626a0b32711`, dispatch `ctx_0c6236a9205e`. 사용자 승인된 durable SSE와 bounded poll의
+L565를 원래 I542에 누적52개(추가24/수정27/삭제1)만 적용했다. 모든 before SHA와 모드를 확인하고
+반영 직후565 exact를 검증했다. 옛 main 관찰 recorder는 명시된1개만 삭제했고 test fixture 대체본은 유지했다.
+기존542/원본1083 및889개 증거/자기DB전체를 먼저 백업했다. L/F 원본·봉인 자료는 수정하지 않았다.
+F source565/tools35는 archive로만 보존했으며 source로 가져온 F 도구는0개다.
+
+권한 테스트의 `LIKE public`이 보존용public/V37을 참조하는 문제는 관리자 메시지 `msg_b43f9ba2963c`의
+승인대로 현재 owner.getSchema()로 한 줄 수정했다. 별도 LOGIN·최소권한·timeline/health·8개 SQLSTATE42501은 유지됐다.
+첫 전체 실행은103클래스1,126개 중1실패(오류/skip0)였다. 예약 취소 이벤트에 추가된 내부 deliveryKey가
+서로 다른 UUID로 생성되어 기존 record 전체 비교가 실패한 fixture 문제였다. 원래6개 필드·한 번 발행·
+예약상태/권한/멱등성 단언을 보존하고 실제 key의 UUID 형식을 검증하도록 테스트만 보완했다. 실패XML을 보존했다.
+제품 main333파일·Journal/Repository·V1~V39 SQL38개는 입력과 동일하다.
+
+새 `i_sse_full_v2`에서 17:27:30–17:28:35 KST 전체 `build --rerun-tasks --no-build-cache --offline
+--no-daemon --max-workers=2 -Dorg.gradle.java.installations.auto-download=false`가 통과했다.
+**103클래스1,126개/실패0/오류0/skip0**이다. 이전1083의 invocation multiset 대비9개 표시명 대체와
+52개 추가로 순증43이며, 대체9개는 승인된 durable 동작으로 바뀐 WaitingEventHistory2개와 QueueNotifier7개다.
+옛 recorder6개는 test-only 회귀 fixture로 남았다. 신규 durability28/migration2/operator1/bounded-poll12가 실제 포함됐다.
+Hikari currentSchema=<new>,public과 URL schema override 미지정으로 pg_trgm 및 제한 LOGIN을 유지했고 cache4도 그대로다.
+
+새 `i_sse_upgrade`에서17:32:00–17:32:16 KST 실제 V37→V39 적용/재기동 validate를 통과했다.
+기존20테이블/16시퀀스/Flyway36행·payment TIMEOUT/refund UNKNOWN/알림outbox UNKNOWN이 전후 동일하다.
+새 root/target/attempt/observation backfill0/capacity0이며 V39 이력38행이다. 기존36 SQL은 불변이므로
+이전 V35→V37 보존 증거에 연결한다. V38→V39 projection·제한 비소유자 LOGIN 회귀도 전체에 포함됐다.
+
+새 `i_sse_restart`에서17:32:41–17:33:06 KST 전달 활성64/250으로 강화 실제 재시작1회를 통과했다.
+동일 PG GET ID1 진입0ms→fixture0.310/45.744ms→만료129.559ms→observer1295.766ms→kill1312.499ms,
+진입/만료/observer종료 snapshot 모두 같은 entered_ns/active=true/응답시작·종료null이다.
+공통 scheduling-1 예약EXPIRED/웨이팅NO_SHOW·C업무이력과 waiting-sse-1 실제 WAITING_EXPIRED 전송이 진행됐다.
+별도 owner call의 WAITING_CALLED를 실제 wire로 보낸 뒤 결과저장 전 probe barrier에서 PID69382를 kill했다.
+두 wire 전체 payload/eventId/generation/member/business event/root/target/attempt 조인을 원시자료에서 검산했다.
+기존append14개 보존·해당 MARKED→UNKNOWN/LEASE_EXPIRED_AFTER_MARK, 재구독 재전송0, 고객수신UNKNOWN이다.
+최종root DONE5/UNKNOWN1, target SENT1/SKIPPED3/UNKNOWN1, attempt SEND_RETURNED1/UNKNOWN1로 분모를 숨기지 않았다.
+PG worker payment-worker-1과 SSE thread의 TX=false/연결lease0 및 별도 연결 NOWAIT 잠금 성공을 확인했다.
+실제 JVM69382→69513→69557, 결제PARTIAL_REFUNDED/예약CONFIRMED/jobDONE/환불COMPLETED,
+최초PAYMENT_ONLY/3000원/동일키/잔액7000원과 승인·환불효과 각1회(HTTP5회)를 유지했다.
+SSE lease는 DB clock_timestamp SQL로, PG lease는 probe Clock 기준으로 가속했다. 실제30/120초 대기와
+연속 wall clock을 입증하지 않으며, send 후 test barrier는 외부 네트워크 장애/고객ACK가 아니다.
+
+원래7스키마 데이터·시퀀스256항목 동일, 새 실패/성공/upgrade/restart4스키마와 dump를 보존했다.
+17:34:34 KST 앱18085/fake19085/legacy19084 listener0, 앱·Gradle0/DB앱세션0, 자기 fake회수 완료다.
+JAR `2549ec1301868a80b62122582be21cb9c2a580233a14be5efd164f289a6ccc80`는 L 입력과 일치하며
+V38/V39/설정 포함, 모든probe/test-only cache/옛 main 관찰 recorder 제외다. A/B main 그대로,
+D main은 승인된 application.yml의 SSE 설정 추가 외 동일하다. 기존 C0연결 best-effort 성능은 역사이고
+F565 성능을 합본 전체 부하/실PG/고객ACK/운영SLO로 확대하지 않는다. 추가 성능/전체F fault는 실행하지 않았다.
+
+원시자료: `build/backend-improvement-integration/sse-final-20261111/`, 영구보존: COORD `evidence/I-sse-final/`.
+최종 입력→I/이전I→최종 delta·source/mode manifest·복구 tar와 독립 요약은 `reports/I-sse-final.md`에 연결한다.
+로컬 통합 검증은 완료했고 관리자 독립 delta/근거 리뷰 및 사용자 의사결정 감사는 남는다.
+커밋/외부조회/게시/배포/실제PG·SOLAPI 및 원본 backport는 하지 않았다.

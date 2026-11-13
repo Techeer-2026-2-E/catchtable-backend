@@ -103,10 +103,11 @@ def fixture(source,out):
            'approvedAt':'2030-01-20T12:00:00+09:00','keys':[]} for n in range(1,101)}
     http(PG_PORT,'/__control',{'seed':seed,'delay_ms':0,'error':0,'lose':False,'reset_metrics':True})
 
-def smoke(source,out,pg_delay_ms=2000,app_args=(),observer=None):
+def smoke(source,out,pg_delay_ms=2000,app_args=(),observer=None,on_started=None,after_kill=None,on_restarted=None):
     fixture(source,out); app=None
     try:
         app=start(source,out,'app-before-crash',True,app_args)
+        if on_started:on_started(app,out)
         for path in ('/api/user/stores?size=10','/api/user/reservations/1','/api/user/waitings/1'):
             assert http(APP_PORT,path,headers={'X-Member-Id':'1'})[0]==200,path
         probe={n:metric(n) for n in ('tomcat.threads.busy','hikaricp.connections.active','probe.scheduler.lag.ms','payment.pg.active')}
@@ -155,6 +156,7 @@ def smoke(source,out,pg_delay_ms=2000,app_args=(),observer=None):
         record_overlap('overlap-verified',observer_completed=observer is not None)
         pid=app.pid; stop(app,True); app=None
         record_overlap('jvm-killed',pid=pid)
+        if after_kill:after_kill(out)
         assert sql('SELECT status FROM payment_reconcile_job WHERE payment_id=1')=='PROCESSING'
         # Boundary-time lease expiry is separately tested with Clock in JUnit; accelerate only this process smoke.
         sql("UPDATE payment_reconcile_job SET lease_until='2029-01-01' WHERE payment_id=1")
@@ -162,6 +164,7 @@ def smoke(source,out,pg_delay_ms=2000,app_args=(),observer=None):
         http(PG_PORT,'/__control',{'delay_ms':0})
         app=start(source,out,'app-after-crash',True,app_args)
         approval_restart_pid=app.pid
+        if on_restarted:on_restarted(app,out)
         until(lambda:sql('SELECT status FROM payment WHERE id=1')=='DONE',10)
         assert sql('SELECT status FROM reservation WHERE id=1')=='CONFIRMED'
         assert http(PG_PORT,'/__state')[1]['rows']['probe-key-1']['approvals']==1

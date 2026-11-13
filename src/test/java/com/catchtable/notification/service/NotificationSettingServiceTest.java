@@ -118,8 +118,10 @@ class NotificationSettingServiceTest {
         assertThat(delivered(other, NotificationType.WAITING_POSITION_CHANGED)).isTrue();
     }
 
-    // 연결 하나에 보내고 전송 여부 확인
+    // 웨이팅은 처리 시점 허용 정책 검증; 실제 worker 전송은 WaitingSseDurabilityTest에서 검증.
+    // 예약은 기존 연결 전송도 확인.
     private boolean delivered(Long memberId, NotificationType type) throws IOException {
+        if (type.name().startsWith("WAITING_")) return settingService.allows(memberId, type);
         SseEmitter emitter = mock(SseEmitter.class);
         emitterRepository.save(memberId, emitter);
         try {

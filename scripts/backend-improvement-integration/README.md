@@ -1,6 +1,52 @@
 # 합본 로컬 정확성 검증
 
-2026-11-13 안내. 이 폴더의 `verify.py`는 2026-11-11 통합 고정본(V37까지)을 검증할 때 쓴 과거 도구다. 아래는 당시 기록 원문이다. 본문이 "현행 V38/V39"나 `verify_sse.py`라고 부르는 웨이팅 SSE 영속화 구현과 도구는 이 시점의 저장소에 없다. 지금 소스는 `verify.py`의 고정 지문과 달라 실행 전에 거절된다. 현재 범위와 검증은 [분리 검증 기록](../../work-log/2026-11-13-pg-call-isolation-pr-split.md)을 따른다.
+2026-11-12 안내 보완. **현재 V38/V39 영속 SSE 합본은 `verify_sse.py`를 먼저 사용한다.** 아래 `verify.py` 절은 고정 V37의 과거 검증이다. 전달·수용 제한·UNKNOWN의 현재 계약은 [웨이팅 SSE 영속 전달 원장](../../docs/waiting-sse-durability.md), 파일 기반 보완 결과는 [작업 기록](../../work-log/2026-11-12-backend-review-docs-tools.md)을 따른다.
+
+두 런타임 도구 모두 전용 `ct-improve-i-20261111` label·로컬 postgres:16 이미지·loopback `55435/ct_improve_i`와 앱18085/fake19085를 검사한다. 기존 Java21·Gradle 캐시·이미지만 사용하며 다운로드하지 않는다. 공용 DB·실제 Toss/SOLAPI·배포 검증 도구가 아니다. 이번 문서·guard 보완은 앱·Gradle·Docker·DB·부하를 실행하지 않았다.
+
+## 현행 V39 검증 경로 — 2026-11-12 안내 보완
+
+**이 명령은 고정 I 로컬 검증 환경 전용이다.** `verify_sse.py`는 코드의 `os.environ.update`로 `ct-improve-i-20261111`, `127.0.0.1:55435/ct_improve_i`, 사용자 `catchtable`, 앱18085/fake19085를 지정하고, 컨테이너의 `catchtable.task=task_19618ae1c3f9` 소유 label·이미지 지문·포트 바인딩을 검사한다. `PAYMENT_PROBE_*` 환경변수를 export하는 것만으로 다른 DB나 포트로 전환할 수 없다. 아래 `--schema`/`--output`도 이 고정 환경 안에서 새 소유 스키마와 출력 경로를 고르는 인자다.
+
+다른 격리 환경에서 실행하려면 관리자가 **소유 task/컨테이너·DB/계정·앱/fake 포트·출력/소스 경로를 명시적으로 조정한 외부 실행 사본**을 준비하고, 원본 대비 치환 지문과 해당 환경의 identity/소유/포트/경로 guard를 파일로 검증한 뒤 별도 runtime 슬롯을 배정해야 한다. 소유 검사를 생략하거나 고정 I 자원을 재사용하는 일반 명령으로 취급하지 않는다. 저장소의 현행 `verify_sse.py` 자체는 이번에 변경하지 않았다.
+
+이 도구가 검증하는 통합 기준은 고정 L565(승인된 V38/V39·최대64 root/250ms poll)다. 위 1,083개와 과거 best-effort
+관찰 기록은 역사이며 새 검증 근거는 I의 `sse-final-20261111/` 출력과 COORD `reports/I-sse-final.md`다.
+제품 main333파일·migration38개는 L565와 동일하다. 전용 `waitingSseScheduler`와
+업무/시도 영속 저장을 사용하며, 실제 전송과 결과 저장 사이 중단은 UNKNOWN이다. 고객 ACK를 의미하지 않는다.
+
+```sh
+# 별도 실행 슬롯을 배정한 뒤에만 사용한다. 이번 문서 보완에서는 미실행.
+# 존재하는 출력/스키마는 거부하므로 매번 새 이름을 쓴다.
+export JAVA_HOME="$(/usr/libexec/java_home -v 21)"
+export JAVA_TOOL_OPTIONS='-XX:ActiveProcessorCount=2 -Xmx512m'
+python3 scripts/backend-improvement-integration/verify_sse.py --mode upgrade \
+  --schema i_sse_upgrade_review_20261112 --output build/backend-improvement-integration/review-20261112/upgrade
+python3 scripts/backend-improvement-integration/verify_sse.py --mode restart \
+  --schema i_sse_restart_review_20261112 --output build/backend-improvement-integration/review-20261112/restart
+```
+
+- 2026-11-11 보존 전체 build는 새 스키마와 강제 실행으로103클래스1,126개 통과했다. 이번 파일 검증의 재실행 건수가 아니다. 기존 test cache4 유지,
+  별도 제한 LOGIN의 최소 권한/8개 거부 단언도 실제 실행했다. Hikari data-source-properties.currentSchema에
+  `<new_schema>,public`을 넣고 JDBC URL에는 currentSchema를 넣지 않는다. 그래야 pg_trgm을 찾고 별도 LOGIN의 schema override가 유지된다.
+- 권한 fixture의 `LIKE public`은 연결의 `owner.getSchema()`로 바꿨다. 예약 취소 fixture는 최초 단일 발행 및
+  원래6개 필드 비교를 유지하면서 새 내부 UUID deliveryKey 형식을 따로 검증한다. 두 변경 모두 테스트 한정이다.
+- upgrade는 기존V37의20테이블·16시퀀스·Flyway36행과 UNKNOWN 예시를 보존해 V39를 적용한다.
+  신규 root/target/attempt/observation backfill은0, capacity0이다. 이 모드만 전달을 비활성화해 보존 데이터를 검사한다.
+- restart는 전달/scheduling을 켜고 실제 고객 SSE를 구독한다. 같은 PG GET 미응답 중 공통 만료와
+  WAITING_EXPIRED wire/업무이력/root/target/attempt를 조인한다. 연결0 skip과 queue0 확장도 분리한다.
+  두 번째 정상 호출의 실제 WAITING_CALLED send 반환 후, 결과 저장 전 opt-in probe barrier에서 JVM을 kill한다.
+  DB lease를 가속해 재기동하면 같은 시도는 UNKNOWN으로 복구되고 재구독에도 재전송하지 않는다.
+- `IntegrationSseProbe`는 I 전용 시험 계측이다. `--probe.sse.enabled=true`일 때만 TX/연결 lease 및
+  실제 send 후 barrier를 사용한다. 기본 비교 실행에는 켜지지 않는다. barrier는 인터넷 장애가 아니며
+  기존 PG8초/read10초/call11초, effect각1회·환불 의도/상태 단언을 그대로 유지한다.
+- F source565/tools35 아카이브는 재현 입력으로만 보존했고 F 도구를 source로 가져오지 않았다.
+  DataSource lease/실제 emitter wrapper 방식은 봉인 F 도구를 참고했다. 운영JAR에는 어떤 probe나
+  test-only cache·옛 관찰 recorder도 포함하지 않는다. F 전체 장애/부하는 재반복하지 않았다.
+
+lease SQL 가속과 probe Clock 재기동 초기화는 실제 대기시간/연속 wall clock과 구분한다.
+max250ms는 시작한 root나 막힌 send를 강제 종료하는 deadline이 아니다. 운영 적용/고객 수신/배포는 별도다.
+
 
 ## 과거 V37 고정본 전용 — 아래 verify.py 명령은 역사
 

@@ -55,3 +55,16 @@ management:
 logging:
   level:
     com.catchtable: DEBUG
+
+# One durable waiting SSE sender; disabling delivery retains PENDING work (no legacy fallback).
+waiting:
+  sse:
+    delivery-enabled: ${WAITING_SSE_DELIVERY_ENABLED:true}
+    scheduling-enabled: ${WAITING_SSE_SCHEDULING_ENABLED:true}
+    poll-delay-ms: ${WAITING_SSE_POLL_DELAY_MS:100}
+    max-roots-per-poll: ${WAITING_SSE_MAX_ROOTS_PER_POLL:64}
+    max-run-millis: ${WAITING_SSE_MAX_RUN_MILLIS:250}
+    lease-seconds: ${WAITING_SSE_LEASE_SECONDS:30}
+    max-retained-roots: ${WAITING_SSE_MAX_RETAINED_ROOTS:100000}
+    max-targets-per-root: ${WAITING_SSE_MAX_TARGETS_PER_ROOT:10000}
+    max-message-bytes: ${WAITING_SSE_MAX_MESSAGE_BYTES:16384}

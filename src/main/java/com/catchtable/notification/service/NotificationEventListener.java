@@ -2,6 +2,7 @@ package com.catchtable.notification.service;
 
 
 import com.catchtable.notification.dto.CustomerNotificationEvent;
+import com.catchtable.notification.durability.WaitingSseJournal;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -18,6 +19,7 @@ public class NotificationEventListener {
     @TransactionalEventListener(phase= TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
     public void handle(CustomerNotificationEvent event)
     {
+        if (WaitingSseJournal.isWaiting(event)) return;
         try{
             notificationService.send(event);
         }

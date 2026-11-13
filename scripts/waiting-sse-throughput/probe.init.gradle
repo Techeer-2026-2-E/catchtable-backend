@@ -1,0 +1,19 @@
+allprojects {
+    plugins.withId('java') {
+        sourceSets {
+            waitingSseThroughput {
+                java.srcDir System.getenv('WAITING_SSE_PROBE_SOURCE')
+                compileClasspath = sourceSets.main.output + configurations.runtimeClasspath
+                runtimeClasspath = output + compileClasspath
+            }
+        }
+        tasks.register('runWaitingSseThroughput', JavaExec) {
+            dependsOn tasks.named('waitingSseThroughputClasses')
+            classpath = sourceSets.waitingSseThroughput.runtimeClasspath
+            mainClass = 'com.catchtable.probe.WaitingSseThroughputProbe'
+            javaLauncher = javaToolchains.launcherFor { languageVersion = JavaLanguageVersion.of(21) }
+            args System.getenv('WAITING_SSE_PROBE_SCHEMA'), System.getenv('WAITING_SSE_PROBE_OUTPUT'),
+                    System.getenv('WAITING_SSE_PROBE_CONNECTIONS')
+        }
+    }
+}

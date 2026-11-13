@@ -65,6 +65,11 @@ class WaitingEventHistoryTest {
     @Autowired WaitingEventRecorder recorder;
     @Autowired WaitingEventRepository eventRepository;
     @Autowired WaitingSseObservationRecorder sseRecorder;
+    @Autowired com.catchtable.notification.durability.WaitingSseWorker sseWorker;
+    private final Map<UUID,String> expectedResidualRoots = new java.util.LinkedHashMap<>();
+    private void flushSse() {
+        com.catchtable.notification.durability.WaitingSseTestDrain.forStore(jdbc,sseWorker,store.getId()).expecting(expectedResidualRoots);
+    }
     @Autowired NotificationService notifications;
     @Autowired SseEmitterRepository emitters;
     @Autowired AlimtalkOutboxRepository outbox;
@@ -100,6 +105,7 @@ class WaitingEventHistoryTest {
     @AfterEach
     void clean() throws Exception {
         drainObservations();
+        jdbc.execute("ALTER TABLE waiting_sse_observation DROP CONSTRAINT IF EXISTS test_reject_sse_result");
         jdbc.execute("ALTER TABLE waiting_event DROP CONSTRAINT IF EXISTS test_reject_event");
         List.copyOf(emitters.findAllByMemberId(customer.getId())).forEach(e -> emitters.delete(customer.getId(), e));
         jdbc.update("delete from waiting_defer_history where waiting_id in (select id from waiting where store_id = ?)", store.getId());
@@ -285,6 +291,83 @@ class WaitingEventHistoryTest {
     }
 
     @Test
+    void sseRecordsMultipleConnectionsBrokenConnectionAndNoConnectionsWithoutReceiptClaim() throws Exception {
+        SseEmitter alive = mock(SseEmitter.class);
+        SseEmitter broken = mock(SseEmitter.class);
+        doThrow(new IOException("closed")).when(broken).send(any(SseEmitter.SseEventBuilder.class));
+        emitters.save(customer.getId(), alive);
+        emitters.save(customer.getId(), broken);
+        ownerService.callWaiting(owner.getId(), waitingId);
+        JsonNode observed = lastCallObservation();
+        assertThat(observed.path("connections").asInt()).isEqualTo(2);
+        assertThat(observed.path("attempted").asInt()).isEqualTo(2);
+        assertThat(observed.path("serverSendSucceeded").asInt()).isEqualTo(1);
+        assertThat(observed.path("serverSendFailed").asInt()).isEqualTo(1);
+        assertThat(observed.path("customerReceipt").asText()).isEqualTo("UNKNOWN");
+        assertThat(observed.path("businessEventKey").asText()).isEqualTo("waiting:" + waitingId + ":call:1");
+        emitters.delete(customer.getId(), alive);
+        ownerService.recallWaiting(owner.getId(), waitingId);
+        assertThat(lastCallObservation().path("connections").asInt()).isZero();
+        assertThat(lastCallObservation().path("attempted").asInt()).isZero();
+    }
+
+    @Test
+    void resultWriteFailureKeepsCommittedBusinessAndDurableAttempt() throws Exception {
+        SseEmitter alive = mock(SseEmitter.class);
+        emitters.save(customer.getId(), alive);
+        jdbc.execute("ALTER TABLE waiting_sse_observation ADD CONSTRAINT test_reject_sse_result CHECK(phase <> 'SEND_RETURNED') NOT VALID");
+        ownerService.callWaiting(owner.getId(), waitingId);
+        // Only these two roots intentionally retain MARKED attempts after the injected result-write failure.
+        jdbc.queryForList("SELECT id FROM waiting_sse_root WHERE store_id=? AND (event_type='WAITING_CALLED' OR kind='QUEUE')",UUID.class,store.getId())
+                .forEach(id -> expectedResidualRoots.put(id,"CLAIMED"));
+        assertThat(expectedResidualRoots).hasSize(2);
+        drainObservations();
+        flushSse();
+        verify(alive, times(2)).send(any(SseEmitter.SseEventBuilder.class));
+        jdbc.execute("ALTER TABLE waiting_sse_observation DROP CONSTRAINT test_reject_sse_result");
+        assertThat(types()).contains("CALLED");
+        assertThat(waitings.findById(waitingId).orElseThrow().getCallCount()).isEqualTo(1);
+        assertThat(jdbc.queryForObject("select count(*) from waiting_event where waiting_id=? and event_type='SSE_EMIT_FINISHED' and details->>'notificationType'='WAITING_CALLED'", Integer.class, waitingId)).isZero();
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM waiting_sse_attempt a JOIN waiting_sse_target t ON t.id=a.target_id WHERE t.waiting_id=? AND a.status='MARKED'", Integer.class,waitingId)).isEqualTo(2);
+    }
+
+    @Test
+    void retriedSseObservationIsOneRecordWhileNewEmissionHasItsOwnAttempt() throws Exception {
+        ownerService.callWaiting(owner.getId(), waitingId);
+        String id = UUID.randomUUID().toString();
+        sseRecorder.record(callEvent(), id, "EMIT_FINISHED", 0, 0, 0, 0).join();
+        sseRecorder.record(callEvent(), id, "EMIT_FINISHED", 0, 0, 0, 0).join();
+        assertThat(jdbc.queryForObject("select count(*) from waiting_event where source_type='SSE' and source_id=?", Integer.class, id)).isEqualTo(1);
+        transactions.executeWithoutResult(tx -> notifications.send(callEvent()));
+        flushSse();
+        drainObservations();
+        assertThat(jdbc.queryForObject("select count(*) from waiting_event where source_type='SSE' and source_id=?", Integer.class, id)).isEqualTo(1);
+        assertThat(jdbc.queryForObject("select count(*) from waiting_sse_root where waiting_id=? and event_type='WAITING_CALLED'",Integer.class,waitingId)).isEqualTo(2);
+    }
+
+    @Test
+    void normalTenWaitingFanoutKeepsEightRootsAnd26TargetsForCallAcceptRecallCall() throws Exception {
+        for (int i = 0; i < 9; i++) {
+            var extra = member(UserType.CUSTOMER);
+            additionalMembers.add(extra);
+            service.createWaiting(extra.getId(), store.getId(), 2);
+        }
+        drainObservations();
+        Long previousId = jdbc.queryForObject("select coalesce(max(id),0) from waiting_event", Long.class);
+        ownerService.callWaiting(owner.getId(), waitingId);
+        service.respondToCall(customer.getId(), waitingId);
+        ownerService.recallWaiting(owner.getId(), waitingId);
+        ownerService.callWaiting(owner.getId(), waitingId);
+        drainObservations();
+        flushSse();
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM waiting_sse_root WHERE waiting_id=? AND event_key NOT LIKE '%registered%'",Integer.class,waitingId)).isEqualTo(8);
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM waiting_sse_target t JOIN waiting_sse_root r ON r.id=t.root_id WHERE r.waiting_id=? AND r.event_key NOT LIKE '%registered%'",Integer.class,waitingId)).isEqualTo(26);
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM waiting_sse_root WHERE waiting_id=? AND status<>'DONE'",Integer.class,waitingId)).isZero();
+        assertThat(jdbc.queryForObject("select count(*) from waiting_event where id>? and source_type='WAITING'", Integer.class, previousId)).isEqualTo(4);
+        assertThat(jdbc.queryForObject("select count(*) from waiting_event where id>? and source_type='ALIMTALK_OUTBOX'", Integer.class, previousId)).isEqualTo(3);
+    }
+
+    @Test
     void oneInvalidBatchRowDoesNotLoseHealthyNeighborsOrDuplicateTheirKeys() throws Exception {
         ownerService.callWaiting(owner.getId(), waitingId);
         drainObservations();
@@ -349,6 +432,34 @@ class WaitingEventHistoryTest {
     }
 
     @Test
+    void saturatedObservationQueueNeverBlocksSseAndCannotClaimReceipt() throws Exception {
+        ownerService.callWaiting(owner.getId(), waitingId);
+        drainObservations();
+        var writer = (java.util.concurrent.ThreadPoolExecutor) org.springframework.test.util.ReflectionTestUtils.getField(sseRecorder, "writer");
+        var entered = new CountDownLatch(1);
+        var release = new CountDownLatch(1);
+        writer.execute(() -> {
+            entered.countDown();
+            try { release.await(10, TimeUnit.SECONDS); }
+            catch (InterruptedException e) { Thread.currentThread().interrupt(); }
+        });
+        assertThat(entered.await(5, TimeUnit.SECONDS)).isTrue();
+        try {
+            for (int i = 0; i < 512; i++) writer.execute(() -> {});
+            var future = sseRecorder.record(callEvent(), "queue-full", "EMIT_FINISHED", 0, 0, 0, 0);
+            assertThat(future.isCompletedExceptionally()).isTrue();
+            SseEmitter alive = mock(SseEmitter.class);
+            emitters.save(customer.getId(), alive);
+            org.junit.jupiter.api.Assertions.assertTimeoutPreemptively(java.time.Duration.ofSeconds(2),
+                    () -> transactions.executeWithoutResult(tx -> notifications.send(callEvent())));
+            flushSse();
+            verify(alive).send(any(SseEmitter.SseEventBuilder.class));
+        } finally { release.countDown(); }
+        drainObservations();
+        assertThat(jdbc.queryForObject("select count(*) from waiting_event where source_id='queue-full'", Integer.class)).isZero();
+    }
+
+    @Test
     void timelineUsesBothIdsCapsRowsAndDoesNotDuplicateLinkedEndHistory() throws Exception {
         ownerService.callWaiting(owner.getId(), waitingId);
         ownerService.cancelWaiting(owner.getId(), waitingId, "private reason");
@@ -373,6 +484,7 @@ class WaitingEventHistoryTest {
     }
 
     private void drainObservations() throws Exception {
+        flushSse();
         var writer = (java.util.concurrent.ThreadPoolExecutor) org.springframework.test.util.ReflectionTestUtils.getField(sseRecorder, "writer");
         org.awaitility.Awaitility.await().atMost(java.time.Duration.ofSeconds(10))
                 .until(() -> writer.getQueue().remainingCapacity() > 0);
@@ -420,6 +532,20 @@ class WaitingEventHistoryTest {
 
     private JsonNode data(String type) throws Exception {
         return mapper.readTree(jdbc.queryForObject("select details::text from waiting_event where waiting_id=? and event_type=? order by id limit 1", String.class, waitingId, type));
+    }
+
+    private JsonNode lastCallObservation() throws Exception {
+        flushSse();
+        return mapper.readTree(jdbc.queryForObject("""
+                SELECT jsonb_build_object('connections',count(*) FILTER(WHERE t.connection_generation<>'NONE'),
+                  'attempted',count(a.id),'serverSendSucceeded',count(*) FILTER(WHERE a.status='SEND_RETURNED'),
+                  'serverSendFailed',count(*) FILTER(WHERE t.status='FAILED'),'customerReceipt','UNKNOWN',
+                  'businessEventKey',split_part(r.event_key,':direct:',1))::text
+                FROM waiting_sse_root r JOIN waiting_sse_target t ON t.root_id=r.id
+                LEFT JOIN waiting_sse_attempt a ON a.target_id=t.id
+                WHERE r.waiting_id=? AND r.event_type='WAITING_CALLED'
+                GROUP BY r.id ORDER BY r.created_at DESC LIMIT 1
+                """, String.class,waitingId));
     }
 
     private CustomerNotificationEvent callEvent() {

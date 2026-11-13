@@ -14,7 +14,7 @@ import java.util.concurrent.atomic.AtomicLong;
 /** Local probe only, added to test classpath by probe.gradle; identical for before/after. */
 public class PaymentIsolationProbe {
     public static void main(String[] args) {
-        var context = new SpringApplicationBuilder(CatchtableApplication.class, Fixture.class).run(args);
+        var context = new SpringApplicationBuilder(CatchtableApplication.class, Fixture.class, IntegrationSseProbe.class).run(args);
         context.getBeansOfType(ThreadPoolTaskScheduler.class).forEach((name, scheduler) ->
                 System.out.printf("PROBE_SCHEDULER bean=%s pool=%d prefix=%s%n",
                         name, scheduler.getPoolSize(), scheduler.getThreadNamePrefix()));

@@ -1,10 +1,10 @@
 # 과거 V36 C batch 이력 비용 비교 도구
 
-2026-11-12 보완. 이 도구는 **2026-11-11의 고정 V35 baseline / V36 C batch 입력 전용**이다. 이 저장소의 현재 소스를 측정하는 도구가 아니다. 옛 `WaitingSseObservationRecorder`와 START/FINISH 관찰 수, 양쪽 `application.yml` 바이트 동등성이 당시 비교 계약이다. Java harness와 분석기의 단언은 그대로 보존한다. 현행 소스는 `prepare.py`와 `run.py`가 출력 폴더·잠금·DB 변경 전에 거절한다.
+2026-11-12 보완. 이 도구는 **2026-11-11의 고정 V35 baseline / V36 C batch 입력 전용**이다. 현재 V38/V39 영속 SSE 소스를 측정하는 도구가 아니다. 옛 `WaitingSseObservationRecorder`와 START/FINISH 관찰 수, 양쪽 `application.yml` 바이트 동등성이 당시 비교 계약이다. Java harness와 분석기의 단언은 그대로 보존한다. 현행 소스는 `prepare.py`와 `run.py`가 출력 폴더·잠금·DB 변경 전에 거절한다.
 
-당시 C batch 고정본에서 최대64행 저장 보완 후294개 회귀와 smoke/본 측정이 통과했다. 본 표본 SSE31,200행/전체35,400행 및 warmup 포함38,940행이 저장됐고 경고·누락0, 전체 p95 9.326→10.478ms(+12.35%)였다. 이는 0연결의 best-effort 관찰 writer 비용이며 고객 수신 보장이 아니다. 이전 손실 결과와 아래 기록도 당시 증거로 보존한다. 자세한 경계는 [C 작업 기록](../../../work-log/2026-11-11-waiting-event-history.md)을 따른다.
+당시 C batch 고정본에서 최대64행 저장 보완 후294개 회귀와 smoke/본 측정이 통과했다. 본 표본 SSE31,200행/전체35,400행 및 warmup 포함38,940행이 저장됐고 경고·누락0, 전체 p95 9.326→10.478ms(+12.35%)였다. 이는 0연결의 best-effort 관찰 writer 비용이며 현재 영속 SSE의 성능·고객 수신 보장이 아니다. 이전 손실 결과와 아래 기록도 당시 증거로 보존한다. 자세한 경계는 [C 작업 기록](../../../work-log/2026-11-11-waiting-event-history.md)과 [이번 보완 기록](../../../work-log/2026-11-12-backend-review-docs-tools.md)을 따른다.
 
-2026-11-13 안내: 지금 저장소의 제품 코드에는 당시의 메모리 관찰 writer가 없다. 같은 저장 방식은 테스트 전용 fixture로만 남아 있다. 아래 본문이 말하는 "현재 영속 SSE"는 이 시점의 저장소에 없는 후속 구현이다. 이 도구로 새로 측정하지 않았으며 현재 범위와 검증은 [분리 검증 기록](../../../work-log/2026-11-13-waiting-event-log-pr-split.md)을 따른다.
+현재 전달 구조·수용 제한·UNKNOWN은 [웨이팅 SSE 영속 전달 원장](../../../docs/waiting-sse-durability.md), 현행 V37→V39 upgrade 및 PG/SSE restart 경로는 [통합 검증 README](../../backend-improvement-integration/README.md)의 `verify_sse.py`, 별도 현행 측정 도구는 [SSE throughput README](../../waiting-sse-throughput/README.md)를 참고한다. 각 런타임 실행에는 별도 전용 자원 배정이 필요하며 이번 문서 보완에서는 실행하지 않았다.
 
 아래 분석기는 **보존한 옛 결과**의 파일 검산에 사용한다.
 
