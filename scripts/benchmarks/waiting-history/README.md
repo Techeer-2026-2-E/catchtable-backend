@@ -57,7 +57,7 @@ python3 scripts/benchmarks/waiting-history/prepare.py modified --historical-snap
 
 출력은 `build/waiting-event-history/benchmarks/<variant>-<timestamp>`다. 검증한 옛 파일과 당시 harness만 새 폴더로 복사한다. 현재 src/main이나 test-only recorder를 복사하지 않는다. 원본 checkout·추가 worktree·외부 fetch를 사용하지 않는다. `manifest.json`은 고정 파일별 SHA256, 원래 HEAD·입력 경로, 포트, Clock을 보존한다. `--compile` 없이 준비하면 파일 복사만 하며 `--compile`은 `testClasses`만 수행하고 앱·부하를 실행하지 않는다.
 
-`local_runtime.py`는 설치된 Java 21과 기존 Gradle 9.7.1 캐시의 실행 파일만 선택한다. 캐시가 없으면 실패하고 다운로드하지 않는다. wrapper의 배포본 다운로드 경로를 실행하지 않으며, compile/run 모두 `--offline --no-daemon --max-workers=2 --console=plain -Dorg.gradle.java.installations.auto-download=false`를 쓴다. 외부 공급사 URL은 loopback으로 한정하고 실제 비밀값은 사용하지 않는다.
+`local_runtime.py`는 설치된 Java 21과 기존 Gradle 9.7.1 캐시의 실행 파일만 선택한다. 캐시가 없으면 실패하고 다운로드하지 않는다. Java 21은 macOS의 `/usr/libexec/java_home -v 21`로만 찾고 `JAVA_HOME`은 읽지 않는다. 그래서 `--compile`과 `run.py`는 macOS에서만 실행된다. macOS가 아니면 `JAVA_HOME`을 지정해도 동작하지 않는다. wrapper의 배포본 다운로드 경로를 실행하지 않으며, compile/run 모두 `--offline --no-daemon --max-workers=2 --console=plain -Dorg.gradle.java.installations.auto-download=false`를 쓴다. 외부 공급사 URL은 loopback으로 한정하고 실제 비밀값은 사용하지 않는다.
 
 ## 전용 자원
 
@@ -93,7 +93,7 @@ RUN_WAITING_HISTORY_BENCHMARK=true BENCH_RUN_LABEL=main python3 scripts/benchmar
 RUN_WAITING_HISTORY_BENCHMARK=true BENCH_RUN_LABEL=main python3 scripts/benchmarks/waiting-history/run.py <modified-snapshot>
 ```
 
-runner는 snapshot SHA 검증, worktree 단위 배타 파일 잠금, loopback 앱 포트 검사 후 실행한다. 포트 검사는 SO_REUSEADDR를 사용해 이전 실행 종료 후 소켓의 오탐을 줄이되 살아 있는 listener는 거부한다. `--rerun-tasks`로 실제 실행하며 매번 `results/<label>-<timestamp>`를 새로 만들어 이전 결과를 덮어쓰지 않는다. 반환 코드와 summary 존재도 저장한다.
+runner는 snapshot SHA 검증, worktree 단위 배타 파일 잠금, loopback 앱 포트 검사 후 실행한다. SHA 검증 대상은 고정 입력 범위(`build.gradle`, `settings.gradle`, `gradlew`, `gradle/`, `src/main`, `src/test/resources`, `src/test/java`)뿐이고, 그 밖의 최상위 항목(예: `buildSrc`, `gradle.properties`)은 검사하지 않은 채 그 폴더에서 Gradle을 실행한다. 따라서 `prepare.py`가 만든 폴더만 지정하고, 전달받은 폴더를 `build/waiting-event-history/benchmarks` 아래에 직접 넣지 않는다. 포트 검사는 SO_REUSEADDR를 사용해 이전 실행 종료 후 소켓의 오탐을 줄이되 살아 있는 listener는 거부한다. `--rerun-tasks`로 실제 실행하며 매번 `results/<label>-<timestamp>`를 새로 만들어 이전 결과를 덮어쓰지 않는다. 반환 코드와 summary 존재도 저장한다.
 
 ## 동일 조건과 계측 경계
 

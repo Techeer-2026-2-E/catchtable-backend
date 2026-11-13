@@ -32,6 +32,6 @@
 
 `POST /api/owner/waitings/{waitingId}/no-show`는 `X-Member-Id`의 점주 유형·매장 소유권을 검사한다. 진행 중 웨이팅을 실제 종료할 때 종료 상태·원본 이력·V36 사건·SSE 작업을 같은 TX에서 저장한다. SSE 수용 한도에 걸리면 `503 WAITING_SSE_CAPACITY_EXCEEDED`, `Retry-After: 30`이며 해당 TX 전체가 rollback된다. 종료 상태·사유·이력도 수락되지 않는다. 보존 한도는 완료 이력까지 포함하므로 30초 후 자동 해제를 보장하지 않는다.
 
-503 뒤에는 현재 웨이팅 상태와 종료 결과를 재조회하고 필요한 경우에만 안전하게 재시도한다. 응답 유실도 먼저 재조회한다. 기존 200의 종료 DTO, 같은 종료의 no-op 재요청, 종료 후 사유 정정 의미는 유지한다. no-op이나 사유만 정정하는 경로에는 새 SSE를 만들지 않으므로 신규 SSE 수용을 요구하지 않는다.
+503 뒤에는 `GET /api/owner/stores/{storeId}/waitings`로 현재 상태를 조회하고, 웨이팅이 아직 CALLED·CONFIRMED로 남아 있고 종료가 여전히 필요할 때만 재시도한다. 응답을 받지 못했을 때도 먼저 이 목록을 조회한다. 이 목록은 당일의 WAITING·CALLED·CONFIRMED만 반환하며, 종료된 웨이팅의 결과를 조회하는 점주 GET은 없다. 웨이팅이 목록에 없으면 종료 결과는 **같은 `reason`·`detail`로** `POST /api/owner/waitings/{waitingId}/no-show`를 다시 보내 받는 200 응답으로 확인한다. 이미 같은 사유로 종료돼 있으면 no-op이다. `reason`·`detail`이 다르면 사유 정정으로 처리되고, 취소·착석처럼 다른 방식으로 끝난 웨이팅은 `409 WAITING_NOT_TERMINABLE`이다. 기존 200의 종료 DTO, 같은 종료의 no-op 재요청, 종료 후 사유 정정 의미는 유지한다. no-op이나 사유만 정정하는 경로에는 새 SSE를 만들지 않으므로 신규 SSE 수용을 요구하지 않는다.
 
 업무 commit 후 고객 `WAITING_EXPIRED`·점주 `WAITING_CHANGED`·남은 고객 순번 SSE는 비동기로 전달되어 HTTP보다 늦을 수 있다. 전송 실패가 이미 commit한 종료를 rollback하지 않으며 성공 응답은 고객 수신 증거가 아니다. SSE 수신·재연결 뒤에는 현재 상태를 재조회한다. [현행 전달·용량·UNKNOWN 계약](../waiting-sse-durability.md)을 따른다.
