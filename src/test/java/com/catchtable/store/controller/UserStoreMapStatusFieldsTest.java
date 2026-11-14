@@ -21,6 +21,7 @@ import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
 
+import static org.hamcrest.Matchers.contains;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.nullValue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -149,6 +150,34 @@ class UserStoreMapStatusFieldsTest {
         mockMvc.perform(get("/api/user/stores/map/radius?lat=33.5&lng=126.5"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.stores").isEmpty());
+    }
+
+    @Test
+    @DisplayName("검색(키워드) 목록에도 영업 상태, 별점, 좌표, 입점 여부를 내려준다")
+    void searchIncludesStatusAndRating() throws Exception {
+        mockMvc.perform(get("/api/user/stores").param("keyword", "영업 중"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.stores.length()", is(1)))
+                .andExpect(jsonPath("$.stores[0].name", is("영업 중")))
+                .andExpect(jsonPath("$.stores[0].openStatus", is("OPEN")))
+                .andExpect(jsonPath("$.stores[0].nextChangeAt", is("2026-11-09T22:00:00")))
+                .andExpect(jsonPath("$.stores[0].ratingAverage", is(4.3)))
+                .andExpect(jsonPath("$.stores[0].reviewCount", is(3)))
+                .andExpect(jsonPath("$.stores[0].latitude", is(LAT + 0.0010)))
+                .andExpect(jsonPath("$.stores[0].longitude", is(LNG)))
+                .andExpect(jsonPath("$.stores[0].reservationEnabled", is(false)))
+                .andExpect(jsonPath("$.stores[0].area").value(nullValue()));   // "부산 테스트 주소"는 구 형식이 아님
+    }
+
+    @Test
+    @DisplayName("조건 없는 목록도 페이지 매장에 영업 상태와 별점을 채우고, 없으면 null과 0")
+    void plainListIncludesStatusAndRating() throws Exception {
+        mockMvc.perform(get("/api/user/stores").param("category", "KOREAN").param("size", "50"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.stores[?(@.name == '브레이크')].openStatus", contains("BREAK")))
+                .andExpect(jsonPath("$.stores[?(@.name == '브레이크')].ratingAverage", contains(4.5)))
+                .andExpect(jsonPath("$.stores[?(@.name == '영업시간 없음')].openStatus", contains(nullValue())))
+                .andExpect(jsonPath("$.stores[?(@.name == '영업시간 없음')].reviewCount", contains(0)));
     }
 
     private void assertOpenStatuses(ResultActions result) throws Exception {
