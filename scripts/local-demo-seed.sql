@@ -1,13 +1,14 @@
 -- 로컬 데모용 입점 매장 데이터 (운영·CI에는 넣지 않는다)
 --
--- 공공데이터로 적재한 미입점 매장 중 강남역·성수·홍대입구 근처 일부를 골라
+-- 공공데이터로 적재한 미입점 매장 중 서울 주요 지역(강남역·성수·홍대입구·잠실·종각·여의도·이태원·신촌·건대입구·압구정로데오) 근처 일부를 골라
 -- 데모 점주를 연결하고 테이블·영업시간·메뉴·방문 완료 예약·리뷰를 채운다.
 -- 나머지 미입점 매장은 그대로 둔다 (검색·지도 노출만, 예약·웨이팅 없음).
 --
 -- 실행 순서: 앱 실행(Flyway) → scripts/local-seed.sql → 공공데이터 CSV 적재 → 이 스크립트
 --   docker compose exec -T postgres psql -U catchtable -d catchtable < scripts/local-demo-seed.sql
 --
--- - 데모 계정 이메일은 demo-*@local.test 이다. 이미 있으면 아무것도 하지 않는다.
+-- - 데모 계정 이메일은 demo-*@local.test 이다. 이미 데모 매장이 있는 지역은 건너뛰고 새 지역만 넣으므로 다시 실행해도 된다.
+-- - 양식·일식 데모 매장은 예약금을 받는다 (토스 결제 흐름 확인용). 맨 아래 블록 참고.
 -- - 데모 점주가 연결된 매장은 owner_id가 생기므로 CSV를 다시 적재해도 덮어쓰지 않는다.
 -- - 메뉴·리뷰는 템플릿으로 만든 가짜 데이터다. 실제 매장 정보가 아니므로 화면 캡처를 외부에 공개하지 않는다.
 -- - 매장 사진(image_url)은 비워 둔다. 프런트가 카테고리별 기본 이미지를 보여준다.
@@ -53,28 +54,40 @@ DECLARE
         '예약 시간에 갔는데 자리 안내가 늦었어요. 음식은 괜찮았습니다.'
     ];
 BEGIN
-    IF EXISTS (SELECT 1 FROM member WHERE email LIKE 'demo-%@local.test') THEN
-        RAISE NOTICE '데모 데이터가 이미 있어 건너뜁니다. 다시 넣으려면 빈 로컬 DB에서 처음부터 실행하세요.';
-        RETURN;
-    END IF;
-
     IF NOT EXISTS (SELECT 1 FROM store WHERE external_id IS NOT NULL) THEN
         RAISE EXCEPTION '공공데이터 매장이 없습니다. CSV를 먼저 적재하세요 (README 참고).';
     END IF;
 
-    -- 데모 고객 (리뷰 작성자)
+    -- 데모 고객 (리뷰 작성자) — 이미 있으면 그대로 쓴다
     INSERT INTO member (email, password, name, phone, user_type)
     SELECT format('demo-customer-%s@local.test', lpad(n::text, 2, '0')),
            'mock-password', nm, format('010-1000-%s', lpad(n::text, 4, '0')), 'CUSTOMER'
     FROM unnest(ARRAY['김민준', '이서연', '박도윤', '최지우', '정하준', '강서아', '조은우', '윤지아'])
-         WITH ORDINALITY AS t(nm, n);
+         WITH ORDINALITY AS t(nm, n)
+    WHERE NOT EXISTS (SELECT 1 FROM member WHERE email = format('demo-customer-%s@local.test', lpad(n::text, 2, '0')));
 
     -- 지역별·카테고리별로 중심에서 가까운 매장을 고른다 (기타·중식은 1곳, 나머지는 2곳)
+    -- 이미 데모 매장이 있는 지역은 건너뛴다 (예전 실행으로 넣은 지역)
     CREATE TEMP TABLE demo_store ON COMMIT DROP AS
-    WITH area(area_name, lat, lng) AS (
+    WITH all_area(area_name, lat, lng) AS (
         VALUES ('강남역', 37.4979, 127.0276),
                ('성수', 37.5446, 127.0559),
-               ('홍대입구', 37.5572, 126.9245)
+               ('홍대입구', 37.5572, 126.9245),
+               ('잠실', 37.5133, 127.1001),
+               ('종각', 37.5702, 126.9831),
+               ('여의도', 37.5219, 126.9245),
+               ('이태원', 37.5345, 126.9946),
+               ('신촌', 37.5551, 126.9368),
+               ('건대입구', 37.5404, 127.0692),
+               ('압구정로데오', 37.5274, 127.0405)
+    ), area AS (
+        SELECT a.* FROM all_area a
+        WHERE NOT EXISTS (
+            SELECT 1 FROM store s
+            JOIN member m ON m.id = s.owner_id AND m.email LIKE 'demo-owner-%@local.test'
+            WHERE s.latitude BETWEEN a.lat - 0.006 AND a.lat + 0.006
+              AND s.longitude BETWEEN a.lng - 0.0075 AND a.lng + 0.0075
+        )
     ), candidate AS (
         SELECT s.id, s.category, a.area_name,
                row_number() OVER (
@@ -93,13 +106,14 @@ BEGIN
 
     SELECT count(*) INTO v_store_count FROM demo_store;
     IF v_store_count = 0 THEN
-        RAISE EXCEPTION '강남역·성수·홍대입구 근처에 미입점 공공데이터 매장이 없습니다. CSV 적재 범위를 확인하세요.';
+        RAISE NOTICE '새로 넣을 지역이 없어 데모 입점 매장 추가를 건너뜁니다.';
+        RETURN;
     END IF;
 
     -- 매장마다 데모 점주 1명
     INSERT INTO member (email, password, name, phone, user_type)
     SELECT format('demo-owner-%s@local.test', id), 'mock-password',
-           format('데모 점주 %s', seq), format('010-2000-%s', lpad(seq::text, 4, '0')), 'OWNER'
+           format('데모 점주 %s', id), format('010-2%s-%s', lpad((id / 10000 % 1000)::text, 3, '0'), lpad((id % 10000)::text, 4, '0')), 'OWNER'
     FROM demo_store;
 
     UPDATE store s
@@ -276,8 +290,30 @@ BEGIN
 END
 $$;
 
+-- 예약금 매장: 양식·일식 데모 매장(목 점주 매장 포함)이 예약 1건당 예약금을 받는다
+--   - 양식 2만 원(일반 환불), 일식 1만 원(유연 환불). 이미 켜진 매장은 그대로 둔다
+--   - 결제는 토스 결제창으로 진행된다. 서버 TOSS_SECRET_KEY 와 프런트 VITE_TOSS_CLIENT_KEY(API 개별 연동 키 한 쌍)가 있어야 한다
+DO $$
+DECLARE
+    v_count INT;
+BEGIN
+    UPDATE store s
+    SET deposit_enabled = TRUE,
+        deposit_amount = CASE s.category WHEN 'WESTERN' THEN 20000 ELSE 10000 END,
+        refund_policy = CASE s.category WHEN 'WESTERN' THEN 'STANDARD' ELSE 'FLEXIBLE' END,
+        updated_at = now()
+    FROM member m
+    WHERE m.id = s.owner_id
+      AND (m.email LIKE 'demo-owner-%@local.test' OR (m.id = 2 AND s.external_id IS NOT NULL))
+      AND s.category IN ('WESTERN', 'JAPANESE')
+      AND NOT s.deposit_enabled;
+    GET DIAGNOSTICS v_count = ROW_COUNT;
+    RAISE NOTICE '예약금 매장 %곳을 켰습니다.', v_count;
+END
+$$;
+
 -- 확인용: 데모 매장과 목 점주(owner_id=2) 매장. owner_id=2인 id를 프런트 VITE_OWNER_STORE_IDS에 넣는다
-SELECT s.id, s.owner_id, s.name, s.category, s.waiting_available,
+SELECT s.id, s.owner_id, s.name, s.category, s.waiting_available, s.deposit_amount,
        (SELECT count(*) FROM menu WHERE store_id = s.id) AS menus,
        (SELECT count(*) FROM review r JOIN reservation res ON res.id = r.reservation_id
         WHERE res.store_id = s.id) AS reviews
