@@ -63,12 +63,13 @@ public class Review extends BaseTimeEntity {
         }
     }
 
-    // 이미 삭제된 리뷰는 처음 삭제 시각을 유지한다
-    public void delete(OffsetDateTime now) {
+    // 이미 삭제된 리뷰는 처음 삭제 시각을 유지한다. 이번 호출로 삭제 상태가 됐으면 true
+    public boolean delete(OffsetDateTime now) {
         if (isDeleted()) {
-            return;
+            return false;
         }
         this.deletedAt = now;
+        return true;
     }
 
     public boolean isDeleted() {

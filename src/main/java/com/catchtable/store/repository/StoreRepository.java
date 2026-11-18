@@ -8,6 +8,7 @@ import org.springframework.data.domain.Slice;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -25,6 +26,20 @@ public interface StoreRepository extends JpaRepository<Store,Long> {
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select s from Store s where s.id = :id")
     Optional<Store> findByIdForUpdate(@Param("id") Long id);
+
+    // 리뷰 작성·수정·삭제 때 개수와 별점 합계를 DB에서 직접 더한다.
+    // 읽고 더해서 쓰면 동시 요청끼리 값을 덮어쓰므로 쓰지 않는다.
+    // 리뷰 변경을 먼저 반영(flush)하고, 영속성 컨텍스트는 비우지 않는다(비우면 리뷰 수정이 사라질 수 있다)
+    @Modifying(flushAutomatically = true)
+    @Query(value = """
+            UPDATE store
+            SET review_count = review_count + :countDelta,
+                rating_sum   = rating_sum + :ratingDelta
+            WHERE id = :storeId
+            """, nativeQuery = true)
+    void applyReviewChange(@Param("storeId") Long storeId,
+                           @Param("countDelta") int countDelta,
+                           @Param("ratingDelta") long ratingDelta);
 
     // 필터 없는 목록: DB가 해당 페이지만 읽는다 (Slice는 size+1건을 읽어 hasNext만 계산하고 count 쿼리는 없다)
     Slice<Store> findAllBy(Pageable pageable);

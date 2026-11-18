@@ -64,7 +64,7 @@ class WaitingSseMigrationTest {
                                 UPDATE waiting_sse_capacity SET retained_roots=1;
                                 """);
                         String before=snapshot(sql,schema,38,true);
-                        var latest=Flyway.configure().dataSource(dataSource).schemas(schema).defaultSchema(schema).locations("classpath:db/migration").load();
+                        var latest=Flyway.configure().dataSource(dataSource).schemas(schema).defaultSchema(schema).locations("classpath:db/migration").target("39").load();
                         assertThat(latest.migrate().migrationsExecuted).isEqualTo(1);latest.validate();
                         assertThat(snapshot(sql,schema,38,true)).isEqualTo(before);
                     }
