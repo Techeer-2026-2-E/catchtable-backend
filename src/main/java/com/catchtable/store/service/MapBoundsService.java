@@ -5,7 +5,6 @@ import com.catchtable.global.exception.ErrorCode;
 import com.catchtable.store.dto.MapBoundsCondition;
 import com.catchtable.store.dto.MapBoundsListCondition;
 import com.catchtable.store.dto.MapMarkerListResponse;
-import com.catchtable.store.dto.MapMarkerResponse;
 import com.catchtable.store.dto.MapStoreListResponse;
 import com.catchtable.store.dto.MapStoreResponse;
 import com.catchtable.store.repository.MapBoundsRepository;
@@ -30,8 +29,8 @@ public class MapBoundsService {
     @Value("${store.map.max-side-km:5}")
     private double maxSideKm;
 
-    // 마커 한 번에 내려줄 최대 개수. 넘으면 truncated로 알린다
-    @Value("${store.map.marker-limit:1000}")
+    // 화면 안에서 별점 상위 몇 개를 마커로 내려줄지
+    @Value("${store.map.marker-limit:15}")
     private int markerLimit;
 
     public MapStoreListResponse getStores(MapBoundsListCondition condition) {
@@ -51,15 +50,10 @@ public class MapBoundsService {
         return new MapStoreListResponse(mapStoreEnricher.enrich(stores), condition.page(), size, hasNext);
     }
 
+    // 확대·축소 제한 없이 화면 안 별점 상위 매장만 준다. 목록(getStores)의 크기 제한은 그대로다
     public MapMarkerListResponse getMarkers(MapBoundsCondition condition) {
-        validateSize(condition.swLat(), condition.swLng(), condition.neLat(), condition.neLng());
-
-        List<MapMarkerResponse> rows = mapBoundsRepository.findMarkers(
-                condition.swLat(), condition.swLng(), condition.neLat(), condition.neLng(), markerLimit + 1);
-
-        boolean truncated = rows.size() > markerLimit;
-        List<MapMarkerResponse> stores = truncated ? rows.subList(0, markerLimit) : rows;
-        return new MapMarkerListResponse(stores, truncated);
+        return new MapMarkerListResponse(mapBoundsRepository.findMarkers(
+                condition.swLat(), condition.swLng(), condition.neLat(), condition.neLng(), markerLimit));
     }
 
     // 가로·세로 중 긴 쪽이 상한을 넘으면 거절한다. 경도 1도의 길이는 위도가 높을수록 짧아진다

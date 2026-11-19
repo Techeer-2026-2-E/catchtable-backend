@@ -19,6 +19,7 @@ import static org.hamcrest.Matchers.greaterThan;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.lessThan;
+import static org.hamcrest.Matchers.nullValue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -216,53 +217,57 @@ class UserStoreMapBoundsControllerTest {
     // ---- 마커 ----
 
     @Test
-    @DisplayName("마커는 위치와 이름만 내려주고 사각형 안 매장을 id 순으로 전부 준다")
-    void markersReturnAllInBoundsById() throws Exception {
-        insertStore("첫째", 35.1877, 129.0756);
-        insertStore("둘째", 35.1805, 129.0756);
-        insertStore("사각형 밖", 35.2500, 129.0756);
+    @DisplayName("마커는 위치·이름·별점·순위만 내려주고 사각형 밖 매장은 빠진다")
+    void markersReturnFieldsInBounds() throws Exception {
+        insertStoreWithReviews("리뷰 있음", 35.1877, 129.0756, 3, 14);
+        insertStore("리뷰 없음", 35.1805, 129.0756);
+        insertStoreWithReviews("사각형 밖", 35.2500, 129.0756, 10, 50);
 
         mockMvc.perform(get(MARKERS))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.stores[*].name", contains("첫째", "둘째")))
+                .andExpect(jsonPath("$.stores[*].name", contains("리뷰 있음", "리뷰 없음")))
                 .andExpect(jsonPath("$.stores[0].id").isNumber())
                 .andExpect(jsonPath("$.stores[0].latitude", is(35.1877)))
                 .andExpect(jsonPath("$.stores[0].longitude", is(129.0756)))
+                .andExpect(jsonPath("$.stores[0].ratingAverage", is(4.7)))
+                .andExpect(jsonPath("$.stores[0].reviewCount", is(3)))
+                .andExpect(jsonPath("$.stores[0].rank", is(1)))
+                .andExpect(jsonPath("$.stores[1].ratingAverage").value(nullValue()))
+                .andExpect(jsonPath("$.stores[1].reviewCount", is(0)))
+                .andExpect(jsonPath("$.stores[1].rank", is(2)))
                 .andExpect(jsonPath("$.stores[0].categoryName").doesNotExist())
                 .andExpect(jsonPath("$.stores[0].distanceMeters").doesNotExist())
-                .andExpect(jsonPath("$.truncated", is(false)));
+                .andExpect(jsonPath("$.truncated").doesNotExist());
     }
 
     @Test
-    @DisplayName("마커는 상한 개수까지만 주고 더 있으면 truncated가 true다")
-    void markersAreTruncatedAtLimit() throws Exception {
-        for (int i = 1; i <= 4; i++) {
-            insertStore("m" + i, 35.1796 + 0.0009 * i, 129.0756);
-        }
+    @DisplayName("마커는 별점 평균 높은 순이고, 같으면 리뷰 많은 순, 리뷰 없는 매장은 맨 뒤이며 상한 개수까지만 준다")
+    void markersAreSortedByRatingUpToLimit() throws Exception {
+        insertStore("리뷰 없음", 35.1801, 129.0756);
+        insertStoreWithReviews("4.0점 10개", 35.1802, 129.0756, 10, 40);
+        insertStoreWithReviews("4.5점 2개", 35.1803, 129.0756, 2, 9);
+        insertStoreWithReviews("4.5점 4개", 35.1804, 129.0756, 4, 18);
 
         mockMvc.perform(get(MARKERS))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.stores", hasSize(3)))
-                .andExpect(jsonPath("$.stores[*].name", contains("m1", "m2", "m3")))
-                .andExpect(jsonPath("$.truncated", is(true)));
+                .andExpect(jsonPath("$.stores[*].name", contains("4.5점 4개", "4.5점 2개", "4.0점 10개")))
+                .andExpect(jsonPath("$.stores[*].rank", contains(1, 2, 3)));
     }
 
     @Test
-    @DisplayName("마커가 상한 개수와 같으면 truncated는 false이고 매장이 없으면 빈 목록이다")
-    void markersAtLimitAreNotTruncated() throws Exception {
+    @DisplayName("마커는 매장이 없으면 빈 목록이다")
+    void markersAreEmptyWithoutStores() throws Exception {
         mockMvc.perform(get(MARKERS))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.stores", empty()))
-                .andExpect(jsonPath("$.truncated", is(false)));
+                .andExpect(jsonPath("$.stores", empty()));
+    }
 
-        for (int i = 1; i <= 3; i++) {
-            insertStore("m" + i, 35.1796 + 0.0009 * i, 129.0756);
-        }
-
-        mockMvc.perform(get(MARKERS))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.stores", hasSize(3)))
-                .andExpect(jsonPath("$.truncated", is(false)));
+    @Test
+    @DisplayName("마커는 화면 크기 제한이 없다")
+    void markersHaveNoSizeLimit() throws Exception {
+        mockMvc.perform(get("/api/user/stores/map/bounds/markers?swLat=33.0&swLng=124.5&neLat=38.7&neLng=131.0"))
+                .andExpect(status().isOk());
     }
 
     @ParameterizedTest(name = "{0}")
@@ -271,11 +276,9 @@ class UserStoreMapBoundsControllerTest {
             "swLat=35.1896&swLng=129.0656&neLat=35.1696&neLng=129.0856",
             "swLat=35.1696&swLng=129.0856&neLat=35.1896&neLng=129.0656",
             "swLat=-91&swLng=129.0656&neLat=35.1896&neLng=129.0856",
-            "swLat=35.1696&swLng=129.0656&neLat=35.1896&neLng=NaN",
-            "swLat=35.1696&swLng=129.0656&neLat=35.2156&neLng=129.0856",
-            "swLat=35.1696&swLng=129.0656&neLat=35.1896&neLng=129.1276"
+            "swLat=35.1696&swLng=129.0656&neLat=35.1896&neLng=NaN"
     })
-    @DisplayName("마커는 모서리가 없거나 잘못됐거나 5km를 넘으면 400이다")
+    @DisplayName("마커는 모서리가 없거나 잘못되면 400이다")
     void markersRejectInvalidInput(String query) throws Exception {
         mockMvc.perform(get("/api/user/stores/map/bounds/markers?" + query))
                 .andExpect(status().isBadRequest())
@@ -284,6 +287,16 @@ class UserStoreMapBoundsControllerTest {
 
     private void insertStore(String name, double latitude, double longitude) {
         insertStoreFull(name, "부산 테스트 주소", latitude, longitude, null, null);
+    }
+
+    private void insertStoreWithReviews(String name, double latitude, double longitude,
+                                        int reviewCount, long ratingSum) {
+        jdbcTemplate.update("""
+                INSERT INTO store (name, category, address, latitude, longitude,
+                                   reservation_duration_minutes, reservation_slot_minutes, arrival_grace_minutes,
+                                   review_count, rating_sum)
+                VALUES (?, 'KOREAN', '부산 테스트 주소', ?, ?, 120, 30, 10, ?, ?)
+                """, name, latitude, longitude, reviewCount, ratingSum);
     }
 
     private void insertStoreFull(String name, String address, double latitude, double longitude,
