@@ -16,8 +16,10 @@ public class StoreSearchDocuments {
     private static final String SELECT = """
             SELECT s.id, s.name, s.address, s.category, s.owner_id IS NOT NULL AS reservation_enabled,
                    s.waiting_available, s.latitude, s.longitude,
-                   ARRAY(SELECT m.name FROM menu m WHERE m.store_id = s.id ORDER BY m.id) AS menus
+                   ARRAY(SELECT m.name FROM menu m WHERE m.store_id = s.id ORDER BY m.id) AS menus,
+                   COALESCE(p.score, 0) AS popularity
             FROM store s
+            LEFT JOIN store_popularity p ON p.store_id = s.id
             """;
 
     private static final RowMapper<Map<String, Object>> TO_DOCUMENT = (rs, rowNum) -> {
@@ -27,7 +29,8 @@ public class StoreSearchDocuments {
                 StoreCategory.valueOf(rs.getString("category")),
                 Arrays.asList((String[]) rs.getArray("menus").getArray()),
                 rs.getBoolean("reservation_enabled"), rs.getBoolean("waiting_available"),
-                rs.getObject("latitude", Double.class), rs.getObject("longitude", Double.class));
+                rs.getObject("latitude", Double.class), rs.getObject("longitude", Double.class),
+                rs.getInt("popularity"));
     };
 
     private final JdbcTemplate jdbcTemplate;

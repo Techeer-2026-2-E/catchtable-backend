@@ -176,7 +176,7 @@ public class StoreSearchIndex {
     // 색인 문서 한 건
     public static Map<String, Object> document(long id, String name, String address, String area, StoreCategory category,
                                                List<String> menus, boolean reservationEnabled, boolean waitingAvailable,
-                                               Double latitude, Double longitude) {
+                                               Double latitude, Double longitude, int popularity) {
         Map<String, Object> doc = new LinkedHashMap<>();
         doc.put("id", id);
         doc.put("name", name);
@@ -190,6 +190,7 @@ public class StoreSearchIndex {
         if (latitude != null && longitude != null) {
             doc.put("location", Map.of("lat", latitude, "lon", longitude));
         }
+        doc.put("popularity", popularity);
         return doc;
     }
 }

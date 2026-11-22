@@ -5,6 +5,7 @@ import com.catchtable.store.dto.MapStoreResponse;
 import com.catchtable.store.dto.NearbyStoreCondition;
 import com.catchtable.store.dto.NearbyStoreListResponse;
 import com.catchtable.store.dto.NearbyStoreResponse;
+import com.catchtable.store.dto.NearbyStoreSort;
 import com.catchtable.store.repository.NearbyStoreRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
@@ -24,13 +25,13 @@ public class NearbyStoreService {
     @Value("${store.nearby.radius-meters:1000}")
     private double radiusMeters;
 
-    public NearbyStoreListResponse getNearbyStores(NearbyStoreCondition condition) {
+    public NearbyStoreListResponse getNearbyStores(NearbyStoreCondition condition, NearbyStoreSort sort) {
         int size = condition.size(); 
         long offset = (long) condition.page() * size;
 
         // 한 건 더 읽어서 다음 페이지가 있는지만 판단한다
         List<NearbyStoreResponse> rows = nearbyStoreRepository.findNearby(
-                condition.lat(), condition.lng(), radiusMeters, size + 1, offset);
+                condition.lat(), condition.lng(), radiusMeters, size + 1, offset, sort == NearbyStoreSort.POPULAR);
 
         boolean hasNext = rows.size() > size;
         List<NearbyStoreResponse> stores = hasNext ? rows.subList(0, size) : rows;

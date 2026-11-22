@@ -36,7 +36,8 @@
       "menus": { "type": "text", "analyzer": "korean_index", "search_analyzer": "korean_search" },
       "reservationEnabled": { "type": "boolean" },
       "waitingAvailable": { "type": "boolean" },
-      "location": { "type": "geo_point" }
+      "location": { "type": "geo_point" },
+      "popularity": { "type": "integer" }
     }
   }
 }

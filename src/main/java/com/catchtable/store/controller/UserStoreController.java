@@ -8,6 +8,7 @@ import com.catchtable.store.dto.MapMarkerListResponse;
 import com.catchtable.store.dto.MapStoreListResponse;
 import com.catchtable.store.dto.NearbyStoreCondition;
 import com.catchtable.store.dto.NearbyStoreListResponse;
+import com.catchtable.store.dto.NearbyStoreSort;
 import com.catchtable.store.dto.StoreDetailResponse;
 import com.catchtable.store.dto.StoreListResponse;
 import com.catchtable.store.dto.StoreSearchCondition;
@@ -21,6 +22,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
@@ -47,9 +49,10 @@ public class UserStoreController {
     }
 
     @GetMapping("/stores/home")
-    public ResponseEntity<NearbyStoreListResponse> getNearbyStores(@Valid @ModelAttribute NearbyStoreCondition condition)
+    public ResponseEntity<NearbyStoreListResponse> getNearbyStores(@Valid @ModelAttribute NearbyStoreCondition condition,
+                                                                   @RequestParam(required = false) NearbyStoreSort sort)
     {
-        return ResponseEntity.ok(nearbyStoreService.getNearbyStores(condition));
+        return ResponseEntity.ok(nearbyStoreService.getNearbyStores(condition, sort));
     }
 
     @GetMapping("/stores/map/radius")

@@ -17,7 +17,8 @@ public class NearbyStoreRepository {
 
     private static final double EARTH_RADIUS_METERS = 6_371_000.0;
 
-    private static final String FIND_NEARBY_SQL = """
+    // 정렬만 다른 주변 매장 조회 (반경 조건 동일)
+    private static final String NEARBY_SQL_TEMPLATE = """
             SELECT id, name, category, address, waiting_available, image_url, distance_m
             FROM (
                 SELECT id, name, category, address, waiting_available, image_url,
@@ -29,10 +30,17 @@ public class NearbyStoreRepository {
                 WHERE latitude BETWEEN :minLat AND :maxLat
                   AND longitude BETWEEN :minLng AND :maxLng
             ) nearby
+            %s
             WHERE distance_m <= :radius
-            ORDER BY distance_m, id
+            ORDER BY %s
             LIMIT :limit OFFSET :offset
             """;
+
+    private static final String FIND_NEARBY_SQL = NEARBY_SQL_TEMPLATE.formatted("", "distance_m, id");
+
+    // 인기순. 점수 없는 매장은 0점
+    private static final String FIND_POPULAR_SQL = NEARBY_SQL_TEMPLATE.formatted(
+            "LEFT JOIN store_popularity p ON p.store_id = nearby.id", "COALESCE(p.score, 0) DESC, id");
 
     // 지도 목록용. 같은 반경 조건에 좌표·점주 여부를 더 읽는다
     private static final String FIND_MAP_SQL = """
@@ -60,8 +68,9 @@ public class NearbyStoreRepository {
                 new MapStoreRowMapper());
     }
 
-    public List<NearbyStoreResponse> findNearby(double lat, double lng, double radiusMeters, int limit, long offset) {
-        return jdbcTemplate.query(FIND_NEARBY_SQL, radiusParams(lat, lng, radiusMeters, limit, offset), (rs, rowNum) -> {
+    public List<NearbyStoreResponse> findNearby(double lat, double lng, double radiusMeters, int limit, long offset,
+                                                boolean popular) {
+        return jdbcTemplate.query(popular ? FIND_POPULAR_SQL : FIND_NEARBY_SQL, radiusParams(lat, lng, radiusMeters, limit, offset), (rs, rowNum) -> {
             StoreCategory category = StoreCategory.valueOf(rs.getString("category"));
             return new NearbyStoreResponse(
                     rs.getLong("id"),
