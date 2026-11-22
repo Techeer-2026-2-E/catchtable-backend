@@ -1,0 +1,84 @@
+--- lab.py
++++ lab.py
+@@ -20 +20 @@
+-ROOT = HERE.parents[1]
++ROOT = HERE.parents[2]
+@@ -24,4 +24,4 @@
+-OUT = ROOT / "build" / ("redis-off-" + session if session else "redis-off")
+-DB_PORT = 55483
+-APP_PORT = 18381
+-OWNER = "io.catchtable.redis-off"
++OUT = ROOT / "build/intake-lab/raw"
++DB_PORT = 55484
++APP_PORT = 18481
++OWNER = "io.catchtable.intake-http"
+@@ -74 +74 @@
+-        '{{.Id}} {{index .Config.Labels "io.catchtable.redis-off"}} {{json .HostConfig.PortBindings}}',
++        '{{.Id}} {{index .Config.Labels "io.catchtable.intake-http"}} {{json .HostConfig.PortBindings}}',
+@@ -258,16 +257,0 @@
+-    check(
+-        [
+-            "git",
+-            "diff",
+-            "--exit-code",
+-            "HEAD",
+-            "--",
+-            "src/main",
+-            "build.gradle",
+-            "settings.gradle",
+-            "gradle",
+-            "gradlew",
+-        ]
+-    )
+-    if check(["git", "ls-files", "--others", "--exclude-standard", "--", "src/main", "gradle"]):
+-        raise RuntimeError("Untracked product/build inputs")
+@@ -276 +260 @@
+-    tag = "ct-rb0-" + secrets.token_hex(4)
++    tag = "ct-intake-" + secrets.token_hex(4)
+--- client.go
++++ client.go
+@@ -26,12 +26,15 @@
+-	StoreID    int    `json:"storeId"`
+-	WaitingID  int    `json:"waitingId,omitempty"`
+-	WaitNumber int    `json:"waitNumber,omitempty"`
+-	TeamsAhead *int   `json:"teamsAhead,omitempty"`
+-	HoldID     int    `json:"holdId,omitempty"`
+-	TableID    int    `json:"tableId,omitempty"`
+-	Status     string `json:"status,omitempty"`
+-	Code       string `json:"code,omitempty"`
+-	Date       string `json:"date,omitempty"`
+-	PartySize  int    `json:"partySize,omitempty"`
+-	PartyCount int    `json:"partyCount,omitempty"`
+-	Slots      []struct {
++	ReceiptID    string `json:"receiptId,omitempty"`
++	Sequence     int    `json:"intakeSequence,omitempty"`
++	ReceivedDate string `json:"receivedDate,omitempty"`
++	StoreID      int    `json:"storeId"`
++	WaitingID    int    `json:"waitingId,omitempty"`
++	WaitNumber   int    `json:"waitNumber,omitempty"`
++	TeamsAhead   *int   `json:"teamsAhead,omitempty"`
++	HoldID       int    `json:"holdId,omitempty"`
++	TableID      int    `json:"tableId,omitempty"`
++	Status       string `json:"status,omitempty"`
++	Code         string `json:"code,omitempty"`
++	Date         string `json:"date,omitempty"`
++	PartySize    int    `json:"partySize,omitempty"`
++	PartyCount   int    `json:"partyCount,omitempty"`
++	Slots        []struct {
+@@ -44,0 +48 @@
++	Location, RetryAfter                                string
+@@ -77 +81 @@
+-	req, err := http.NewRequest(method, fmt.Sprintf("http://127.0.0.1:%d%s", 18381+s.App, path), bytes.NewReader(body))
++	req, err := http.NewRequest(method, fmt.Sprintf("http://127.0.0.1:%d%s", 18481+s.App, path), bytes.NewReader(body))
+@@ -83,0 +88,4 @@
++	if s.Cohort == "hot" && op == "waiting" {
++		req.Header.Set("Idempotency-Key", fmt.Sprintf("intake-%d", s.Member))
++		req.GetBody = nil // Measure the first attempt even on a lost connection.
++	}
+@@ -95,0 +104,2 @@
++		s.Location = res.Header.Get("Location")
++		s.RetryAfter = res.Header.Get("Retry-After")
+--- monitor.sql
++++ monitor.sql
+@@ -7,0 +8 @@
++ 'hot_receipts', (SELECT pending_count FROM waiting_intake_day WHERE store_id=1 AND received_date=current_date),
