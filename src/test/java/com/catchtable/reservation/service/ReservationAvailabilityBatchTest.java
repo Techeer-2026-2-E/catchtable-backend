@@ -197,7 +197,7 @@ class ReservationAvailabilityBatchTest {
         jdbc.update("DELETE FROM availability_cache_invalidation WHERE store_id=?",storeId);
         jdbc.update("UPDATE reservation SET reservation_start_at=?,reservation_end_at=? WHERE id=?",
                 NOW.plusDays(3).withHour(0).withMinute(30),NOW.plusDays(3).withHour(2),hold);
-        assertThat(jdbc.queryForList("SELECT scope FROM availability_cache_invalidation WHERE store_id=?",String.class,storeId))
+        assertThat(jdbc.queryForList("SELECT unnest(coalesce(affected_scopes,ARRAY[scope])) FROM availability_cache_invalidation WHERE store_id=?",String.class,storeId))
                 .contains(DATE.minusDays(1).toString(),DATE.toString(),DATE.plusDays(2).toString(),DATE.plusDays(3).toString());
         jdbc.update("UPDATE store SET reservation_slot_minutes=60 WHERE id=?",storeId);
         assertThat(jdbc.queryForObject("SELECT count(*) FROM availability_cache_invalidation WHERE store_id=? AND scope='*'",

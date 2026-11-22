@@ -1,6 +1,5 @@
 package com.catchtable.reservation.controller;
 
-import com.catchtable.reservation.dto.AvailabilityResponse;
 import com.catchtable.reservation.dto.AvailableTableCountResponse;
 import com.catchtable.reservation.service.ReservationAvailabilityService;
 import com.catchtable.reservation.service.AvailabilityCache;
@@ -25,13 +24,13 @@ public class StoreAvailabilityController {
     private final AvailabilityCache cache;
 
     /** 서울 기준 날짜의 예약 시작 시각을 조회한다. 영업시간 밖·예약 마감 전 시각은 제외하고, 잔여 0개인 슬롯은 포함한다. */
-    @GetMapping("/availability")
-    public AvailabilityResponse getAvailability(
+    @GetMapping(value="/availability",produces={org.springframework.http.MediaType.APPLICATION_JSON_VALUE,"application/*+json"})
+    public Object getAvailability(
             @PathVariable Long storeId,
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date,
             @RequestParam int partySize
     ) {
-        return cache.get(storeId,date,partySize);
+        return cache.httpBody(storeId,date,partySize);
     }
 
     /** 시작 시각은 오프셋까지 전달한다(예: 2030-01-02T10:00:00+09:00). 테이블 목록이 아닌 잔여 수량을 반환한다. */

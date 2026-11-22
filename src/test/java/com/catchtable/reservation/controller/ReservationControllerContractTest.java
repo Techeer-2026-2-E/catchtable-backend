@@ -59,9 +59,20 @@ class ReservationControllerContractTest {
     private ReservationAvailabilityService availabilityService;
 
     @Test
+    void aSharedJsonHitIsAnObjectWithTheOriginalSeoulOffset() throws Exception {
+        var day=LocalDate.of(2030,1,2);
+        given(availabilityCache.httpBody(3L,day,2)).willReturn("""
+                {"storeId":3,"date":"2030-01-02","partySize":2,"slots":[{"reservationStartAt":"2030-01-02T12:00:00+09:00","availableTableCount":1,"available":true}]}
+                """);
+        mockMvc.perform(get("/api/user/stores/3/availability").param("date",day.toString()).param("partySize","2"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.storeId").value(3))
+                .andExpect(jsonPath("$.slots[0].reservationStartAt").value("2030-01-02T12:00:00+09:00"));
+    }
+
+    @Test
     void availabilityRoutesReturnCountsWithoutExposingTableChoice() throws Exception {
         LocalDate date = LocalDate.parse("2030-01-02");
-        given(availabilityCache.get(3L, date, 2))
+        given(availabilityCache.httpBody(3L, date, 2))
                 .willReturn(new AvailabilityResponse(3L, date, 2,
                         List.of(new AvailabilityResponse.Slot(START_AT, 1, true))));
         given(availabilityService.getAvailableTableCount(3L, START_AT, 2))

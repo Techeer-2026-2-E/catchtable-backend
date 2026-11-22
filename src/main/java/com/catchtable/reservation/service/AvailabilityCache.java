@@ -6,6 +6,7 @@ import com.catchtable.global.redis.RedisEndpoint;
 import com.catchtable.reservation.dto.AvailabilityResponse;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.ObjectReader;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import org.springframework.jdbc.support.SqlArrayValue;
 import io.lettuce.core.RedisException;
@@ -38,7 +39,7 @@ public class AvailabilityCache {
     private record Query(long store,LocalDate date,int party) {}
     private record Flight(Query query,String versionedKey) {}
     private record Lookup(String key,String json) {}
-    private record Dirty(long store,String scope,UUID revision) {}
+    private record Dirty(long store,String[] scopes,UUID revision) {}
     private static final String LOOKUP="""
             local function marker(key,seed)
               local value=redis.call('GET',key)
@@ -51,6 +52,9 @@ public class AvailabilityCache {
     private final RedisEndpoint redis;
     private final ReservationAvailabilityService source;
     private final ObjectMapper json;
+    private final ObjectReader cachedJson;
+    private final String instance=UUID.randomUUID().toString();
+    private final java.util.concurrent.atomic.AtomicLong nonces=new java.util.concurrent.atomic.AtomicLong();
     private final JdbcTemplate db;
     private final MeterRegistry metrics;
     private final Clock clock;
@@ -68,6 +72,7 @@ public class AvailabilityCache {
             @Value("${availability.cache.db-permits:1}") int permits) {
         if(permits<1) throw new IllegalArgumentException("Cache bypass needs a positive permit budget");
         this.redis=redis;this.source=source;this.json=json;this.db=db;this.metrics=metrics;this.clock=clock;
+        this.cachedJson=json.readerFor(AvailabilityResponse.class).without(DeserializationFeature.ADJUST_DATES_TO_CONTEXT_TIME_ZONE);
         this.enabled=enabled;this.prefix=prefix;this.bypass=new Semaphore(permits);
     }
 
@@ -85,37 +90,48 @@ public class AvailabilityCache {
         }
     }
 
+    private record Read(AvailabilityResponse value,String wire) {}
+
     public AvailabilityResponse get(long store,LocalDate date,int party) {
-        if(!enabled) return source.getAvailability(store,date,party);
+        return read(store,date,party).value();
+    }
+
+    public Object httpBody(long store,LocalDate date,int party) {
+        Read result=read(store,date,party);
+        return result.wire()==null ? result.value() : result.wire();
+    }
+
+    private Read read(long store,LocalDate date,int party) {
+        if(!enabled) return new Read(source.getAvailability(store,date,party),null);
         if(party<1) throw new BusinessException(ErrorCode.INVALID_INPUT);
         Query query=new Query(store,date,party);
-        if(!tracking) return compute(query,null);
+        if(!tracking) return new Read(compute(query,null),null);
         Lookup lookup;
         try {
             lookup=redis.use(s->{
                 prepare(s);
                 String base=prefix+"s:"+store+":";
+                String seed=nonce();
                 List<String> values=s.commands().eval(LOOKUP,ScriptOutputType.MULTI,
                         new String[]{prefix+"namespace",base+"*",base+date},
-                        base+date+":"+party+":",nonce(),nonce(),nonce());
+                        base+date+":"+party+":",seed+"n",seed+"s",seed+"d");
                 return new Lookup(values.get(0),values.get(1));
             });
         } catch(RedisException down) {
-            return compute(query,null);
+            return new Read(compute(query,null),null);
         }
         if(!lookup.json().isEmpty()) {
             try {
-                AvailabilityResponse value=json.readerFor(AvailabilityResponse.class)
-                        .without(DeserializationFeature.ADJUST_DATES_TO_CONTEXT_TIME_ZONE).readValue(lookup.json());
+                AvailabilityResponse value=cachedJson.readValue(lookup.json());
                 if(value!=null && value.storeId()!=null && value.storeId()==store && date.equals(value.date()) && value.partySize()==party && value.slots()!=null) {
                     metrics.counter("availability.cache.hit").increment();
-                    return value;
+                    return new Read(value,lookup.json());
                 }
             } catch(JsonProcessingException bad) {
                 metrics.counter("availability.cache.invalid").increment();
             }
         }
-        return compute(query,lookup.key());
+        return new Read(compute(query,lookup.key()),null);
     }
 
     private AvailabilityResponse compute(Query query,String key) {
@@ -184,7 +200,7 @@ public class AvailabilityCache {
         return new BusinessException(ErrorCode.AVAILABILITY_BUSY);
     }
 
-    private static String nonce() { return UUID.randomUUID().toString(); }
+    private String nonce() { return instance+"-"+Long.toUnsignedString(nonces.incrementAndGet(),36); }
 
     // Even if every cache reader is disabled or disconnected, expired slot data cannot accumulate an unlimited outbox.
     @Scheduled(fixedDelayString="${availability.cache.cleanup-ms:10000}",scheduler="waitingReceiptScheduler")
@@ -209,14 +225,19 @@ public class AvailabilityCache {
             redis.use(s->{
                 prepare(s);
                 var dirty=db.query("""
-                        SELECT store_id,scope,revision FROM availability_cache_invalidation ORDER BY changed_at LIMIT 128
-                        """,(r,i)->new Dirty(r.getLong(1),r.getString(2),r.getObject(3,UUID.class)));
+                        SELECT store_id,coalesce(affected_scopes,ARRAY[scope]),revision
+                        FROM availability_cache_invalidation ORDER BY changed_at LIMIT 128
+                        """,(r,i)->new Dirty(r.getLong(1),(String[])r.getArray(2).getArray(),r.getObject(3,UUID.class)));
                 if(!dirty.isEmpty()) {
-                    var scopes=dirty.stream().map(d->prefix+"s:"+d.store()+":"+d.scope()).distinct().toArray(String[]::new);
+                    var scopes=dirty.stream().flatMap(d -> java.util.Arrays.stream(d.scopes())
+                            .map(scope -> prefix+"s:"+d.store()+":"+scope)).distinct().toArray(String[]::new);
                     String[] generations=java.util.Arrays.stream(scopes).map(k->nonce()).toArray(String[]::new);
                     s.commands().eval("for i,k in ipairs(KEYS) do redis.call('SET',k,ARGV[i],'EX',86400) end return 1",
                             ScriptOutputType.INTEGER,scopes,generations);
-                    db.update("DELETE FROM availability_cache_invalidation WHERE revision=ANY(?)",
+                    db.update("""
+                            DELETE FROM availability_cache_invalidation WHERE revision IN (
+                                SELECT revision FROM availability_cache_invalidation WHERE revision=ANY(?) FOR UPDATE SKIP LOCKED)
+                            """,
                             new SqlArrayValue("uuid",dirty.stream().map(Dirty::revision).toArray()));
                 }
                 return true;
