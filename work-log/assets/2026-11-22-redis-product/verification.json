@@ -1,0 +1,255 @@
+{
+  "base": "1f51158fbfda6871737368242ba57318e25326f7",
+  "run_date": "2026-11-22",
+  "timezone": "Asia/Seoul",
+  "final_jar_sha256": "063400fe8c1e1f90ee6e56ba0b4206f2ac1ad787016045b458c41d455da6f88c",
+  "tests": {
+    "classes": 115,
+    "tests": 1238,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "postgres": "PostgreSQL 16.15 (Debian 16.15-1.pgdg13+2) on aarch64-unknown-linux-gnu, compiled by gcc (Debian 14.2.0-19) 14.2.0, 64-bit",
+  "full_build_output": "BUILD SUCCESSFUL in 1m 9s",
+  "latest_binary_mixed_routes": {
+    "jar": "063400fe8c1e1f90ee6e56ba0b4206f2ac1ad787016045b458c41d455da6f88c",
+    "flyway": 48,
+    "apps": 3,
+    "customers": 2,
+    "while_slots_held": {
+      "receipt_http": 202,
+      "legacy_blocked_in_pg": true,
+      "registrations": 0
+    },
+    "after_release": {
+      "A_receipt_number": 1,
+      "B_legacy_number": 1,
+      "replay": 200,
+      "cancel": "CANCELED",
+      "shared_cache_hits": 5.0
+    }
+  },
+  "rollout_replay": {
+    "after_number_issued": "ALREADY_ENABLED",
+    "legacy_number_exists": "BLOCKED",
+    "next_day_rejected_enabled_replayed": [
+      "BLOCKED",
+      "ENABLED",
+      "ALREADY_ENABLED"
+    ],
+    "retired_day_reenable": "BLOCKED"
+  },
+  "pre_V48_two_host_sample": {
+    "case": "probe",
+    "jar": "58a07baf8a004d3e733c6dd3ec20aafe2ee10176f7e0ebce064eab582e6318d7",
+    "duration_seconds": 2,
+    "cache_host": "MacBook Pro",
+    "queue_pg_apps": "Mac mini",
+    "apps": 3,
+    "same_cache_instance_verified": true,
+    "metrics": {
+      "target": 24,
+      "started": 24,
+      "wire": 24,
+      "first_success": 24,
+      "first_ms": {
+        "n": 24,
+        "p50": 18.769,
+        "p95": 32.195,
+        "p99": 35.258,
+        "max": 35.258
+      },
+      "final_observed": 24,
+      "final_ms": {
+        "n": 24,
+        "p50": 19.957,
+        "p95": 35.313,
+        "p99": 2945.57,
+        "max": 2945.57
+      },
+      "db_receipts": 24,
+      "db_waiting": 24,
+      "fifo_inversions": 0,
+      "counter_or_member_errors": 0,
+      "response_mismatches": [],
+      "integrity": true,
+      "B_errors": 0,
+      "B_recovery_s": 8.0,
+      "http_count": 289,
+      "outcomes": {
+        "other/waiting/http_201": 66,
+        "other/availability/http_200": 198,
+        "hot/waiting/http_201": 23,
+        "hot/waiting/http_202": 1,
+        "hot/poll/http_200": 1
+      },
+      "poll_count": 1,
+      "db": {
+        "slot_count": {
+          "calls": 11,
+          "exec_ms": 27.24
+        },
+        "batch_rows": {
+          "calls": 24,
+          "exec_ms": 3.6
+        },
+        "waiting_insert": {
+          "calls": 90,
+          "exec_ms": 7.5
+        },
+        "availability.cache.hit": 187.0,
+        "availability.cache.compute": 11.0,
+        "availability.cache.join": 0,
+        "availability.cache.bypass": 0,
+        "hikaricp.connections.timeout": 0.0
+      },
+      "verdict": "pass"
+    },
+    "raw_directory": "1795350774748703000-both-host-probe-3app",
+    "archive_sha256": "eb1d0a7c3d50b101f0a9ad98404320fee9355e066ca3e0308f6a77a7201d7bfa",
+    "raw_file_count": 56
+  },
+  "cache_boundaries": {
+    "db": "rb0_product1795349416960619000",
+    "date": "2026-11-23",
+    "jar": "58a07baf8a004d3e733c6dd3ec20aafe2ee10176f7e0ebce064eab582e6318d7",
+    "ttl_before_after_hits_ms": [
+      1458,
+      1371
+    ],
+    "evicted_marker_new_key": true,
+    "late_old_fill": {
+      "old_slots": 44,
+      "next_generation_slots": 22
+    },
+    "rollback_kept_generation": true,
+    "normal": {
+      "clients": 12,
+      "actual_db_calculations_blocked": 3,
+      "excess_other_key_http": null
+    },
+    "outage": {
+      "clients": 12,
+      "actual_db_calculations_blocked": 3,
+      "excess_other_key_http": 503
+    }
+  },
+  "cancel_reconciliation": {
+    "checked": 3,
+    "mismatches": 0,
+    "raw": "1795350183620089000-product/cancellations.csv"
+  },
+  "recovered_topology": {
+    "db": "rb0_product1795350716447157000",
+    "day": "2026-11-22",
+    "jar": "58a07baf8a004d3e733c6dd3ec20aafe2ee10176f7e0ebce064eab582e6318d7",
+    "idle": {
+      "http": 201,
+      "actual": 1,
+      "receipt": "c8b0e20a-7b11-4418-8c68-5aad79b7337d"
+    },
+    "cache": {
+      "shared_read_hits": 5.0,
+      "before": 12,
+      "hold": 11,
+      "released": 12
+    },
+    "cache_down": {
+      "db_bypass": true,
+      "queue_continues": 2
+    },
+    "queue_down": {
+      "accepted": 5,
+      "full": 429,
+      "pending_withdrawal": true,
+      "registered_cancel": true
+    },
+    "recovery": {
+      "fifo_numbers": [
+        3,
+        4,
+        5,
+        6
+      ]
+    },
+    "cancellation_race": {
+      "receiptId": "baba92a0-98c6-4071-8b1e-38c1247d8c2c",
+      "storeId": 1,
+      "receivedDate": "2026-11-22",
+      "intakeSequence": 8,
+      "partyCount": 2,
+      "status": "CANCELED",
+      "waitingId": 2888,
+      "waitNumber": 7,
+      "waitingStatus": "CANCELED",
+      "cancelOutcome": "CANCELED"
+    },
+    "sentinel": {
+      "old": "master",
+      "promoted": "replica",
+      "waitNumber": 8
+    },
+    "rollback": {
+      "legacy_new": 201,
+      "old_receipt_readable": true
+    },
+    "aof_restart": {
+      "both_processes_killed": true,
+      "everysec_marker_replayed": true,
+      "missing_lane_rediscovered": true
+    }
+  },
+  "rollout_gate": {
+    "eligible": false,
+    "scope": "local product comparison",
+    "jars": [],
+    "cases": [
+      {
+        "case": "w1k",
+        "apps": 3,
+        "trials": 0,
+        "passing": 0,
+        "insufficient": 0
+      },
+      {
+        "case": "w5k",
+        "apps": 3,
+        "trials": 0,
+        "passing": 0,
+        "insufficient": 0
+      },
+      {
+        "case": "w10k",
+        "apps": 3,
+        "trials": 0,
+        "passing": 0,
+        "insufficient": 0
+      },
+      {
+        "case": "open",
+        "apps": 3,
+        "trials": 0,
+        "passing": 0,
+        "insufficient": 0
+      },
+      {
+        "case": "open",
+        "apps": 1,
+        "trials": 0,
+        "passing": 0,
+        "insufficient": 0
+      }
+    ],
+    "observed_trials": 0,
+    "expected_trials": 45
+  },
+  "actual_short_gate": {
+    "result": "BLOCKED",
+    "new_routes": 0
+  },
+  "large_trials_this_final_round": 0,
+  "historical_off_http_runs": 28,
+  "historical_intake_only_trials": 33,
+  "actual_three_independent_fault_domains": false
+}

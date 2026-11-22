@@ -1,0 +1,41 @@
+{
+  "all_candidate_checks_met": false,
+  "scope": "local intake HTTP comparison only",
+  "conditions": [
+    {
+      "case": "w1k",
+      "apps": 3,
+      "trials": 3,
+      "input_insufficient": 0,
+      "passing": 3
+    },
+    {
+      "case": "w5k",
+      "apps": 3,
+      "trials": 3,
+      "input_insufficient": 0,
+      "passing": 0
+    },
+    {
+      "case": "w10k",
+      "apps": 3,
+      "trials": 3,
+      "input_insufficient": 0,
+      "passing": 0
+    },
+    {
+      "case": "open",
+      "apps": 3,
+      "trials": 3,
+      "input_insufficient": 0,
+      "passing": 0
+    },
+    {
+      "case": "open",
+      "apps": 1,
+      "trials": 3,
+      "input_insufficient": 0,
+      "passing": 0
+    }
+  ]
+}

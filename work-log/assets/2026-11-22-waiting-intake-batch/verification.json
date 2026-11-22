@@ -1,0 +1,141 @@
+{
+  "run": "20261122-1850-655777c5",
+  "host": "Mac mini / Mac16,10",
+  "logical_cpus": 10,
+  "ram_gib": 32,
+  "completed": 33,
+  "totals": {
+    "ack202": 211101,
+    "db": 242173,
+    "db_without_ack": 31072,
+    "db_missing": 3827,
+    "causal_order_violations": 0,
+    "duplicate_members": 0,
+    "duplicate_receipt_ids": 0,
+    "ack_mismatch": 0,
+    "other_mismatch": 0,
+    "invalid_keys": 0,
+    "first_key_xid_mismatches": 0
+  },
+  "anomalies": [],
+  "faults": [
+    {
+      "phase": "before-write",
+      "initial_http": [
+        0,
+        0
+      ],
+      "rows_before_kill": 0,
+      "rows_after_kill": 0,
+      "retry_http": [
+        202,
+        202
+      ],
+      "final_counter": "2|2",
+      "B_while_A_blocked": 201
+    },
+    {
+      "phase": "commit",
+      "initial_http": [
+        0,
+        0
+      ],
+      "rows_before_kill": 0,
+      "rows_after_kill": 2,
+      "retry_http": [
+        200,
+        200
+      ],
+      "final_counter": "2|2",
+      "B_while_A_blocked": 201
+    }
+  ],
+  "retry": [
+    {
+      "source": "1795341389966536000-batch32-open-3app",
+      "initial_ambiguous": 0,
+      "committed_retry": 0,
+      "no_db": 0,
+      "mismatches": 0,
+      "unchanged": true
+    },
+    {
+      "source": "1795341549651337000-batch32-open-3app",
+      "initial_ambiguous": 0,
+      "committed_retry": 0,
+      "no_db": 0,
+      "mismatches": 0,
+      "unchanged": true
+    },
+    {
+      "source": "1795341943436486000-batch32-open-3app",
+      "initial_ambiguous": 0,
+      "committed_retry": 0,
+      "no_db": 0,
+      "mismatches": 0,
+      "unchanged": true
+    }
+  ],
+  "db_container": "ct-batch-46ecbd3d-pg",
+  "db_state": "exited",
+  "database": "PostgreSQL 16.15 (Debian 16.15-1.pgdg13+2) on aarch64-unknown-linux-gnu, compiled by gcc (Debian 14.2.0-19) 14.2.0, 64-bit",
+  "durability": "on|on|on",
+  "jre": "openjdk 21.0.13 2026-10-20 LTS\nOpenJDK Runtime Environment Temurin-21.0.13+9 (build 21.0.13+9-LTS)\nOpenJDK 64-Bit Server VM Temurin-21.0.13+9 (build 21.0.13+9-LTS, mixed mode, sharing)",
+  "source": "8b533aff92d88249363e893377cb24100359b4a588a69d6cc03a18d4bc62cc37",
+  "jar_sha256": "440f3e96c3c0acd47c2794adf5608764af14bb154a4db0b47787fe752b6152af",
+  "validated_images": {
+    "pg": {
+      "local_id": "sha256:1a6ab3f5345eb6dbe04a1349529caabdb0ab09293a09590fad07b2246bfa4b54",
+      "mini_id": "sha256:1a43e6bb8872ccce507f8467e549a6166e8ff132ad26b49879f5ec86ee612868",
+      "same_layers_and_config": true
+    },
+    "jre": {
+      "local_id": "sha256:d77e090ae1f6970c047b443c6f0a6c1358b0426d44432bb5a7753408cd43de0d",
+      "mini_id": "sha256:4a541e56af0ae9a1ff20cdbf43e400864542116b0e7804b37f51be4c574f2057",
+      "same_layers_and_config": true
+    }
+  },
+  "gate": {
+    "eligible": false,
+    "conditions": [
+      {
+        "case": "open",
+        "apps": 3,
+        "trials": 3,
+        "input_insufficient": 0,
+        "candidate_pass": 0
+      },
+      {
+        "case": "w5k",
+        "apps": 3,
+        "trials": 3,
+        "input_insufficient": 0,
+        "candidate_pass": 3
+      },
+      {
+        "case": "w10k",
+        "apps": 3,
+        "trials": 3,
+        "input_insufficient": 0,
+        "candidate_pass": 3
+      },
+      {
+        "case": "w1k",
+        "apps": 3,
+        "trials": 3,
+        "input_insufficient": 0,
+        "candidate_pass": 3
+      },
+      {
+        "case": "open",
+        "apps": 1,
+        "trials": 3,
+        "input_insufficient": 2,
+        "candidate_pass": 0
+      }
+    ],
+    "scope": "local admission criteria, including B recovery"
+  },
+  "initial_stop": "2026-11-22T19:18:10.812850+09:00",
+  "resumed_after_trials": 23
+}

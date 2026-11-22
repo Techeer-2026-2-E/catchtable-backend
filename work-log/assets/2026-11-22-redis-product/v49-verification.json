@@ -1,0 +1,1041 @@
+{
+  "build": {
+    "source_commit": "e49b5729f95570ee5434f4ea6688d2c9ee14517c",
+    "jar": "a68c42b5ccf8180c2d1b65f108cab35d560052eeb436a0fb149f3a33ac69ac3f",
+    "matches_measured": true,
+    "junit_classes": 116,
+    "tests": 1243,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "migration": "V49",
+  "default_flags": {
+    "cache": false,
+    "dispatch": false,
+    "batch": false,
+    "async_http": false
+  },
+  "test_resources": {
+    "app_cpus_total": 3,
+    "app_heap_mib_total": 768,
+    "hikari_total": 12,
+    "tomcat_workers_total": 120,
+    "pg_cpus": 2,
+    "pg_memory_mib": 768,
+    "per_app_cache_bypass": 1,
+    "global_registration_limit": 2
+  },
+  "cache_edges": {
+    "db": "rb0_product1795353548689932000",
+    "date": "2026-11-23",
+    "jar": "a68c42b5ccf8180c2d1b65f108cab35d560052eeb436a0fb149f3a33ac69ac3f",
+    "ttl_before_after_hits_ms": [
+      1533,
+      1457
+    ],
+    "evicted_marker_new_key": true,
+    "late_old_fill": {
+      "old_slots": 44,
+      "next_generation_slots": 22
+    },
+    "rollback_kept_generation": true,
+    "normal": {
+      "clients": 12,
+      "actual_db_calculations_blocked": 3,
+      "excess_other_key_http": null
+    },
+    "outage": {
+      "clients": 12,
+      "actual_db_calculations_blocked": 3,
+      "excess_other_key_http": 503
+    }
+  },
+  "receipt_default_sentinel": {
+    "jar": "a68c42b5ccf8180c2d1b65f108cab35d560052eeb436a0fb149f3a33ac69ac3f",
+    "group": "ct-waiting",
+    "uri_override": false,
+    "http": 201,
+    "actual_number": 1
+  },
+  "mixed_workers": {
+    "jar": "a68c42b5ccf8180c2d1b65f108cab35d560052eeb436a0fb149f3a33ac69ac3f",
+    "flyway": 49,
+    "apps": 3,
+    "customers": 2,
+    "while_slots_held": {
+      "receipt_http": 202,
+      "legacy_blocked_in_pg": true,
+      "registrations": 0
+    },
+    "after_release": {
+      "A_receipt_number": 1,
+      "B_legacy_number": 1,
+      "replay": 200,
+      "cancel": "CANCELED",
+      "shared_cache_hits": 5.0
+    }
+  },
+  "storage_outage": {
+    "jar": "a68c42b5ccf8180c2d1b65f108cab35d560052eeb436a0fb149f3a33ac69ac3f",
+    "lookup_db_down": 503,
+    "post_db_down": 503,
+    "retry_after_s": 2,
+    "original_replay_http": 200,
+    "same_receipt": true,
+    "new_key_sequence": 2,
+    "unfinished_after_withdrawals": 0
+  },
+  "fixture_delta": {
+    "unfinished_before": 4,
+    "unfinished_after": 0,
+    "same_receipts": true,
+    "recovered_numbers": [
+      3,
+      4,
+      5,
+      6
+    ],
+    "final_jar": "a68c42b5ccf8180c2d1b65f108cab35d560052eeb436a0fb149f3a33ac69ac3f"
+  },
+  "vm_failover": {
+    "start": {
+      "distinct_guest_boot_ids": 3,
+      "sentinels": 3,
+      "apps": 3
+    },
+    "primary_guest_loss": {
+      "surviving_votes": 2,
+      "promoted_guest": "C",
+      "first_http": [
+        202,
+        202
+      ],
+      "actual_numbers": [
+        2,
+        3
+      ],
+      "promotion_observed_s": 3.618,
+      "numbers_observed_s": 4.226,
+      "replicated_marker_found": true
+    },
+    "primary_rejoined": {
+      "new_kernel_boot": true,
+      "role": "replica"
+    },
+    "cache_guest_loss": {
+      "db_bypasses": 3.0,
+      "new_wait_number": 4,
+      "surviving_votes": 2
+    },
+    "complete": {
+      "cache_rebooted": true,
+      "empty_cache_recovered": true,
+      "final_quorum": 3,
+      "original_receipt_cancelled": true
+    }
+  },
+  "virtual_hosts": 3,
+  "physical_hosts_in_experiment": 2,
+  "vm_physical_hosts": 1,
+  "physical_failure_domain_tested": false,
+  "uncapped_experiment": {
+    "failed_jar": "41d1fca6c83182afca77dabd82f78716a520e50ec6b7986d8cee11df4b64efeb",
+    "result": "failed",
+    "reason": "Java heap exhaustion in high-limit async HTTP experiment",
+    "http_successful_first": 80,
+    "attempts": 10000,
+    "started_in_window": 10000,
+    "written_in_window": 10000,
+    "initial_outcomes": {
+      "http_202": 80,
+      "transport": 9920
+    },
+    "client_receipts_any_response": 80,
+    "durable_before_restart": 112,
+    "statuses_before": {
+      "REGISTERED": 1,
+      "PROCESSING": 1,
+      "PENDING": 110
+    },
+    "oom_apps": 3,
+    "recovered_registered": 112,
+    "replayed_same": 112,
+    "fifo_inversions": 0,
+    "final_jar": "a68c42b5ccf8180c2d1b65f108cab35d560052eeb436a0fb149f3a33ac69ac3f"
+  },
+  "core_gate": {
+    "eligible": false,
+    "scope": "local product comparison",
+    "jars": [
+      "a68c42b5ccf8180c2d1b65f108cab35d560052eeb436a0fb149f3a33ac69ac3f"
+    ],
+    "cases": [
+      {
+        "case": "w1k",
+        "apps": 3,
+        "trials": 3,
+        "passing": 3,
+        "insufficient": 0
+      },
+      {
+        "case": "w5k",
+        "apps": 3,
+        "trials": 3,
+        "passing": 2,
+        "insufficient": 0
+      },
+      {
+        "case": "w10k",
+        "apps": 3,
+        "trials": 3,
+        "passing": 0,
+        "insufficient": 0
+      },
+      {
+        "case": "open",
+        "apps": 3,
+        "trials": 3,
+        "passing": 0,
+        "insufficient": 0
+      },
+      {
+        "case": "open",
+        "apps": 1,
+        "trials": 3,
+        "passing": 0,
+        "insufficient": 2
+      }
+    ],
+    "observed_trials": 15,
+    "expected_trials": 15
+  },
+  "core": [
+    {
+      "trial": "1795353530147715000-both-host-open-3app",
+      "case": "open",
+      "apps": 3,
+      "target": 10000,
+      "unique_initial_clients": 10000,
+      "wire_in_window": 10000,
+      "first_success": 10000,
+      "db_receipts": 10000,
+      "final_observed": 10000,
+      "db_numbers": 10000,
+      "fifo_inversions": 0,
+      "B_errors": 0,
+      "B_recovery_s": 92.0,
+      "first_ms": {
+        "n": 10000,
+        "p50": 6716.077,
+        "p95": 11248.465,
+        "p99": 11475.857,
+        "max": 11545.738
+      },
+      "number_ms": {
+        "n": 10000,
+        "p50": 62578.307,
+        "p95": 89796.888,
+        "p99": 93982.622,
+        "max": 97503.591
+      },
+      "verdict": "fail",
+      "jvm_heap_errors": 0
+    },
+    {
+      "trial": "1795353842658312000-both-host-w1k-3app",
+      "case": "w1k",
+      "apps": 3,
+      "target": 1000,
+      "unique_initial_clients": 1000,
+      "wire_in_window": 1000,
+      "first_success": 1000,
+      "db_receipts": 1000,
+      "final_observed": 1000,
+      "db_numbers": 1000,
+      "fifo_inversions": 0,
+      "B_errors": 0,
+      "B_recovery_s": 8.0,
+      "first_ms": {
+        "n": 1000,
+        "p50": 8.122,
+        "p95": 41.884,
+        "p99": 61.074,
+        "max": 87.003
+      },
+      "number_ms": {
+        "n": 1000,
+        "p50": 6067.732,
+        "p95": 8554.565,
+        "p99": 8916.251,
+        "max": 9042.368
+      },
+      "verdict": "pass",
+      "jvm_heap_errors": 0
+    },
+    {
+      "trial": "1795353891676379000-both-host-w5k-3app",
+      "case": "w5k",
+      "apps": 3,
+      "target": 5000,
+      "unique_initial_clients": 5000,
+      "wire_in_window": 5000,
+      "first_success": 5000,
+      "db_receipts": 5000,
+      "final_observed": 5000,
+      "db_numbers": 5000,
+      "fifo_inversions": 0,
+      "B_errors": 0,
+      "B_recovery_s": 8.0,
+      "first_ms": {
+        "n": 5000,
+        "p50": 23.707,
+        "p95": 85.669,
+        "p99": 123.993,
+        "max": 681.529
+      },
+      "number_ms": {
+        "n": 5000,
+        "p50": 26556.143,
+        "p95": 38265.254,
+        "p99": 39495.718,
+        "max": 40085.597
+      },
+      "verdict": "pass",
+      "jvm_heap_errors": 0
+    },
+    {
+      "trial": "1795353969230399000-both-host-w10k-3app",
+      "case": "w10k",
+      "apps": 3,
+      "target": 10000,
+      "unique_initial_clients": 10000,
+      "wire_in_window": 10000,
+      "first_success": 10000,
+      "db_receipts": 10000,
+      "final_observed": 10000,
+      "db_numbers": 10000,
+      "fifo_inversions": 0,
+      "B_errors": 0,
+      "B_recovery_s": 12.0,
+      "first_ms": {
+        "n": 10000,
+        "p50": 91.252,
+        "p95": 265.541,
+        "p99": 342.248,
+        "max": 455.262
+      },
+      "number_ms": {
+        "n": 10000,
+        "p50": 50266.992,
+        "p95": 70961.677,
+        "p99": 74084.34,
+        "max": 77046.47
+      },
+      "verdict": "fail",
+      "jvm_heap_errors": 0
+    },
+    {
+      "trial": "1795354088157946000-both-host-open-1app",
+      "case": "open",
+      "apps": 1,
+      "target": 10000,
+      "unique_initial_clients": 10000,
+      "wire_in_window": 9986,
+      "first_success": 9986,
+      "db_receipts": 10000,
+      "final_observed": 10000,
+      "db_numbers": 10000,
+      "fifo_inversions": 0,
+      "B_errors": 0,
+      "B_recovery_s": 12.0,
+      "first_ms": {
+        "n": 9986,
+        "p50": 2674.658,
+        "p95": 4048.71,
+        "p99": 4139.871,
+        "max": 4171.567
+      },
+      "number_ms": {
+        "n": 10000,
+        "p50": 30332.624,
+        "p95": 53808.293,
+        "p99": 56402.247,
+        "max": 58677.85
+      },
+      "verdict": "insufficient",
+      "jvm_heap_errors": 0
+    },
+    {
+      "trial": "1795354168204905000-both-host-open-3app",
+      "case": "open",
+      "apps": 3,
+      "target": 10000,
+      "unique_initial_clients": 10000,
+      "wire_in_window": 10000,
+      "first_success": 10000,
+      "db_receipts": 10000,
+      "final_observed": 10000,
+      "db_numbers": 10000,
+      "fifo_inversions": 0,
+      "B_errors": 0,
+      "B_recovery_s": 20.0,
+      "first_ms": {
+        "n": 10000,
+        "p50": 5673.794,
+        "p95": 8274.691,
+        "p99": 11335.748,
+        "max": 11493.685
+      },
+      "number_ms": {
+        "n": 10000,
+        "p50": 54441.892,
+        "p95": 73999.469,
+        "p99": 77588.706,
+        "max": 81219.733
+      },
+      "verdict": "fail",
+      "jvm_heap_errors": 0
+    },
+    {
+      "trial": "1795354279717183000-both-host-w1k-3app",
+      "case": "w1k",
+      "apps": 3,
+      "target": 1000,
+      "unique_initial_clients": 1000,
+      "wire_in_window": 1000,
+      "first_success": 1000,
+      "db_receipts": 1000,
+      "final_observed": 1000,
+      "db_numbers": 1000,
+      "fifo_inversions": 0,
+      "B_errors": 0,
+      "B_recovery_s": 8.0,
+      "first_ms": {
+        "n": 1000,
+        "p50": 9.276,
+        "p95": 50.525,
+        "p99": 66.747,
+        "max": 85.217
+      },
+      "number_ms": {
+        "n": 1000,
+        "p50": 4023.269,
+        "p95": 6652.348,
+        "p99": 7244.762,
+        "max": 7505.232
+      },
+      "verdict": "pass",
+      "jvm_heap_errors": 0
+    },
+    {
+      "trial": "1795354326225118000-both-host-w5k-3app",
+      "case": "w5k",
+      "apps": 3,
+      "target": 5000,
+      "unique_initial_clients": 5000,
+      "wire_in_window": 5000,
+      "first_success": 5000,
+      "db_receipts": 5000,
+      "final_observed": 5000,
+      "db_numbers": 5000,
+      "fifo_inversions": 0,
+      "B_errors": 0,
+      "B_recovery_s": 32.0,
+      "first_ms": {
+        "n": 5000,
+        "p50": 26.809,
+        "p95": 90.798,
+        "p99": 132.503,
+        "max": 187.134
+      },
+      "number_ms": {
+        "n": 5000,
+        "p50": 26503.311,
+        "p95": 38193.476,
+        "p99": 39524.208,
+        "max": 40200.993
+      },
+      "verdict": "fail",
+      "jvm_heap_errors": 0
+    },
+    {
+      "trial": "1795354404585950000-both-host-w10k-3app",
+      "case": "w10k",
+      "apps": 3,
+      "target": 10000,
+      "unique_initial_clients": 10000,
+      "wire_in_window": 10000,
+      "first_success": 10000,
+      "db_receipts": 10000,
+      "final_observed": 10000,
+      "db_numbers": 10000,
+      "fifo_inversions": 0,
+      "B_errors": 0,
+      "B_recovery_s": 12.0,
+      "first_ms": {
+        "n": 10000,
+        "p50": 66.716,
+        "p95": 239.208,
+        "p99": 383.876,
+        "max": 496.891
+      },
+      "number_ms": {
+        "n": 10000,
+        "p50": 49840.898,
+        "p95": 73992.842,
+        "p99": 76900.92,
+        "max": 79418.973
+      },
+      "verdict": "fail",
+      "jvm_heap_errors": 0
+    },
+    {
+      "trial": "1795354522716235000-both-host-open-1app",
+      "case": "open",
+      "apps": 1,
+      "target": 10000,
+      "unique_initial_clients": 10000,
+      "wire_in_window": 10000,
+      "first_success": 10000,
+      "db_receipts": 10000,
+      "final_observed": 10000,
+      "db_numbers": 10000,
+      "fifo_inversions": 0,
+      "B_errors": 0,
+      "B_recovery_s": 12.0,
+      "first_ms": {
+        "n": 10000,
+        "p50": 2742.295,
+        "p95": 4143.447,
+        "p99": 4202.183,
+        "max": 4372.369
+      },
+      "number_ms": {
+        "n": 10000,
+        "p50": 38518.155,
+        "p95": 62179.343,
+        "p99": 65579.603,
+        "max": 69438.794
+      },
+      "verdict": "fail",
+      "jvm_heap_errors": 0
+    },
+    {
+      "trial": "1795354613672274000-both-host-open-3app",
+      "case": "open",
+      "apps": 3,
+      "target": 10000,
+      "unique_initial_clients": 10000,
+      "wire_in_window": 10000,
+      "first_success": 10000,
+      "db_receipts": 10000,
+      "final_observed": 10000,
+      "db_numbers": 10000,
+      "fifo_inversions": 0,
+      "B_errors": 0,
+      "B_recovery_s": 20.0,
+      "first_ms": {
+        "n": 10000,
+        "p50": 6474.387,
+        "p95": 10231.494,
+        "p99": 11364.459,
+        "max": 11478.448
+      },
+      "number_ms": {
+        "n": 10000,
+        "p50": 57549.245,
+        "p95": 84420.42,
+        "p99": 87778.074,
+        "max": 90660.691
+      },
+      "verdict": "fail",
+      "jvm_heap_errors": 0
+    },
+    {
+      "trial": "1795354733444549000-both-host-w1k-3app",
+      "case": "w1k",
+      "apps": 3,
+      "target": 1000,
+      "unique_initial_clients": 1000,
+      "wire_in_window": 1000,
+      "first_success": 1000,
+      "db_receipts": 1000,
+      "final_observed": 1000,
+      "db_numbers": 1000,
+      "fifo_inversions": 0,
+      "B_errors": 0,
+      "B_recovery_s": 8.0,
+      "first_ms": {
+        "n": 1000,
+        "p50": 9.864,
+        "p95": 47.739,
+        "p99": 66.134,
+        "max": 121.913
+      },
+      "number_ms": {
+        "n": 1000,
+        "p50": 2632.11,
+        "p95": 4130.475,
+        "p99": 4448.425,
+        "max": 4531.204
+      },
+      "verdict": "pass",
+      "jvm_heap_errors": 0
+    },
+    {
+      "trial": "1795354779973825000-both-host-w5k-3app",
+      "case": "w5k",
+      "apps": 3,
+      "target": 5000,
+      "unique_initial_clients": 5000,
+      "wire_in_window": 5000,
+      "first_success": 5000,
+      "db_receipts": 5000,
+      "final_observed": 5000,
+      "db_numbers": 5000,
+      "fifo_inversions": 0,
+      "B_errors": 0,
+      "B_recovery_s": 8.0,
+      "first_ms": {
+        "n": 5000,
+        "p50": 26.486,
+        "p95": 88.77,
+        "p99": 129.254,
+        "max": 423.885
+      },
+      "number_ms": {
+        "n": 5000,
+        "p50": 36506.256,
+        "p95": 46738.179,
+        "p99": 49068.05,
+        "max": 50613.728
+      },
+      "verdict": "pass",
+      "jvm_heap_errors": 0
+    },
+    {
+      "trial": "1795354868535992000-both-host-w10k-3app",
+      "case": "w10k",
+      "apps": 3,
+      "target": 10000,
+      "unique_initial_clients": 10000,
+      "wire_in_window": 10000,
+      "first_success": 10000,
+      "db_receipts": 10000,
+      "final_observed": 10000,
+      "db_numbers": 10000,
+      "fifo_inversions": 0,
+      "B_errors": 0,
+      "B_recovery_s": 8.0,
+      "first_ms": {
+        "n": 10000,
+        "p50": 88.586,
+        "p95": 230.082,
+        "p99": 282.979,
+        "max": 388.294
+      },
+      "number_ms": {
+        "n": 10000,
+        "p50": 49494.197,
+        "p95": 64789.56,
+        "p99": 67328.051,
+        "max": 72621.345
+      },
+      "verdict": "fail",
+      "jvm_heap_errors": 0
+    },
+    {
+      "trial": "1795354982460073000-both-host-open-1app",
+      "case": "open",
+      "apps": 1,
+      "target": 10000,
+      "unique_initial_clients": 10000,
+      "wire_in_window": 9936,
+      "first_success": 9935,
+      "db_receipts": 10000,
+      "final_observed": 10000,
+      "db_numbers": 10000,
+      "fifo_inversions": 0,
+      "B_errors": 0,
+      "B_recovery_s": 12.0,
+      "first_ms": {
+        "n": 9935,
+        "p50": 2770.711,
+        "p95": 4027.608,
+        "p99": 4092.517,
+        "max": 4154.182
+      },
+      "number_ms": {
+        "n": 10000,
+        "p50": 46867.785,
+        "p95": 71645.469,
+        "p99": 76540.703,
+        "max": 79530.145
+      },
+      "verdict": "insufficient",
+      "jvm_heap_errors": 0
+    }
+  ],
+  "isolated_domain_probe_repetitions": 1,
+  "domain": [
+    {
+      "raw": "1795355085783876000-legacy-host-read-3app",
+      "case": "read",
+      "arm": "legacy",
+      "target": 1000,
+      "started": 1000,
+      "wire": 1000,
+      "first_success": 1000,
+      "first_ms": {
+        "n": 1000,
+        "p50": 4.871,
+        "p95": 7.259,
+        "p99": 13.072,
+        "max": 52.0
+      },
+      "final_observed": 0,
+      "final_ms": {
+        "n": 0
+      },
+      "B_errors": 0,
+      "B_recovery_s": 8.0,
+      "db": {
+        "slot_count": {
+          "calls": 1270,
+          "exec_ms": 2337.61
+        },
+        "batch_rows": {
+          "calls": 0,
+          "exec_ms": 0
+        },
+        "waiting_insert": {
+          "calls": 90,
+          "exec_ms": 24.76
+        },
+        "availability.cache.hit": 0,
+        "availability.cache.compute": 0,
+        "availability.cache.join": 0,
+        "availability.cache.bypass": 0,
+        "hikaricp.connections.timeout": 0.0
+      },
+      "verdict": "pass",
+      "integrity": true,
+      "outcomes": {
+        "other/availability/http_200": 270,
+        "other/waiting/http_201": 90,
+        "hot/availability/http_200": 1000
+      },
+      "apps_with_heap_errors": 0
+    },
+    {
+      "raw": "1795355130148225000-cache-host-read-3app",
+      "case": "read",
+      "arm": "cache",
+      "target": 1000,
+      "started": 1000,
+      "wire": 1000,
+      "first_success": 1000,
+      "first_ms": {
+        "n": 1000,
+        "p50": 12.329,
+        "p95": 15.477,
+        "p99": 29.684,
+        "max": 57.275
+      },
+      "final_observed": 0,
+      "final_ms": {
+        "n": 0
+      },
+      "B_errors": 0,
+      "B_recovery_s": 8.0,
+      "db": {
+        "slot_count": {
+          "calls": 30,
+          "exec_ms": 57.07
+        },
+        "batch_rows": {
+          "calls": 0,
+          "exec_ms": 0
+        },
+        "waiting_insert": {
+          "calls": 90,
+          "exec_ms": 23.85
+        },
+        "availability.cache.hit": 1239.0,
+        "availability.cache.compute": 30.0,
+        "availability.cache.join": 1.0,
+        "availability.cache.bypass": 0,
+        "hikaricp.connections.timeout": 0.0
+      },
+      "verdict": "pass",
+      "integrity": true,
+      "outcomes": {
+        "other/waiting/http_201": 90,
+        "other/availability/http_200": 270,
+        "hot/availability/http_200": 1000
+      },
+      "apps_with_heap_errors": 0
+    },
+    {
+      "raw": "1795355177436478000-cache-host-hold-3app",
+      "case": "hold",
+      "arm": "cache",
+      "target": 300,
+      "started": 300,
+      "wire": 300,
+      "first_success": 300,
+      "first_ms": {
+        "n": 300,
+        "p50": 14.106,
+        "p95": 66.765,
+        "p99": 89.517,
+        "max": 97.644
+      },
+      "final_observed": 0,
+      "final_ms": {
+        "n": 0
+      },
+      "B_errors": 0,
+      "B_recovery_s": 8.0,
+      "db": {
+        "slot_count": {
+          "calls": 16,
+          "exec_ms": 33.35
+        },
+        "batch_rows": {
+          "calls": 0,
+          "exec_ms": 0
+        },
+        "waiting_insert": {
+          "calls": 66,
+          "exec_ms": 19.57
+        },
+        "availability.cache.hit": 478.0,
+        "availability.cache.compute": 16.0,
+        "availability.cache.join": 4.0,
+        "availability.cache.bypass": 0,
+        "hikaricp.connections.timeout": 0.0
+      },
+      "verdict": "pass",
+      "integrity": true,
+      "outcomes": {
+        "other/waiting/http_201": 66,
+        "other/availability/http_200": 198,
+        "hot/availability/http_200": 300,
+        "hot/hold/http_201": 12,
+        "hot/hold/http_409": 26
+      },
+      "apps_with_heap_errors": 0,
+      "hold_journey_ms": {
+        "http_201": {
+          "n": 12,
+          "p50": 84.23,
+          "p95": 180.338,
+          "p99": 180.338,
+          "max": 180.338
+        },
+        "http_409": {
+          "n": 26,
+          "p50": 100.585,
+          "p95": 181.631,
+          "p99": 182.821,
+          "max": 182.821
+        }
+      },
+      "actual_unique_tables": 12
+    },
+    {
+      "raw": "1795355213953209000-legacy-host-hold-3app",
+      "case": "hold",
+      "arm": "legacy",
+      "target": 300,
+      "started": 300,
+      "wire": 300,
+      "first_success": 300,
+      "first_ms": {
+        "n": 300,
+        "p50": 7.649,
+        "p95": 75.191,
+        "p99": 129.875,
+        "max": 151.397
+      },
+      "final_observed": 0,
+      "final_ms": {
+        "n": 0
+      },
+      "B_errors": 0,
+      "B_recovery_s": 8.0,
+      "db": {
+        "slot_count": {
+          "calls": 498,
+          "exec_ms": 1382.55
+        },
+        "batch_rows": {
+          "calls": 0,
+          "exec_ms": 0
+        },
+        "waiting_insert": {
+          "calls": 66,
+          "exec_ms": 19.95
+        },
+        "availability.cache.hit": 0,
+        "availability.cache.compute": 0,
+        "availability.cache.join": 0,
+        "availability.cache.bypass": 0,
+        "hikaricp.connections.timeout": 0.0
+      },
+      "verdict": "pass",
+      "integrity": true,
+      "outcomes": {
+        "other/availability/http_200": 198,
+        "other/waiting/http_201": 66,
+        "hot/availability/http_200": 300,
+        "hot/hold/http_201": 12,
+        "hot/hold/http_409": 18
+      },
+      "apps_with_heap_errors": 0,
+      "hold_journey_ms": {
+        "http_201": {
+          "n": 12,
+          "p50": 86.64,
+          "p95": 164.871,
+          "p99": 164.871,
+          "max": 164.871
+        },
+        "http_409": {
+          "n": 18,
+          "p50": 148.155,
+          "p95": 247.279,
+          "p99": 247.279,
+          "max": 247.279
+        }
+      },
+      "actual_unique_tables": 12
+    },
+    {
+      "raw": "1795355252278463000-legacy-host-w1k-3app",
+      "case": "w1k",
+      "arm": "legacy",
+      "target": 1000,
+      "started": 1000,
+      "wire": 1000,
+      "first_success": 1000,
+      "first_ms": {
+        "n": 1000,
+        "p50": 8.704,
+        "p95": 44.876,
+        "p99": 69.783,
+        "max": 81.999
+      },
+      "final_observed": 1000,
+      "final_ms": {
+        "n": 1000,
+        "p50": 8.726,
+        "p95": 44.912,
+        "p99": 69.806,
+        "max": 82.033
+      },
+      "B_errors": 0,
+      "B_recovery_s": 8.0,
+      "db": {
+        "slot_count": {
+          "calls": 270,
+          "exec_ms": 728.5
+        },
+        "batch_rows": {
+          "calls": 0,
+          "exec_ms": 0
+        },
+        "waiting_insert": {
+          "calls": 1090,
+          "exec_ms": 150.62
+        },
+        "availability.cache.hit": 0,
+        "availability.cache.compute": 0,
+        "availability.cache.join": 0,
+        "availability.cache.bypass": 0,
+        "hikaricp.connections.timeout": 0.0
+      },
+      "verdict": "pass",
+      "integrity": true,
+      "outcomes": {
+        "other/waiting/http_201": 90,
+        "other/availability/http_200": 270,
+        "hot/waiting/http_201": 1000
+      },
+      "apps_with_heap_errors": 0
+    },
+    {
+      "raw": "1795355297485994000-waiting-host-w1k-3app",
+      "case": "w1k",
+      "arm": "waiting",
+      "target": 1000,
+      "started": 1000,
+      "wire": 1000,
+      "first_success": 1000,
+      "first_ms": {
+        "n": 1000,
+        "p50": 8.285,
+        "p95": 46.689,
+        "p99": 64.629,
+        "max": 112.215
+      },
+      "final_observed": 1000,
+      "final_ms": {
+        "n": 1000,
+        "p50": 5184.876,
+        "p95": 8494.589,
+        "p99": 8938.574,
+        "max": 9995.918
+      },
+      "B_errors": 0,
+      "B_recovery_s": 8.0,
+      "db": {
+        "slot_count": {
+          "calls": 288,
+          "exec_ms": 686.81
+        },
+        "batch_rows": {
+          "calls": 980,
+          "exec_ms": 123.0
+        },
+        "waiting_insert": {
+          "calls": 1096,
+          "exec_ms": 172.55
+        },
+        "availability.cache.hit": 0,
+        "availability.cache.compute": 0,
+        "availability.cache.join": 0,
+        "availability.cache.bypass": 0,
+        "hikaricp.connections.timeout": 0.0
+      },
+      "verdict": "pass",
+      "integrity": true,
+      "outcomes": {
+        "other/availability/http_200": 288,
+        "other/waiting/http_201": 96,
+        "hot/waiting/http_202": 999,
+        "hot/waiting/http_201": 1,
+        "hot/poll/http_200": 1204
+      },
+      "apps_with_heap_errors": 0
+    }
+  ],
+  "remote_evidence": {
+    "files": 565,
+    "archive_sha256": "949a7c06f895eaa1f6ca28a13417c1ea0d4452864b89406e29f9e7dcd440265a"
+  },
+  "local_evidence": {
+    "files": 262,
+    "archive_sha256": "f24cd39e50010f3b49fa8e8c3a670f813c58ead82b778b5cc3759fab810952e4"
+  },
+  "lab_shutdown": {
+    "virtual_machines_stopped": 3,
+    "ssh_forwards_closed": 2,
+    "remote": {
+      "owned_relays_stopped": 3,
+      "owned_postgres_stopped": true
+    }
+  }
+}

@@ -1,0 +1,41 @@
+{
+  "eligible": false,
+  "conditions": [
+    {
+      "case": "open",
+      "apps": 3,
+      "trials": 3,
+      "input_insufficient": 0,
+      "candidate_pass": 0
+    },
+    {
+      "case": "w5k",
+      "apps": 3,
+      "trials": 3,
+      "input_insufficient": 0,
+      "candidate_pass": 3
+    },
+    {
+      "case": "w10k",
+      "apps": 3,
+      "trials": 3,
+      "input_insufficient": 0,
+      "candidate_pass": 3
+    },
+    {
+      "case": "w1k",
+      "apps": 3,
+      "trials": 3,
+      "input_insufficient": 0,
+      "candidate_pass": 3
+    },
+    {
+      "case": "open",
+      "apps": 1,
+      "trials": 3,
+      "input_insufficient": 2,
+      "candidate_pass": 0
+    }
+  ],
+  "scope": "local admission criteria, including B recovery"
+}
