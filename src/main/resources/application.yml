@@ -46,6 +46,17 @@ alimtalk:
     template-id: ${SOLAPI_TEMPLATE_ID:}
     webhook-secret: ${SOLAPI_WEBHOOK_SECRET:}
 
+# 매장 키워드 검색 엔진: postgres(기본) | opensearch. opensearch여도 장애 시 DB 검색으로 대체
+catchtable:
+  search:
+    engine: ${SEARCH_ENGINE:postgres}
+    opensearch:
+      url: ${OPENSEARCH_URL:http://localhost:9200}
+      alias: stores
+      connect-timeout: 1s
+      read-timeout: 2s
+      entered-store-boost: 1.1   # 입점 매장 관련도 배수
+
 management:
   endpoints:
     web:

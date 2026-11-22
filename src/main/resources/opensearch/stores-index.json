@@ -1,0 +1,42 @@
+{
+  "settings": {
+    "number_of_shards": 1,
+    "number_of_replicas": 0,
+    "analysis": {
+      "tokenizer": {
+        "korean": { "type": "nori_tokenizer", "decompound_mode": "discard" },
+        "bigram": { "type": "ngram", "min_gram": 2, "max_gram": 2 }
+      },
+      "char_filter": {
+        "remove_spaces": { "type": "pattern_replace", "pattern": "\\s+", "replacement": "" },
+        "synonym_canonical": { "type": "mapping", "mappings": [] }
+      },
+      "filter": {
+        "store_synonyms": { "type": "synonym_graph", "synonyms": [] }
+      },
+      "analyzer": {
+        "korean_index": { "type": "custom", "tokenizer": "korean", "filter": ["lowercase"] },
+        "korean_search": { "type": "custom", "tokenizer": "korean", "filter": ["lowercase", "store_synonyms"] },
+        "compact": { "type": "custom", "char_filter": ["remove_spaces", "synonym_canonical"], "tokenizer": "bigram", "filter": ["lowercase"] }
+      }
+    }
+  },
+  "mappings": {
+    "dynamic": "strict",
+    "properties": {
+      "id": { "type": "long" },
+      "name": {
+        "type": "text", "analyzer": "korean_index", "search_analyzer": "korean_search",
+        "fields": { "compact": { "type": "text", "analyzer": "compact" } }
+      },
+      "address": { "type": "text", "analyzer": "korean_index", "search_analyzer": "korean_search" },
+      "area": { "type": "text", "analyzer": "korean_index", "search_analyzer": "korean_search" },
+      "category": { "type": "keyword" },
+      "categoryName": { "type": "text", "analyzer": "korean_index", "search_analyzer": "korean_search" },
+      "menus": { "type": "text", "analyzer": "korean_index", "search_analyzer": "korean_search" },
+      "reservationEnabled": { "type": "boolean" },
+      "waitingAvailable": { "type": "boolean" },
+      "location": { "type": "geo_point" }
+    }
+  }
+}
