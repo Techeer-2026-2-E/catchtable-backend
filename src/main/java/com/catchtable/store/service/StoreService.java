@@ -46,6 +46,7 @@ public class StoreService {
     private final StoreOpenStatusService storeOpenStatusService;
     private final ReviewRepository reviewRepository;
     private final Clock clock;
+    private final StoreOpenWindowService storeOpenWindowService;
     private final Optional<StoreSearchIndex> storeSearchIndex;   // catchtable.search.engine=opensearch일 때만 사용
 
     private static final int MAX_KEYWORD_PAGE = 49;
@@ -73,6 +74,8 @@ public class StoreService {
                 .toList();
     }
 
+    // 날짜 검색은 영업 구간을 계산·기록할 수 있어 쓰기 트랜잭션
+    @Transactional
     public StoreListResponse searchStores(StoreSearchCondition condition)
     {
         if (usesOpenSearch(condition)) {
@@ -99,12 +102,18 @@ public class StoreService {
 
     private StoreListResponse searchWithFilter(StoreSearchCondition condition)
     {
-        LocalDateTime startAt = condition.hasDateTime() ? condition.date().atTime(condition.time()) : null;
-        List<Store> matches = storeRepository.searchFiltered(
-                condition.category() == null ? null : condition.category().name(),
-                condition.keywordPattern(), condition.partySize(), startAt, LocalDateTime.now(clock),
-                condition.size() + 1,
-                (long) condition.page() * condition.size());
+        String category = condition.category() == null ? null : condition.category().name();
+        int limit = condition.size() + 1;
+        long offset = (long) condition.page() * condition.size();
+        List<Store> matches;
+        if (condition.hasDateTime()) {
+            storeOpenWindowService.ensureForSearch(condition.date());
+            matches = storeRepository.searchFilteredAt(category, condition.keywordPattern(), condition.partySize(),
+                    condition.date().atTime(condition.time()), LocalDateTime.now(clock), limit, offset);
+        } else {
+            matches = storeRepository.searchFiltered(category, condition.keywordPattern(), condition.partySize(),
+                    limit, offset);
+        }
         boolean hasNext = matches.size() > condition.size();
         List<StoreSummaryResponse> stores = matches.stream().limit(condition.size())
                 .map(StoreSummaryResponse::of).toList();
