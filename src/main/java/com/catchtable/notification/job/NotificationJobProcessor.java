@@ -21,18 +21,20 @@ import java.util.List;
 @RequiredArgsConstructor
 public class NotificationJobProcessor {
 
+    public record ClaimBatch(List<NotificationJob> jobs, boolean advanced) {}
+
     private final NotificationJobRepository repository;
     private final Clock clock;
 
     // 가져갈 작업을 잠그고 PROCESSING으로 바꾼 뒤 커밋. 반환된 작업만 보내면 된다
     @Transactional
-    public List<NotificationJob> claim(Collection<NotificationJobKind> kinds, int limit,
-                                       Duration lease, int maxAttempts) {
+    public ClaimBatch claim(Collection<NotificationJobKind> kinds, int limit, Duration lease, int maxAttempts) {
         OffsetDateTime now = OffsetDateTime.now(clock);
         List<String> kindNames = kinds.stream().map(Enum::name).toList();
         List<NotificationJob> claimed = new ArrayList<>();
 
-        for (NotificationJob job : repository.lockClaimable(kindNames, now, limit)) {
+        List<NotificationJob> candidates = repository.lockClaimable(kindNames, now, limit);
+        for (NotificationJob job : candidates) {
             // 멈췄던 REFRESH·QUEUE인데 같은 매장에 새 PENDING이 있으면, 그쪽이 최신 상태를 보낸다
             if (job.getStatus() == NotificationJobStatus.PROCESSING && hasNewerPending(job)) {
                 job.merge(now);
@@ -45,22 +47,26 @@ public class NotificationJobProcessor {
             }
             claimed.add(job);
         }
-        return claimed;
+        return new ClaimBatch(claimed, !candidates.isEmpty());
+    }
+
+    @Transactional
+    public boolean renew(NotificationJob job, Duration lease) {
+        var now = OffsetDateTime.now(clock);
+        return repository.renewCurrentAttempt(job.getId(), job.getAttemptCount(), now, now.plus(lease)) == 1;
     }
 
     // NOTIFY 결과 기록
     @Transactional
-    public void complete(Long jobId, NotificationJobResult result) {
-        repository.findById(jobId)
-                .filter(job -> job.getStatus() == NotificationJobStatus.PROCESSING)
+    public void complete(Long jobId, int attempt, NotificationJobResult result) {
+        repository.findByIdAndAttemptCountAndStatus(jobId, attempt, NotificationJobStatus.PROCESSING)
                 .ifPresent(job -> job.complete(result, OffsetDateTime.now(clock)));
     }
 
     // REFRESH·QUEUE 결과 기록
     @Transactional
-    public void completeFanout(Long jobId, int recipients, int sentCount) {
-        repository.findById(jobId)
-                .filter(job -> job.getStatus() == NotificationJobStatus.PROCESSING)
+    public void completeFanout(Long jobId, int attempt, int recipients, int sentCount) {
+        repository.findByIdAndAttemptCountAndStatus(jobId, attempt, NotificationJobStatus.PROCESSING)
                 .ifPresent(job -> job.completeFanout(recipients, sentCount, OffsetDateTime.now(clock)));
     }
 

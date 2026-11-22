@@ -16,18 +16,23 @@ import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.io.IOException;
+import java.time.Duration;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.awaitility.Awaitility.await;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
 // 실제 PostgreSQL로 트랜잭션을 열어 저장·전송 시점을 확인한다
-@SpringBootTest
+@SpringBootTest(properties = "notification.job.write-timeout=6s")
 class NotificationJobRecorderTest {
 
     @Autowired ApplicationEventPublisher publisher;
@@ -59,7 +64,7 @@ class NotificationJobRecorderTest {
     @DisplayName("트랜잭션이 커밋되면 알림을 보낸다")
     void sendAfterCommit() throws IOException {
         transactionTemplate.executeWithoutResult(status -> publisher.publishEvent(event()));
-        drain();
+        await().atMost(Duration.ofSeconds(5)).untilAsserted(() -> assertThat(jobResults()).containsExactly("SENT"));
 
         verify(emitter, times(1)).send(any(SseEmitter.SseEventBuilder.class));
         assertThat(jobResults()).containsExactly("SENT");
@@ -117,5 +122,46 @@ class NotificationJobRecorderTest {
     private List<String> jobResults() {
         return jdbc.queryForList("SELECT result FROM notification_job WHERE member_id = ? ORDER BY id",
                 String.class, memberId);
+    }
+
+    @Test
+    void anotherMemberReceivesWhileTheFirstWriteIsPending() throws Exception {
+        Long other = jdbc.queryForObject("""
+                INSERT INTO member(name,phone,user_type) VALUES ('테스트', '010-0000-0000', 'CUSTOMER') RETURNING id
+                """, Long.class);
+        var healthy = mock(SseEmitter.class);
+        repository.save(other, healthy);
+        var started = new CountDownLatch(1);
+        var release = new CountDownLatch(1);
+        doAnswer(call -> {
+            started.countDown();
+            if (!release.await(5, TimeUnit.SECONDS)) throw new AssertionError("첫 쓰기가 제시간에 종료되지 않음");
+            return null;
+        }).when(emitter).send(any(SseEmitter.SseEventBuilder.class));
+        try {
+            transactionTemplate.executeWithoutResult(tx -> publisher.publishEvent(event()));
+            assertThat(started.await(2, TimeUnit.SECONDS)).isTrue();
+            transactionTemplate.executeWithoutResult(tx -> {
+                publisher.publishEvent(event());
+                publisher.publishEvent(new CustomerNotificationEvent(other, NotificationType.RESERVATION_CANCELED, 20L, "취소"));
+            });
+            await().atMost(Duration.ofSeconds(3)).untilAsserted(() -> {
+                verify(healthy).send(any(SseEmitter.SseEventBuilder.class));
+                assertThat(jdbc.queryForObject("SELECT result FROM notification_job WHERE member_id = ?", String.class, other))
+                        .isEqualTo("SENT");
+            });
+            assertThat(jdbc.queryForList("SELECT status FROM notification_job WHERE member_id = ? ORDER BY id",
+                    String.class, memberId)).containsExactly("PROCESSING", "PENDING");
+        } finally {
+            release.countDown();
+            try {
+                drain();
+                NotificationJobTestDrain.forMember(jdbc, worker, other).done();
+            } finally {
+                repository.delete(other, healthy);
+                jdbc.update("DELETE FROM member WHERE id = ?", other);
+            }
+        }
+        assertThat(jobResults()).containsExactly("SENT", "SENT");
     }
 }

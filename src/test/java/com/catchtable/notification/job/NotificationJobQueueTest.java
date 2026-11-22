@@ -1,11 +1,13 @@
 package com.catchtable.notification.job;
 
 import com.catchtable.notification.dto.NotificationMessage;
+import com.catchtable.notification.entity.NotificationJobKind;
 import com.catchtable.notification.repository.NotificationJobRepository;
 import com.catchtable.notification.repository.SseEmitterRepository;
 import com.catchtable.waiting.dto.WaitingPositionPayload;
 import com.catchtable.waiting.dto.WaitingQueueChangedEvent;
 import com.catchtable.waiting.entity.WaitingStatus;
+import com.catchtable.waiting.service.WaitingService;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -26,6 +28,9 @@ import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -45,6 +50,8 @@ class NotificationJobQueueTest {
     @Autowired TransactionTemplate transactionTemplate;
     @Autowired JdbcTemplate jdbc;
     @Autowired NotificationJobWorker worker;
+    @Autowired NotificationJobProcessor processor;
+    @Autowired WaitingService waitingService;
     @Autowired NotificationJobRepository jobRepository;
     @Autowired SseEmitterRepository emitters;
 
@@ -62,6 +69,7 @@ class NotificationJobQueueTest {
     @AfterEach
     void tearDown() {
         connected.forEach(emitters::delete);
+        storeIds.forEach(id -> jdbc.update("DELETE FROM waiting_end_history WHERE waiting_id IN (SELECT id FROM waiting WHERE store_id = ?)", id));
         storeIds.forEach(id -> jdbc.update("DELETE FROM waiting WHERE store_id = ?", id));
         storeIds.forEach(id -> jdbc.update("DELETE FROM store WHERE id = ?", id));
         memberIds.forEach(id -> jdbc.update("DELETE FROM member WHERE id = ?", id));
@@ -153,10 +161,36 @@ class NotificationJobQueueTest {
         connect(second);
 
         // recorder를 거치지 않고 job만 저장 → 전송 스레드가 깨어나지 않음
-        jobRepository.insertQueueIfAbsent(storeId, TODAY, OffsetDateTime.now());
-        jdbc.update("UPDATE waiting SET status = 'SEATED' WHERE id = ?", first);
+        transactionTemplate.executeWithoutResult(tx -> {
+            jdbc.update("UPDATE waiting SET status = 'SEATED' WHERE id = ?", first);
+            jobRepository.coalesceQueue(storeId, TODAY, OffsetDateTime.now());
+        });
 
         assertThat(sentPositions()).containsExactly(new WaitingPositionPayload(second, 1, 0, WaitingStatus.WAITING));
+    }
+
+    @Test
+    @DisplayName("기존 QUEUE와 REFRESH에 합쳐진 취소가 커밋된 뒤에만 새 순번을 보낸다")
+    void coalescedJobsWaitForTheCancellationCommit() {
+        Long first = insertWaiting(storeId, TODAY, 1, WaitingStatus.WAITING);
+        Long second = insertWaiting(storeId, TODAY, 2, WaitingStatus.WAITING);
+        connect(second);
+        jobRepository.coalesceQueue(storeId, TODAY, OffsetDateTime.now());
+        jobRepository.coalesceRefresh(storeId, OffsetDateTime.now());
+
+        try (var otherConnection = Executors.newSingleThreadExecutor()) {
+            transactionTemplate.executeWithoutResult(tx -> {
+                waitingService.cancelWaiting(memberOf(first), first);
+                var claim = otherConnection.submit(() -> processor.claim(
+                        Set.of(NotificationJobKind.QUEUE, NotificationJobKind.REFRESH),
+                        100, NotificationJobWorker.LEASE, NotificationJobWorker.MAX_ATTEMPTS));
+                assertThat(claim).succeedsWithin(3, TimeUnit.SECONDS).satisfies(batch ->
+                        assertThat(batch.jobs()).noneMatch(job -> storeId.equals(job.getStoreId())));
+            });
+        }
+
+        assertThat(sentPositions()).containsExactly(new WaitingPositionPayload(second, 1, 0, WaitingStatus.WAITING));
+        assertThat(queueJob()).containsEntry("status", "DONE").containsEntry("sent_count", 1);
     }
 
     @Test

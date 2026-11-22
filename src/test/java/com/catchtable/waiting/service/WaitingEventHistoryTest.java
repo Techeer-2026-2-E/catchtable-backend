@@ -286,6 +286,7 @@ class WaitingEventHistoryTest {
 
     @Test
     void callSendsToEveryConnectionRemovesBrokenOneAndRecordsNoConnection() throws Exception {
+        flushSse();
         SseEmitter alive = mock(SseEmitter.class);
         SseEmitter broken = mock(SseEmitter.class);
         doThrow(new IOException("closed")).when(broken).send(any(SseEmitter.SseEventBuilder.class));
@@ -323,8 +324,12 @@ class WaitingEventHistoryTest {
         ownerService.callWaiting(owner.getId(), waitingId);
         flushSse();
         // 호출·재전송·재호출 = 손님 호출 알림 3건 (재전송·재호출은 각자 다른 업무 이벤트 키)
-        assertThat(callJobs()).hasSize(3);
-        // flushSse가 통과했으면 이 매장의 job은 모두 DONE/FAILED
+        assertThat(callJobs()).hasSize(3).allSatisfy(job ->
+                assertThat(job.substring(job.lastIndexOf('=') + 1)).isIn("NO_CONNECTION", "SENT", "STALE_CALL"));
+        assertThat(jdbc.queryForObject("""
+                SELECT count(*) FROM notification_job WHERE kind = 'NOTIFY' AND event_type = 'WAITING_CALLED'
+                AND target_id = ? AND status = 'DONE'
+                """, Integer.class, waitingId)).isEqualTo(3);
         assertThat(jdbc.queryForObject("select count(*) from waiting_event where id>? and source_type='WAITING'", Integer.class, previousId)).isEqualTo(4);
         assertThat(jdbc.queryForObject("select count(*) from waiting_event where id>? and source_type='ALIMTALK_OUTBOX'", Integer.class, previousId)).isEqualTo(3);
     }

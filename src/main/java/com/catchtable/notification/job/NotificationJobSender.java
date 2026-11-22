@@ -4,6 +4,7 @@ import com.catchtable.notification.dto.CustomerNotificationEvent;
 import com.catchtable.notification.dto.NotificationMessage;
 import com.catchtable.notification.dto.NotificationType;
 import com.catchtable.notification.entity.NotificationJob;
+import com.catchtable.notification.entity.NotificationJobKind;
 import com.catchtable.notification.entity.NotificationJobResult;
 import com.catchtable.notification.job.NotificationJobTargetQuery.QueueRow;
 import com.catchtable.notification.repository.SseEmitterRepository;
@@ -17,7 +18,6 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
-import java.io.IOException;
 import java.time.Clock;
 import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
@@ -40,9 +40,10 @@ public class NotificationJobSender {
     private final NotificationJobTargetQuery targets;
     private final ObjectMapper objectMapper;
     private final Clock clock;
+    private final SseConnectionWriter writer;
 
     // NOTIFY: 저장해 둔 본문을 그대로 보냄
-    public NotificationJobResult sendNotify(NotificationJob job) {
+    public NotificationJobResult sendNotify(NotificationJob job, Runnable checkClaim) {
         if (!settings.allows(job.getMemberId(), job.getEventType())) {
             return NotificationJobResult.SETTING_DISABLED;
         }
@@ -50,12 +51,14 @@ public class NotificationJobSender {
             return NotificationJobResult.STALE_CALL;
         }
         JsonNode body = read(job.getPayload());
-        int sent = sendToMember(job.getMemberId(), body.get("eventId").asText(), job.getEventType().name(), body);
-        return sent > 0 ? NotificationJobResult.SENT : NotificationJobResult.NO_CONNECTION;
+        var outcome = sendToMember(job.getKind(), job.getMemberId(), body.get("eventId").asText(),
+                job.getEventType().name(), body, checkClaim);
+        requireDeliveryOutcome(outcome == SseConnectionWriter.Outcome.RETRY);
+        return outcome == SseConnectionWriter.Outcome.SENT ? NotificationJobResult.SENT : NotificationJobResult.NO_CONNECTION;
     }
 
     // REFRESH: 매장 점주에게 "목록 다시 불러와"
-    public FanoutResult sendRefresh(NotificationJob job) {
+    public FanoutResult sendRefresh(NotificationJob job, Runnable checkClaim) {
         Optional<Long> owner = targets.storeOwnerId(job.getStoreId());
         if (owner.isEmpty()) {
             return new FanoutResult(0, 0);
@@ -68,12 +71,13 @@ public class NotificationJobSender {
                 new CustomerNotificationEvent(ownerId, NotificationType.WAITING_CHANGED, job.getStoreId(),
                         WAITING_CHANGED_MESSAGE),
                 LocalDateTime.now(clock));
-        int sent = sendToMember(ownerId, message.eventId(), NotificationType.WAITING_CHANGED.name(), message);
-        return new FanoutResult(1, sent > 0 ? 1 : 0);
+        var outcome = sendToMember(job.getKind(), ownerId, message.eventId(), NotificationType.WAITING_CHANGED.name(), message, checkClaim);
+        requireDeliveryOutcome(outcome == SseConnectionWriter.Outcome.RETRY);
+        return new FanoutResult(1, outcome == SseConnectionWriter.Outcome.SENT ? 1 : 0);
     }
 
     // QUEUE: 지금 대기열을 조회해서, 연결된 손님에게 현재 순번을 보냄
-    public FanoutResult sendQueue(NotificationJob job) {
+    public FanoutResult sendQueue(NotificationJob job, Runnable checkClaim) {
         List<QueueRow> queue = targets.activeQueue(job.getStoreId(), job.getWaitingDate());
 
         // 연결 없는 손님은 설정 조회 없이 건너뛰고, 연결된 손님만 설정을 한 번에 확인
@@ -86,6 +90,7 @@ public class NotificationJobSender {
 
         LocalDateTime now = LocalDateTime.now(clock);
         int sent = 0;
+        boolean retry = false;
         for (int i = 0; i < queue.size(); i++) {
             QueueRow row = queue.get(i);
             if (!allowed.contains(row.memberId())) {
@@ -98,26 +103,31 @@ public class NotificationJobSender {
                             new WaitingPositionPayload(row.waitingId(), position, position - 1,
                                     WaitingStatus.valueOf(row.status()))),
                     now);
-            if (sendToMember(row.memberId(), message.eventId(),
-                    NotificationType.WAITING_POSITION_CHANGED.name(), message) > 0) {
-                sent++;
-            }
+            var outcome = sendToMember(job.getKind(), row.memberId(), message.eventId(),
+                    NotificationType.WAITING_POSITION_CHANGED.name(), message, checkClaim);
+            if (outcome == SseConnectionWriter.Outcome.SENT) sent++;
+            if (outcome == SseConnectionWriter.Outcome.RETRY) retry = true;
         }
+        requireDeliveryOutcome(retry);
         return new FanoutResult(queue.size(), sent);
     }
 
-    // 회원의 모든 연결에 보냄. 끊긴 연결은 지움. 보낸 연결 수를 반환
-    private int sendToMember(Long memberId, String eventId, String eventName, Object data) {
-        int sent = 0;
+    // 회원의 탭 하나라도 쓰기에 성공해야 해당 회원에게 전송한 것으로 집계한다.
+    private SseConnectionWriter.Outcome sendToMember(NotificationJobKind kind, Long memberId, String eventId,
+                                                      String eventName, Object data, Runnable checkClaim) {
+        var outcome = SseConnectionWriter.Outcome.CLOSED;
         for (SseEmitter emitter : connections.findAllByMemberId(memberId)) {
-            try {
-                emitter.send(SseEmitter.event().id(eventId).name(eventName).data(data));
-                sent++;
-            } catch (IOException | IllegalStateException e) {
-                connections.delete(memberId, emitter);
+            checkClaim.run();
+            var written = writer.send(kind, memberId, emitter, SseEmitter.event().id(eventId).name(eventName).data(data));
+            if (written == SseConnectionWriter.Outcome.SENT || outcome == SseConnectionWriter.Outcome.CLOSED) {
+                outcome = written;
             }
         }
-        return sent;
+        return outcome;
+    }
+
+    private void requireDeliveryOutcome(boolean retry) {
+        if (retry) throw new IllegalStateException("SSE 전송 결과를 확정할 수 없어 작업을 재시도합니다.");
     }
 
     // 새 호출 차수, 상태 변경(착석·취소 등), 기한 지남이면 지난 호출

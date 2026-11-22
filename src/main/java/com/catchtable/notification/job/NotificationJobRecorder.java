@@ -52,7 +52,7 @@ public class NotificationJobRecorder {
         }
         if (event.type() == NotificationType.WAITING_CHANGED) {
             // WAITING_CHANGED의 targetId는 매장 id
-            int saved = jobRepository.insertRefreshIfAbsent(event.targetId(), now);
+            int saved = jobRepository.coalesceRefresh(event.targetId(), now);
             wakeAfterCommit(saved, NotificationJobKind.REFRESH);
         }
         // WAITING_POSITION_CHANGED는 업무 코드가 직접 발행하지 않음 (QUEUE 작업이 보낼 때 만듦)
@@ -63,7 +63,7 @@ public class NotificationJobRecorder {
     @Transactional(propagation = Propagation.MANDATORY)
     public void record(WaitingQueueChangedEvent event) {
         requireWritableTransaction();
-        int saved = jobRepository.insertQueueIfAbsent(
+        int saved = jobRepository.coalesceQueue(
                 event.storeId(), event.waitingDate(), OffsetDateTime.now(clock));
         wakeAfterCommit(saved, NotificationJobKind.QUEUE);
     }
@@ -94,7 +94,7 @@ public class NotificationJobRecorder {
         }
     }
 
-    // 새로 저장했을 때만, 커밋된 뒤에 해당 전송 스레드를 깨움 (롤백되면 안 깨움)
+    // 새 작업 또는 갱신을 합친 작업이 커밋되면 해당 워커를 깨운다.
     private void wakeAfterCommit(int saved, NotificationJobKind kind) {
         if (saved == 0) {
             return;

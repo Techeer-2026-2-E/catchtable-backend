@@ -8,6 +8,7 @@ import com.catchtable.notification.entity.NotificationJobResult;
 import com.catchtable.notification.repository.SseEmitterRepository;
 import com.catchtable.notification.service.NotificationSettingService;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -15,6 +16,7 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.io.IOException;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
@@ -35,9 +37,15 @@ class NotificationJobSenderTest {
 
     private final ObjectMapper mapper = new ObjectMapper().findAndRegisterModules();
     private final SseEmitterRepository repository = new SseEmitterRepository();
+    private final SseConnectionWriter writer = new SseConnectionWriter(repository, Duration.ofSeconds(1), 4);
     // 항상 수신 허용
     private final NotificationSettingService allowAll = mock(NotificationSettingService.class, invocation -> true);
     private final NotificationJobSender sender = senderWith(allowAll);
+
+    @AfterEach
+    void closeWriter() {
+        writer.close();
+    }
 
     @Test
     @DisplayName("회원의 열린 연결마다 보내고 다른 회원에게는 보내지 않는다")
@@ -49,7 +57,7 @@ class NotificationJobSenderTest {
         repository.save(1L, tab2);
         repository.save(2L, otherMember);
 
-        assertThat(sender.sendNotify(confirmed(1L))).isEqualTo(NotificationJobResult.SENT);
+        assertThat(sender.sendNotify(confirmed(1L), () -> {})).isEqualTo(NotificationJobResult.SENT);
 
         verify(tab1).send(any(SseEmitter.SseEventBuilder.class));
         verify(tab2).send(any(SseEmitter.SseEventBuilder.class));
@@ -64,8 +72,8 @@ class NotificationJobSenderTest {
         NotificationJob job = confirmed(1L);
         String eventId = mapper.readTree(job.getPayload()).get("eventId").asText();
 
-        sender.sendNotify(job);
-        sender.sendNotify(job); // lease가 지나 다시 가져간 경우
+        sender.sendNotify(job, () -> {});
+        sender.sendNotify(job, () -> {}); // lease가 지나 다시 가져간 경우
 
         ArgumentCaptor<SseEmitter.SseEventBuilder> captor = ArgumentCaptor.forClass(SseEmitter.SseEventBuilder.class);
         verify(emitter, times(2)).send(captor.capture());
@@ -87,7 +95,7 @@ class NotificationJobSenderTest {
         repository.save(1L, broken);
         repository.save(1L, alive);
 
-        assertThat(sender.sendNotify(confirmed(1L))).isEqualTo(NotificationJobResult.SENT);
+        assertThat(sender.sendNotify(confirmed(1L), () -> {})).isEqualTo(NotificationJobResult.SENT);
 
         verify(alive).send(any(SseEmitter.SseEventBuilder.class));
         assertThat(repository.findAllByMemberId(1L)).containsExactly(alive);
@@ -100,14 +108,14 @@ class NotificationJobSenderTest {
         doThrow(new IllegalStateException("already completed")).when(completed).send(any(SseEmitter.SseEventBuilder.class));
         repository.save(1L, completed);
 
-        assertThat(sender.sendNotify(confirmed(1L))).isEqualTo(NotificationJobResult.NO_CONNECTION);
+        assertThat(sender.sendNotify(confirmed(1L), () -> {})).isEqualTo(NotificationJobResult.NO_CONNECTION);
         assertThat(repository.findAllByMemberId(1L)).isEmpty();
     }
 
     @Test
     @DisplayName("연결이 없으면 NO_CONNECTION")
     void noSubscriber() throws Exception {
-        assertThat(sender.sendNotify(confirmed(99L))).isEqualTo(NotificationJobResult.NO_CONNECTION);
+        assertThat(sender.sendNotify(confirmed(99L), () -> {})).isEqualTo(NotificationJobResult.NO_CONNECTION);
     }
 
     @Test
@@ -117,12 +125,12 @@ class NotificationJobSenderTest {
         repository.save(1L, emitter);
         NotificationJobSender denying = senderWith(mock(NotificationSettingService.class)); // allows → false
 
-        assertThat(denying.sendNotify(confirmed(1L))).isEqualTo(NotificationJobResult.SETTING_DISABLED);
+        assertThat(denying.sendNotify(confirmed(1L), () -> {})).isEqualTo(NotificationJobResult.SETTING_DISABLED);
         verify(emitter, never()).send(any(SseEmitter.SseEventBuilder.class));
     }
 
     private NotificationJobSender senderWith(NotificationSettingService settings) {
-        return new NotificationJobSender(repository, settings, mock(NotificationJobTargetQuery.class), mapper, CLOCK);
+        return new NotificationJobSender(repository, settings, mock(NotificationJobTargetQuery.class), mapper, CLOCK, writer);
     }
 
     // recorder가 저장하는 것과 같은 방식으로 job을 만든다
