@@ -8,6 +8,7 @@ import com.catchtable.waiting.dto.WaitingReceiptResponse;
 import com.catchtable.waiting.dto.WaitingSubmission;
 import com.catchtable.waiting.repository.WaitingBatchRepository;
 import com.catchtable.waiting.repository.WaitingReceiptRepository;
+import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -34,6 +35,12 @@ public class WaitingBatchWriter {
     private final Clock clock;
     // Two writer threads serve every store. A lock held elsewhere must not keep one forever.
     @Value("${waiting.intake.batch.lock-timeout:5s}") private Duration lockTimeout;
+
+    // PostgreSQL treats lock_timeout=0 as unlimited, which would restore the unbounded wait.
+    @PostConstruct
+    void requireLockBound() {
+        if (lockTimeout.toMillis() < 1) throw new IllegalArgumentException("waiting.intake.batch.lock-timeout must be at least 1 ms");
+    }
 
     public record Decision(WaitingSubmission.Receipt receipt, ErrorCode error) {
         static final Decision DIRECT = new Decision(null, null);
