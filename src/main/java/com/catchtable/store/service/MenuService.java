@@ -10,6 +10,7 @@ import com.catchtable.store.entity.Menu;
 import com.catchtable.store.entity.Store;
 import com.catchtable.store.repository.MenuRepository;
 import com.catchtable.store.repository.StoreRepository;
+import com.catchtable.store.search.StoreSearchOutbox;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -21,6 +22,7 @@ public class MenuService {
 
     private final StoreRepository storeRepository;
     private final MenuRepository menuRepository;
+    private final StoreSearchOutbox storeSearchOutbox;
 
     // TODO: 점주 본인 매장인지 확인 (로그인 기능 만든 후 작업)
 
@@ -38,6 +40,7 @@ public class MenuService {
                 .price(request.price())
                 .description(request.description())
                 .build();
+        storeSearchOutbox.record(storeId);
         return MenuResponse.from(menuRepository.save(menu));
     }
 
@@ -49,6 +52,7 @@ public class MenuService {
 
         menu.getStore().validateManaged();
         menu.changeInfo(request.name(), request.price(), request.description());
+        storeSearchOutbox.record(storeId);
         return MenuResponse.from(menu);
     }
 }

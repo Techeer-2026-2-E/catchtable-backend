@@ -7,6 +7,7 @@ import com.catchtable.store.dto.StoreInfoResponse;
 import com.catchtable.store.dto.StoreInfoUpdateRequest;
 import com.catchtable.store.entity.Store;
 import com.catchtable.store.repository.StoreRepository;
+import com.catchtable.store.search.StoreSearchOutbox;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -17,6 +18,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class StoreInfoService {
 
     private final StoreRepository storeRepository;
+    private final StoreSearchOutbox storeSearchOutbox;
 
     public StoreInfoResponse updateInfo(Long storeId, StoreInfoUpdateRequest request)
     {
@@ -29,6 +31,7 @@ public class StoreInfoService {
                 request.description(),
                 request.phone(),
                 request.imageUrl());
+        storeSearchOutbox.record(storeId);
 
         return StoreInfoResponse.from(store);
     }
