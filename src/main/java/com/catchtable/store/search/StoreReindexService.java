@@ -1,22 +1,17 @@
 package com.catchtable.store.search;
 
-import com.catchtable.store.dto.MapStoreResponse;
-import com.catchtable.store.entity.StoreCategory;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.io.ClassPathResource;
-import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
-import java.sql.Array;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 
@@ -25,24 +20,16 @@ import java.util.Map;
 public class StoreReindexService {
 
     private static final int CHUNK_SIZE = 1_000;
-    private static final String CHUNK_SQL = """
-            SELECT s.id, s.name, s.address, s.category, s.owner_id IS NOT NULL AS reservation_enabled,
-                   s.waiting_available, s.latitude, s.longitude,
-                   ARRAY(SELECT m.name FROM menu m WHERE m.store_id = s.id ORDER BY m.id) AS menus
-            FROM store s
-            WHERE s.id > ?
-            ORDER BY s.id
-            LIMIT ?
-            """;
 
     private final StoreSearchIndex index;
-    private final JdbcTemplate jdbcTemplate;
+    private final StoreSearchDocuments documents;
     private final ObjectMapper mapper;
     private final Clock clock;
 
-    public StoreReindexService(StoreSearchIndex index, JdbcTemplate jdbcTemplate, ObjectMapper mapper, Clock clock) {
+    public StoreReindexService(StoreSearchIndex index, StoreSearchDocuments documents, ObjectMapper mapper,
+                               Clock clock) {
         this.index = index;
-        this.jdbcTemplate = jdbcTemplate;
+        this.documents = documents;
         this.mapper = mapper;
         this.clock = clock;
     }
@@ -56,16 +43,7 @@ public class StoreReindexService {
         long lastId = 0;
         int total = 0;
         while (true) {
-            List<Map<String, Object>> docs = jdbcTemplate.query(CHUNK_SQL, (rs, rowNum) -> {
-                String address = rs.getString("address");
-                Array menus = rs.getArray("menus");
-                return StoreSearchIndex.document(
-                        rs.getLong("id"), rs.getString("name"), address, MapStoreResponse.areaOf(address),
-                        StoreCategory.valueOf(rs.getString("category")),
-                        Arrays.asList((String[]) menus.getArray()),
-                        rs.getBoolean("reservation_enabled"), rs.getBoolean("waiting_available"),
-                        rs.getObject("latitude", Double.class), rs.getObject("longitude", Double.class));
-            }, lastId, CHUNK_SIZE);
+            List<Map<String, Object>> docs = documents.findAfter(lastId, CHUNK_SIZE);
             if (docs.isEmpty()) {
                 break;
             }

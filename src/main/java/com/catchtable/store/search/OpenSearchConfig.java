@@ -7,6 +7,8 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.client.RestClient;
 
 import java.time.Clock;
@@ -33,9 +35,20 @@ public class OpenSearchConfig {
     }
 
     @Bean
-    public StoreReindexService storeReindexService(StoreSearchIndex index,
-                                                   JdbcTemplate jdbcTemplate,
+    public StoreSearchDocuments storeSearchDocuments(JdbcTemplate jdbcTemplate) {
+        return new StoreSearchDocuments(jdbcTemplate);
+    }
+
+    @Bean
+    public StoreReindexService storeReindexService(StoreSearchIndex index, StoreSearchDocuments documents,
                                                    ObjectMapper mapper, Clock clock) {
-        return new StoreReindexService(index, jdbcTemplate, mapper, clock);
+        return new StoreReindexService(index, documents, mapper, clock);
+    }
+
+    @Bean
+    public StoreSearchSyncService storeSearchSyncService(StoreSearchIndex index, StoreSearchDocuments documents,
+                                                         JdbcTemplate jdbcTemplate,
+                                                         PlatformTransactionManager transactionManager, Clock clock) {
+        return new StoreSearchSyncService(index, documents, jdbcTemplate, new TransactionTemplate(transactionManager), clock);
     }
 }
