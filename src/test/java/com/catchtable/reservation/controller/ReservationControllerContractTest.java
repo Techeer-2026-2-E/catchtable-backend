@@ -41,6 +41,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @WebMvcTest({ReservationController.class, OwnerReservationController.class, StoreAvailabilityController.class})
 class ReservationControllerContractTest {
 
+    @MockBean private com.catchtable.reservation.service.AvailabilityCache availabilityCache;
     @MockBean private com.catchtable.reservation.service.ReservationRefundExecutionService refundExecution;
 
     private static final OffsetDateTime START_AT = OffsetDateTime.parse("2030-01-02T10:00:00+09:00");
@@ -60,7 +61,7 @@ class ReservationControllerContractTest {
     @Test
     void availabilityRoutesReturnCountsWithoutExposingTableChoice() throws Exception {
         LocalDate date = LocalDate.parse("2030-01-02");
-        given(availabilityService.getAvailability(3L, date, 2))
+        given(availabilityCache.get(3L, date, 2))
                 .willReturn(new AvailabilityResponse(3L, date, 2,
                         List.of(new AvailabilityResponse.Slot(START_AT, 1, true))));
         given(availabilityService.getAvailableTableCount(3L, START_AT, 2))

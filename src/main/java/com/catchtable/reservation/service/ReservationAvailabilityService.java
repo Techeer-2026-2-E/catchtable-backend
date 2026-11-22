@@ -15,6 +15,7 @@ import org.springframework.web.server.ResponseStatusException;
 
 import java.time.Clock;
 import java.time.Duration;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
@@ -38,7 +39,32 @@ public class ReservationAvailabilityService {
     public AvailabilityResponse getAvailability(Long storeId, LocalDate date, int partySize) {
         validatePartySize(partySize);
         Store store = findStore(storeId);
-        OffsetDateTime nowAt = OffsetDateTime.now(clock);
+        return calculate(store,date,partySize,OffsetDateTime.now(clock));
+    }
+
+    public record CacheableDay(AvailabilityResponse response, Instant expiresAt) {}
+
+    public CacheableDay cacheableDay(Long storeId, LocalDate date, int partySize, Instant startedAt) {
+        validatePartySize(partySize);
+        Store store=findStore(storeId);
+        OffsetDateTime at=OffsetDateTime.now(clock);
+        AvailabilityResponse response=calculate(store,date,partySize,at);
+        Instant expires=startedAt.plusSeconds(2);
+        Instant midnight=at.atZoneSameInstant(STORE_ZONE).toLocalDate().plusDays(1).atStartOfDay(STORE_ZONE).toInstant();
+        if(midnight.isBefore(expires)) expires=midnight;
+        for(var slot:response.slots()) {
+            Instant cutoff=slot.reservationStartAt().minusMinutes(store.getBookingDeadlineMinutes()).toInstant();
+            if(cutoff.isBefore(expires)) expires=cutoff;
+        }
+        if(!response.slots().isEmpty()) {
+            var expiry=storeTableRepository.firstHoldExpiry(storeId,at);
+            if(expiry.isPresent() && expiry.get().isBefore(expires)) expires=expiry.get();
+        }
+        return new CacheableDay(response,expires);
+    }
+
+    private AvailabilityResponse calculate(Store store,LocalDate date,int partySize,OffsetDateTime nowAt) {
+        Long storeId=store.getId();
         LocalDateTime now = nowAt.atZoneSameInstant(STORE_ZONE).toLocalDateTime();
         // 오늘부터 bookingOpenDays일 뒤까지 포함한다. 범위 밖은 빈 목록이 아니라 잘못된 요청이다.
         if (date.isBefore(now.toLocalDate()) || date.isAfter(now.toLocalDate().plusDays(store.getBookingOpenDays()))) {

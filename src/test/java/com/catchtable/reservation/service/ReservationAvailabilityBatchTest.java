@@ -170,6 +170,40 @@ class ReservationAvailabilityBatchTest {
         }
     }
 
+    @Test
+    void cacheStopsAtDeadlineMidnightAndUnprotectedHoldExpiry() {
+        jdbc.update("UPDATE store SET booking_deadline_minutes=0 WHERE id=?",storeId);
+        weekly(DATE,"09:00","23:00"); em.clear();
+        var justBefore=NOW.minusNanos(250_000_000);
+        assertThat(service(justBefore).cacheableDay(storeId,DATE,2,justBefore.toInstant()).expiresAt()).isEqualTo(NOW.toInstant());
+        var late=NOW.withHour(23).withMinute(59).withSecond(59).withNano(800_000_000);
+        assertThat(service(late).cacheableDay(storeId,DATE.plusDays(1),2,late.toInstant()).expiresAt())
+                .isEqualTo(late.plusNanos(200_000_000).toInstant());
+        Long hold=data.hold(memberId,storeId,0);
+        var at=NOW.plusSeconds(1);
+        var expiry=at.plusNanos(600_000_000);
+        jdbc.update("UPDATE reservation SET requested_at=?,hold_expires_at=? WHERE id=?",at.minusMinutes(5),expiry,hold);
+        assertThat(service(at).cacheableDay(storeId,DATE,2,at.toInstant()).expiresAt()).isEqualTo(expiry.toInstant());
+        jdbc.update("UPDATE reservation SET approval_quarantined=true WHERE id=?",hold);
+        assertThat(service(at).cacheableDay(storeId,DATE,2,at.toInstant()).expiresAt()).isEqualTo(at.plusSeconds(2).toInstant());
+    }
+
+    @Test
+    void rescheduleInvalidatesBothIntervalsIncludingPreviousDayStarts() {
+        jdbc.update("UPDATE availability_cache_control SET tracking=true");
+        Long hold=data.hold(memberId,storeId,0);
+        jdbc.update("UPDATE reservation SET reservation_start_at=?,reservation_end_at=? WHERE id=?",
+                NOW.withHour(0).withMinute(30),NOW.withHour(2),hold);
+        jdbc.update("DELETE FROM availability_cache_invalidation WHERE store_id=?",storeId);
+        jdbc.update("UPDATE reservation SET reservation_start_at=?,reservation_end_at=? WHERE id=?",
+                NOW.plusDays(3).withHour(0).withMinute(30),NOW.plusDays(3).withHour(2),hold);
+        assertThat(jdbc.queryForList("SELECT scope FROM availability_cache_invalidation WHERE store_id=?",String.class,storeId))
+                .contains(DATE.minusDays(1).toString(),DATE.toString(),DATE.plusDays(2).toString(),DATE.plusDays(3).toString());
+        jdbc.update("UPDATE store SET reservation_slot_minutes=60 WHERE id=?",storeId);
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM availability_cache_invalidation WHERE store_id=? AND scope='*'",
+                Integer.class,storeId)).isEqualTo(1);
+    }
+
     public static class SqlCapture implements StatementInspector {
         private static final ThreadLocal<List<String>> SQL = new ThreadLocal<>();
         static void start() { SQL.set(new ArrayList<>()); }

@@ -14,6 +14,13 @@ import java.util.List;
 import java.util.Optional;
 
 public interface StoreTableRepository extends JpaRepository<StoreTable, Long>, StoreTableAvailabilityRepository {
+    @Query(value="""
+            SELECT min(hold_expires_at) FROM reservation WHERE store_id=:storeId AND status='PENDING_PAYMENT'
+                AND hold_expires_at>:now AND approval_payment_id IS NULL AND NOT approval_quarantined
+            """,nativeQuery=true)
+    Optional<java.time.Instant> firstHoldExpiry(@Param("storeId") Long storeId,@Param("now") OffsetDateTime now);
+
+
 
     List<StoreTable> findAllByStoreIdOrderByTableNumberAsc(Long storeId);
 
