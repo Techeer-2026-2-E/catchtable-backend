@@ -127,7 +127,14 @@ public class NotificationJobSender {
     }
 
     private void requireDeliveryOutcome(boolean retry) {
-        if (retry) throw new IllegalStateException("SSE 전송 결과를 확정할 수 없어 작업을 재시도합니다.");
+        if (retry) throw new DeliveryRetry();
+    }
+
+    // 쓰기 기한 초과·전송 풀 포화. 느린 연결은 이미 닫혔으므로 워커가 곧 다시 시도한다.
+    static final class DeliveryRetry extends IllegalStateException {
+        DeliveryRetry() {
+            super("SSE 전송 결과를 확정할 수 없어 작업을 재시도합니다.");
+        }
     }
 
     // 새 호출 차수, 상태 변경(착석·취소 등), 기한 지남이면 지난 호출

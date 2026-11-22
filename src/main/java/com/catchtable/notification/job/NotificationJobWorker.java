@@ -27,6 +27,7 @@ public class NotificationJobWorker {
     private static final int NOTIFY_CONCURRENCY = 2;
     static final Duration LEASE = Duration.ofSeconds(30);
     static final int MAX_ATTEMPTS = 3;
+    static final Duration DELIVERY_RETRY_DELAY = Duration.ofSeconds(2);
     static final Duration RETENTION = Duration.ofDays(7);
 
     private final NotificationJobProcessor processor;
@@ -95,6 +96,14 @@ public class NotificationJobWorker {
                     var result = sender.sendQueue(job, checkClaim);
                     processor.completeFanout(job.getId(), job.getAttemptCount(), result.recipients(), result.sentCount());
                 }
+            }
+        } catch (NotificationJobSender.DeliveryRetry e) {
+            // 같은 매장·회원의 다음 작업이 30초 lease 동안 막히지 않게 현재 시도의 lease만 줄인다.
+            log.warn("알림 전송 기한 초과, {} 뒤 다시 시도 jobId={}, kind={}", DELIVERY_RETRY_DELAY, job.getId(), job.getKind());
+            try {
+                processor.renew(job, DELIVERY_RETRY_DELAY);
+            } catch (RuntimeException ignored) {
+                // 줄이지 못하면 원래 lease 뒤 다시 시도된다.
             }
         } catch (RuntimeException e) {
             log.warn("알림 작업 처리 실패, lease 뒤 다시 시도 jobId={}, kind={}", job.getId(), job.getKind(), e);
