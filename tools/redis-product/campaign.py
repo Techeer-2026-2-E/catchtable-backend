@@ -5,6 +5,7 @@ import csv
 import gzip
 import json
 import os
+import re
 import subprocess
 import threading
 import time
@@ -42,9 +43,7 @@ def setup(case, apps, arm, network):
     db = "rb0_full" + stamp
     folder = L.OUT / f"{stamp}-{arm}-{network}-{case}-{apps}app"
     folder.mkdir()
-    day = L.sql(lab, L.ROLE, "SELECT current_date;")
-    if day != lab["fixture_date"]:
-        raise RuntimeError("Fixture Seoul date changed")
+    day = L.validate_fixture_date(lab)
     if (
         L.sql(lab, L.ROLE, "SELECT localtime BETWEEN time '00:03' AND time '23:52';")
         != "t"
@@ -70,6 +69,8 @@ def setup(case, apps, arm, network):
         "case": case,
         "arm": arm,
         "Network": network,
+        "LabHost": L.topology["app_peer"] if network == "guest" else L.HTTP_HOST,
+        "app_tuning": json.loads(os.environ.get("CT_PRODUCT_APP_TUNING", "{}")),
         "AppPrefix": lab["tag"] + "-" + db,
         "Apps": apps,
         "Users": n,
@@ -77,21 +78,22 @@ def setup(case, apps, arm, network):
         "Flow": flow,
         "LaunchSpanMS": 990 if case == "open" else window * 1000,
         "Before": 4,
-        "After": 32 if case == "open" else 16,
+        "After": 32 if case == "open" else 24,
         "Background": 12,
         "Date": tomorrow,
         "day": day,
-        "Follow": True if queue else False,
+        "Follow": queue and flow == "waiting",
         "FinalLimit": 210,
         "db": db,
         "jar": L.digest(L.JAR),
+        "fixture_source_sha256": L.digest(L.HERE / "fixture.sql"),
         "client": L.digest(
             L.OUT / ("product-client" if network == "host" else "product-client-linux")
         ),
         "cache": cache,
         "dispatch": queue,
         "async": async_http,
-        "async_http_limit_per_app": 120 // apps if async_http else 0,
+        "servlet_threads_per_app": 120 // apps,
     }
     cfg["campaign"] = os.environ.get("CT_PRODUCT_CAMPAIGN", "probe")
     L.save(folder / "config.json", cfg)
@@ -149,12 +151,22 @@ def test(case, apps, arm, network="host"):
     print("START", folder.name, flush=True)
     with L.apps(lab, db, apps, folder) as (ports, ids):
         if arm not in ("legacy", "cache"):
-            activated = L.sql(
-                lab,
-                db,
-                f"SELECT enable_waiting_intake(1,current_date,{cfg['Users']}),enable_waiting_intake(3,current_date,100);",
-            )
-            check(activated, "ENABLED|ENABLED")
+            if case == "open" and os.environ.get("CT_PRODUCT_AT_OPEN") == "true":
+                check(
+                    L.sql(
+                        lab,
+                        db,
+                        f"INSERT INTO waiting_intake_policy(store_id,effective_date,capacity) VALUES(1,current_date-1,{cfg['Users']});SELECT enable_waiting_intake(3,current_date,100);",
+                    ),
+                    "ENABLED",
+                )
+            else:
+                activated = L.sql(
+                    lab,
+                    db,
+                    f"SELECT enable_waiting_intake(1,current_date,{cfg['Users']}),enable_waiting_intake(3,current_date,100);",
+                )
+                check(activated, "ENABLED|ENABLED")
         warm(ports, cfg)
         if cfg["dispatch"]:
             until(
@@ -201,6 +213,43 @@ def test(case, apps, arm, network="host"):
                 result.append(item)
             return result
 
+        if case == "open" and os.environ.get("CT_PRODUCT_AT_OPEN") == "true":
+            epoch = int(
+                L.sql(
+                    lab,
+                    db,
+                    "SELECT (extract(epoch FROM date_trunc('minute',clock_timestamp()+interval '80 seconds'))*1000000)::bigint",
+                )
+            )
+            L.sql(
+                lab,
+                db,
+                f"""UPDATE business_hour SET open_time=(to_timestamp({epoch}/1000000) AT TIME ZONE 'Asia/Seoul')::time
+                        WHERE store_id=1 AND day_of_week=extract(isodow FROM current_date)::integer AND deleted_at IS NULL""",
+            )
+            code, _, _, _ = http(
+                ports[0],
+                "POST",
+                "/api/user/waitings",
+                17012,
+                {"storeId": 1, "partyCount": 2},
+                "closed-before-opening",
+            )
+            check(code, 409)
+            check(
+                L.sql(lab, db, "SELECT count(*) FROM waiting_receipt WHERE store_id=1"),
+                "0",
+            )
+            check(
+                L.sql(
+                    lab,
+                    db,
+                    "SELECT count(*) FROM waiting_intake_day WHERE store_id=1 AND received_date=current_date",
+                ),
+                "0",
+            )
+            cfg["OpeningEpochUS"] = epoch
+            L.save(folder / "config.json", cfg)
         L.save(folder / "before.json", stats())
         L.sql(lab, db, "SELECT pg_stat_statements_reset();")
         if network == "host":
@@ -209,11 +258,49 @@ def test(case, apps, arm, network="host"):
                 str(folder / "config.json"),
                 str(folder),
             ]
+        elif network == "guest":
+            guest = L.topology["generator"]
+            if not re.fullmatch(
+                r"ctfix-[0-9a-f]{6}-client", guest
+            ) or guest != L.CONTEXT.replace("-app", "-client"):
+                raise ValueError("Expected the paired load-generator VM")
+            for port in ports:
+                subprocess.run(
+                    [
+                        "limactl",
+                        "shell",
+                        "--workdir=/tmp",
+                        guest,
+                        "--",
+                        "curl",
+                        "--noproxy",
+                        "*",
+                        "-fsS",
+                        "--max-time",
+                        "2",
+                        f"http://{cfg['LabHost']}:{port}/actuator/health",
+                    ],
+                    check=True,
+                    stdout=subprocess.DEVNULL,
+                    timeout=5,
+                )
+            cmd = [
+                "limactl",
+                "shell",
+                "--workdir=/tmp",
+                guest,
+                "--",
+                "sh",
+                "-c",
+                'ulimit -n 65536 && export GOMAXPROCS=3 && exec timeout --kill-after=4s 312s "$@"',
+                "fixture",
+                str(L.OUT / "product-client-linux"),
+                str(folder / "config.json"),
+                str(folder),
+            ]
         else:
             cmd = [
-                "docker",
-                "--context",
-                "desktop-linux",
+                *L.DOCKER,
                 "run",
                 "--rm",
                 "--name",
@@ -244,9 +331,7 @@ def test(case, apps, arm, network="host"):
         ):
             containers = subprocess.Popen(
                 [
-                    "docker",
-                    "--context",
-                    "desktop-linux",
+                    *L.DOCKER,
                     "stats",
                     "--format",
                     "{{json .}}",
@@ -271,6 +356,25 @@ def test(case, apps, arm, network="host"):
                     try:
                         if proc.wait(timeout=320) != 0:
                             raise RuntimeError(f"Client failed: {folder}/client.log")
+                    except subprocess.TimeoutExpired:
+                        try:
+                            if network not in ("host", "guest"):
+                                name = lab["tag"] + "-generator-" + db
+                                ids_running = L.docker(
+                                    "ps",
+                                    "-q",
+                                    "--filter",
+                                    "name=^/" + name + "$",
+                                    "--filter",
+                                    "label=ct.product.generator=" + lab["tag"],
+                                )
+                                if ids_running:
+                                    L.docker("stop", "--time", "2", ids_running)
+                        finally:
+                            from harness.observations import stop_process
+
+                            stop_process(proc)
+                        raise
                     finally:
                         end.set()
                         watch.join()
@@ -296,12 +400,12 @@ def test(case, apps, arm, network="host"):
                 time.sleep(1)
             L.save(folder / "drain.json", drain)
     for name, sql in {
-        "ledger": """SELECT r.member_id,r.receipt_id,r.intake_sequence,r.status,r.waiting_id,r.received_date,r.xmin::text AS last_xid,
+        "ledger": """SELECT r.member_id,r.receipt_id,r.intake_sequence,r.status,r.waiting_id,r.received_date,r.accepted_at,r.xmin::text AS last_xid,
                 w.wait_number,w.member_id actual_member,w.waiting_date,w.status actual_status,k.request_key
                 FROM waiting_receipt r LEFT JOIN waiting w ON w.id=r.waiting_id
                 LEFT JOIN waiting_receipt_key k ON (k.member_id,k.receipt_id)=(r.member_id,r.receipt_id)
                 WHERE r.store_id=1 ORDER BY r.intake_sequence""",
-        "waitings": "SELECT id,member_id,store_id,wait_number,status FROM waiting WHERE waiting_date=current_date AND store_id IN (1,2) ORDER BY store_id,wait_number",
+        "waitings": f"SELECT id,member_id,store_id,wait_number,status FROM waiting WHERE waiting_date=DATE '{cfg['day']}' AND store_id IN (1,2) ORDER BY store_id,wait_number",
         "holds": "SELECT id,member_id,store_id,table_id,status FROM reservation WHERE store_id=1 AND hold_expires_at IS NOT NULL ORDER BY id",
         "permits": "SELECT id FROM waiting_registration_permit ORDER BY id",
     }.items():
@@ -470,7 +574,9 @@ def analyze(folder):
                     or int(row["wait_number"]) != rep.get("waitNumber")
                 ):
                     bad.append([member, "number"])
-                final[member] = (s["EndUS"] - s["JourneyStartUS"]) / 1000
+                delay = (s["EndUS"] - s["JourneyStartUS"]) / 1000
+                if not c["Follow"] or delay <= c["FinalLimit"] * 1000:
+                    final[member] = delay
     journeys = defaultdict(list)
     for member, outcome, end_us in hold_ends:
         read = initial.get(member)
@@ -568,7 +674,7 @@ def analyze(folder):
         )
     else:
         integrity &= not holds
-    if c["Flow"] == "waiting" and c["arm"] == "legacy":
+    if c["Flow"] == "waiting" and c["arm"] in ("legacy", "cache"):
         accepted &= hotwait.keys() == eq
     goals = (
         fp.get("p95", float("inf")) <= 1000
@@ -665,7 +771,9 @@ if __name__ == "__main__":
         default="both",
     )
     p.add_argument(
-        "--network", choices=("host", "bridge", "published-from-linux"), default="host"
+        "--network",
+        choices=("host", "bridge", "published-from-linux", "guest"),
+        default="host",
     )
     a = p.parse_args()
     with L.lock():

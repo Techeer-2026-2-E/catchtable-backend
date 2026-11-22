@@ -30,7 +30,7 @@ def plan():
             yield case, apps, "both", "host"
 
 
-def core_plan():
+def core_plan(network="host"):
     for _ in range(3):
         for case, apps in (
             ("open", 3),
@@ -39,7 +39,7 @@ def core_plan():
             ("w10k", 3),
             ("open", 1),
         ):
-            yield case, apps, "both", "host"
+            yield case, apps, "both", network
 
 
 def complete(tag="product-v1"):
@@ -50,8 +50,8 @@ def complete(tag="product-v1"):
     ]
 
 
-def choose():
-    subset = [json.loads(f.read_text()) for f in complete()]
+def choose(tag):
+    subset = [json.loads(f.read_text()) for f in complete(tag)]
     stats = {}
     for arm in ("admit-sync", "admit-async"):
         rs = [
@@ -79,6 +79,21 @@ def choose():
     return pick
 
 
+def incident(folder, result):
+    containers = list(folder.glob("container-*.json"))
+    if len(containers) != result["apps"]:
+        return True
+    return (
+        not result["integrity"]
+        or bool(result.get("apps_with_heap_errors"))
+        or any(json.loads(p.read_text())["oom"] for p in containers)
+        or any(
+            "OutOfMemoryError" in p.read_text(errors="replace")
+            for p in folder.glob("app-*.log")
+        )
+    )
+
+
 def suite(recipe, tag, core):
     prefix = complete(tag)
     artifact = L.digest(L.JAR)
@@ -87,8 +102,21 @@ def suite(recipe, tag, core):
     for i, (case, apps, arm, network) in enumerate(recipe):
         if i < len(prefix):
             c = json.loads((prefix[i].parent / "config.json").read_text())
+            if incident(prefix[i].parent, json.loads(prefix[i].read_text())):
+                raise RuntimeError(
+                    "Preserved trial contains an incident: " + prefix[i].parent.name
+                )
             if c["jar"] != artifact:
                 raise ValueError("Cannot resume using a different product JAR")
+            client = L.OUT / (
+                "product-client" if network == "host" else "product-client-linux"
+            )
+            if c["client"] != L.digest(client) or c.get("app_tuning", {}) != json.loads(
+                os.environ.get("CT_PRODUCT_APP_TUNING", "{}")
+            ):
+                raise ValueError(
+                    "Cannot resume with a different generator or resource configuration"
+                )
             if (c["case"], c["Apps"], c["arm"], c["Network"]) != (
                 case,
                 apps,
@@ -99,17 +127,10 @@ def suite(recipe, tag, core):
             continue
         os.environ["CT_PRODUCT_CAMPAIGN"] = tag
         if not core and arm in ("waiting", "both"):
-            os.environ["CT_PRODUCT_ASYNC_CHOSEN"] = "true" if choose() else "false"
+            os.environ["CT_PRODUCT_ASYNC_CHOSEN"] = "true" if choose(tag) else "false"
         folder = test(case, apps, arm, network)
         r = json.loads((folder / "result.json").read_text())
-        if (
-            not r["integrity"]
-            or r.get("apps_with_heap_errors")
-            or any(
-                json.loads(p.read_text())["oom"]
-                for p in folder.glob("container-*.json")
-            )
-        ):
+        if incident(folder, r):
             raise RuntimeError("Integrity or OOM incident in " + folder.name)
         L.save(
             L.OUT.parent / "progress.json",
@@ -123,6 +144,11 @@ def suite(recipe, tag, core):
 
 
 def report(recipe, tag, core):
+    d = L.OUT.parent / ("core-summary" if core else "product-summary")
+    d.mkdir(exist_ok=True)
+    L.save(
+        d / "gate.json", {"eligible": False, "scope": "report in progress", "jars": []}
+    )
     rows = []
     details = []
     timing = []
@@ -171,6 +197,10 @@ def report(recipe, tag, core):
                         "verdict",
                     )
                 },
+                "incident": incident(f.parent, r),
+                "client_sha256": c["client"],
+                "fixture_sha256": c.get("fixture_source_sha256", "legacy-unrecorded"),
+                "app_tuning": json.dumps(c.get("app_tuning", {}), sort_keys=True),
                 "async": c["async"],
                 "first_n": r["first_ms"]["n"],
                 "first_p50_ms": r["first_ms"].get("p50"),
@@ -230,7 +260,13 @@ def report(recipe, tag, core):
     ok = (
         inputs == Counter(recipe)
         and len(artifacts) == 1
-        and all(r["integrity"] for r in rows)
+        and len({r["fixture_sha256"] for r in rows}) == 1
+        and len({r["app_tuning"] for r in rows}) == 1
+        and all(
+            len({r["client_sha256"] for r in rows if r["network"] == n}) == 1
+            for n in {r["network"] for r in rows}
+        )
+        and all(r["integrity"] and not r["incident"] for r in rows)
         and all(x["trials"] == 3 and x["passing"] == 3 for x in conditions)
     )
     ok = ok and all(
@@ -260,9 +296,10 @@ if __name__ == "__main__":
         help="only the 15 agreed waiting load conditions with repeats",
     )
     p.add_argument("--tag", help="evidence group for this build and fixture")
+    p.add_argument("--network", choices=("host", "guest"), default="host")
     a = p.parse_args()
     tag = a.tag or ("product-core" if a.core else "product-v1")
-    recipe = list(core_plan() if a.core else plan())
+    recipe = list(core_plan(a.network) if a.core else plan())
     if a.mode == "run":
         with L.lock():
             suite(recipe, tag, a.core)

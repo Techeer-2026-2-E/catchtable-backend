@@ -13,6 +13,7 @@ import socket
 import subprocess
 import sys
 import time
+import tempfile
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -27,8 +28,29 @@ DB_PORT = 55486
 APP_PORT = 18681
 OWNER = "io.catchtable.redis-product"
 ROLE = "rb0"
-TEMPLATE = "rb0_fixture"
+TEMPLATE = os.environ.get("CT_PRODUCT_TEMPLATE", "rb0_fixture")
+if not re.fullmatch(r"rb0_fixture(?:_[0-9]{8})?", TEMPLATE):
+    raise ValueError("Invalid fixture name")
 JAR = Path(os.environ.get("CT_PRODUCT_MEASURED_JAR", OUT / "measured.jar")).resolve()
+
+
+# A VM topology is an explicit local test artifact. Only the private Lima host subnet
+# and a lab-specific Docker socket context can replace the Docker Desktop loopback.
+CONTEXT = "desktop-linux"
+HTTP_HOST = "127.0.0.1"
+if os.environ.get("CT_PRODUCT_TOPOLOGY"):
+    topology = json.loads(Path(os.environ["CT_PRODUCT_TOPOLOGY"]).read_text())
+    CONTEXT = topology["context"]
+    HTTP_HOST = topology["app_vz"]
+    if not re.fullmatch(r"ctfix-[0-9a-f]{6}-app", CONTEXT) or ipaddress.ip_address(
+        HTTP_HOST
+    ) not in ipaddress.ip_network("192.168.64.0/24"):
+        raise ValueError("Expected an owned local Lima application VM")
+    if ipaddress.ip_address(topology["app_peer"]) not in ipaddress.ip_network(
+        "192.168.104.0/24"
+    ):
+        raise ValueError("Expected the isolated VM peer network")
+DOCKER = ["docker", "--context", CONTEXT]
 
 
 def check(args, *, data=None, env=None):
@@ -38,13 +60,21 @@ def check(args, *, data=None, env=None):
 
 
 def docker(*args, data=None, env=None):
-    return check(
-        ["docker", "--context", "desktop-linux", *map(str, args)], data=data, env=env
-    )
+    return check([*DOCKER, *map(str, args)], data=data, env=env)
 
 
 def save(path, obj):
-    path.write_text(json.dumps(obj, ensure_ascii=False, indent=2) + "\n")
+    with tempfile.NamedTemporaryFile(
+        "w", dir=path.parent, prefix="." + path.name + "-", delete=False
+    ) as f:
+        tmp = Path(f.name)
+        try:
+            json.dump(obj, f, ensure_ascii=False, indent=2)
+            f.write("\n")
+            f.flush()
+            os.replace(tmp, path)
+        finally:
+            tmp.unlink(missing_ok=True)
 
 
 def digest(path):
@@ -59,6 +89,12 @@ def lock():
 
 
 def unused_port(port):
+    if HTTP_HOST != "127.0.0.1":
+        with socket.socket() as s:
+            s.settimeout(0.4)
+            if s.connect_ex((HTTP_HOST, port)) == 0:
+                raise RuntimeError(f"Fixture port already in use: {port}")
+        return
     with socket.socket() as s:
         s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         s.bind(("127.0.0.1", port))
@@ -105,7 +141,7 @@ def sql(lab, dbname, statement):
 
 def api(port, path, method="GET", body=None, member=4, timeout=3):
     req = urllib.request.Request(
-        f"http://127.0.0.1:{port}{path}",
+        f"http://{HTTP_HOST}:{port}{path}",
         method=method,
         headers={"Content-Type": "application/json", "X-Member-Id": str(member)},
         data=None if body is None else json.dumps(body).encode(),
@@ -124,6 +160,11 @@ def start_app(lab, dbname, count, index):
     port = APP_PORT + index
     unused_port(port)
     env = dict(os.environ, DB_PASSWORD=(OUT / ".db-password").read_text())
+    tuning = json.loads(os.environ.get("CT_PRODUCT_APP_TUNING", "{}"))
+    connections = int(tuning.get("connections", 6000))
+    backlog = int(tuning.get("backlog", 600))
+    if not 600 <= connections <= 18000 or not 60 <= backlog <= 4096:
+        raise ValueError("Invalid fixture socket limits")
     opts = {
         "DB_HOST": lab["db"],
         "DB_PORT": "5432",
@@ -135,8 +176,8 @@ def start_app(lab, dbname, count, index):
         "SPRING_DATASOURCE_HIKARI_CONNECTIONTIMEOUT": "5000",
         "SERVER_TOMCAT_THREADS_MAX": str(120 // count),
         "SERVER_TOMCAT_THREADS_MINSPARE": str(12 // count),
-        "SERVER_TOMCAT_MAXCONNECTIONS": str(6000 // count),
-        "SERVER_TOMCAT_ACCEPTCOUNT": str(600 // count),
+        "SERVER_TOMCAT_MAXCONNECTIONS": str(connections // count),
+        "SERVER_TOMCAT_ACCEPTCOUNT": str(backlog // count),
         "MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE": "health,metrics",
         "SERVER_TOMCAT_ACCESSLOG_ENABLED": "true",
         "SERVER_TOMCAT_ACCESSLOG_DIRECTORY": "/tmp/rb0-access",
@@ -170,6 +211,22 @@ def start_app(lab, dbname, count, index):
         opts["SERVER_TOMCAT_ACCESSLOG_PATTERN"] += (
             " %{ctQueued}r %{ctStarted}r %{ctExecUs}r"
         )
+    native_limits = []
+    if tuning.get("bounded_native"):
+        opts["MALLOC_ARENA_MAX"] = "2"
+        native_limits = [
+            "-XX:TieredStopAtLevel=4"
+            if tuning.get("optimize_jit")
+            else "-XX:TieredStopAtLevel=1",
+            "-XX:CICompilerCount=2",
+            "-Xss512k",
+            f"-XX:ReservedCodeCacheSize={192 // count}m",
+            f"-XX:MaxDirectMemorySize={96 // count}m",
+        ]
+    if tuning.get("jfr"):
+        native_limits.append(
+            "-XX:StartFlightRecording=name=intake,settings=profile,filename=/tmp/ct-intake.jfr,dumponexit=true,maxsize=48m"
+        )
     env.update(opts)
     options = [item for k in opts for item in ("-e", k)]
     cid = docker(
@@ -181,12 +238,22 @@ def start_app(lab, dbname, count, index):
         f"{OWNER}={lab['tag']}",
         "--network",
         lab["net"],
+        *(
+            ["--cpuset-cpus", str(index) if count == 3 else "0-2"]
+            if tuning.get("pin_cpu")
+            else []
+        ),
         "--cpus",
         3 // count,
         "--memory",
         f"{1920 // count}m",
         "-p",
-        f"127.0.0.1:{port}:8080",
+        f"{HTTP_HOST}:{port}:8080",
+        *(
+            ["-p", f"{topology['app_peer']}:{port}:8080"]
+            if HTTP_HOST != "127.0.0.1"
+            else []
+        ),
         "--user",
         "1001:1001",
         "-v",
@@ -197,7 +264,8 @@ def start_app(lab, dbname, count, index):
         lab["jre_image"],
         "java",
         f"-XX:ActiveProcessorCount={3 // count}",
-        "-XX:+UseG1GC",
+        "-XX:+UseSerialGC" if tuning.get("serial_gc") else "-XX:+UseG1GC",
+        *native_limits,
         f"-Xms{768 // count}m",
         f"-Xmx{768 // count}m",
         "-jar",
@@ -221,7 +289,7 @@ def apps(lab, dbname, count, folder):
                     docker(
                         "inspect",
                         "--format",
-                        '{"cpu":{{.HostConfig.NanoCpus}},"memory":{{.HostConfig.Memory}},"args":{{json .Args}}}',
+                        '{"cpu":{{.HostConfig.NanoCpus}},"cpuset":"{{.HostConfig.CpusetCpus}}","memory":{{.HostConfig.Memory}},"args":{{json .Args}}}',
                         cid,
                     )
                 )
@@ -247,49 +315,130 @@ def apps(lab, dbname, count, folder):
                 raise RuntimeError(f"JVM readiness timed out on {p}")
         yield ports, ids
     finally:
-        # Operate only on IDs returned by this invocation. Flush access logs before copying.
-        if ids:
-            docker("stop", "--time", "35", *ids)
+        original_failure = sys.exc_info()[1]
+        problems = []
         for i, cid in enumerate(ids):
-            (folder / f"container-{i}.json").write_text(
+            try:
+                if (
+                    docker(
+                        "inspect",
+                        "--format",
+                        '{{index .Config.Labels "' + OWNER + '"}}',
+                        cid,
+                    )
+                    != lab["tag"]
+                ):
+                    raise RuntimeError("JVM identity changed")
+                try:
+                    docker("stop", "--time", "35", cid)
+                    collect_app(lab, folder, i, cid)
+                finally:
+                    docker("rm", "-f", cid)
+            except (OSError, subprocess.SubprocessError, RuntimeError) as error:
+                problems.append(type(error).__name__ + " while collecting " + str(i))
+        if problems:
+            save(folder / "cleanup-issues.json", problems)
+            if original_failure is None:
+                raise RuntimeError("; ".join(problems))
+
+
+def collect_app(lab, folder, i, cid):
+    (folder / f"container-{i}.json").write_text(
+        docker(
+            "inspect",
+            "--format",
+            '{"exit":{{.State.ExitCode}},"oom":{{.State.OOMKilled}},"id":"{{.Id}}"}',
+            cid,
+        )
+        + "\n"
+    )
+    with (folder / f"app-{i}.log").open("w") as output:
+        subprocess.run(
+            [*DOCKER, "logs", cid],
+            stdout=output,
+            stderr=subprocess.STDOUT,
+            check=True,
+        )
+    if json.loads(os.environ.get("CT_PRODUCT_APP_TUNING", "{}")).get("jfr"):
+        subprocess.run(
+            [*DOCKER, "cp", f"{cid}:/tmp/ct-intake.jfr", str(folder / f"app-{i}.jfr")],
+            capture_output=True,
+            check=False,
+        )
+    target = folder / f"access-{i}"
+    result = subprocess.run(
+        [
+            *DOCKER,
+            "cp",
+            f"{cid}:/tmp/rb0-access/.",
+            str(target),
+        ],
+        capture_output=True,
+        check=False,
+    )
+    if result.returncode:
+        (folder / f"access-{i}.error").write_bytes(result.stderr)
+
+
+def archive_partial_init():
+    journal = OUT / "initializing.json"
+    statefile = OUT / "lab.json"
+    if statefile.exists() and state().get("fixture_date"):
+        # The ready state was published before a possible interruption of marker removal.
+        journal.unlink(missing_ok=True)
+        return
+    if not (journal.exists() or statefile.exists() or (OUT / ".db-password").exists()):
+        return
+    obj = (
+        json.loads(journal.read_text())
+        if journal.exists()
+        else state()
+        if statefile.exists()
+        else {}
+    )
+    tag = obj.get("tag")
+    retained = []
+    if tag is not None:
+        if not re.fullmatch(r"ct-product-[a-f0-9]{8}", tag):
+            raise RuntimeError("Unexpected partial lab owner")
+        for cid in docker("ps", "-aq", "--filter", f"label={OWNER}={tag}").splitlines():
+            if (
                 docker(
                     "inspect",
                     "--format",
-                    '{"exit":{{.State.ExitCode}},"oom":{{.State.OOMKilled}},"id":"{{.Id}}"}',
+                    '{{index .Config.Labels "' + OWNER + '"}}',
                     cid,
                 )
-                + "\n"
-            )
-            with (folder / f"app-{i}.log").open("w") as output:
-                subprocess.run(
-                    ["docker", "--context", "desktop-linux", "logs", cid],
-                    stdout=output,
-                    stderr=subprocess.STDOUT,
-                    check=True,
-                )
-            target = folder / f"access-{i}"
-            result = subprocess.run(
-                [
-                    "docker",
-                    "--context",
-                    "desktop-linux",
-                    "cp",
-                    f"{cid}:/tmp/rb0-access/.",
-                    str(target),
-                ],
-                capture_output=True,
-                check=False,
-            )
-            if result.returncode:
-                (folder / f"access-{i}.error").write_bytes(result.stderr)
-            docker("rm", cid)
+                != tag
+            ):
+                raise RuntimeError("Partial lab identity changed")
+            docker("stop", "--time", "2", cid)
+            retained.append(cid)
+    archive = OUT / ("failed-init-" + str(time.time_ns()))
+    archive.mkdir(mode=0o700)
+    for item in (journal, statefile, OUT / ".db-password", OUT / "init"):
+        if item.exists():
+            item.rename(archive / item.name)
+    save(archive / "preserved.json", {"tag": tag, "stopped_owned_containers": retained})
 
 
 def init():
+    archive_partial_init()
+    if (OUT / "lab.json").exists():
+        raise RuntimeError("Lab already exists. Use its recorded identity.")
+    try:
+        initialize_new()
+    except BaseException:
+        archive_partial_init()
+        raise
+    (OUT / "initializing.json").unlink(missing_ok=True)
+
+
+def initialize_new():
     if (OUT / "lab.json").exists() or (OUT / ".db-password").exists():
         raise RuntimeError("Lab already exists. Use its recorded identity.")
     endpoint = docker(
-        "context", "inspect", "desktop-linux", "--format", "{{.Endpoints.docker.Host}}"
+        "context", "inspect", CONTEXT, "--format", "{{.Endpoints.docker.Host}}"
     )
     if not endpoint.startswith("unix://"):
         raise ValueError("Expected a local Docker Desktop socket")
@@ -303,7 +452,8 @@ def init():
         "tag": tag,
         "db": tag + "-pg",
         "net": tag + "-net",
-        "head": check(["git", "rev-parse", "HEAD"]),
+        "head": os.environ.get("CT_PRODUCT_SOURCE_REVISION")
+        or check(["git", "rev-parse", "HEAD"]),
         "jar_sha256": digest(JAR),
         "fixture_sha256": digest(HERE / "fixture.sql"),
         "pg_image": docker("image", "inspect", "postgres:16", "--format", "{{.Id}}"),
@@ -311,13 +461,21 @@ def init():
             "image", "inspect", "eclipse-temurin:21-jre", "--format", "{{.Id}}"
         ),
     }
-    generator = str(HERE.parent / "client.go")
-    check(["go", "build", "-o", str(OUT / "product-client"), generator])
-    arch = docker("image", "inspect", lab["jre_image"], "--format", "{{.Architecture}}")
-    check(
-        ["go", "build", "-o", str(OUT / "product-client-linux"), generator],
-        env=dict(os.environ, CGO_ENABLED="0", GOOS="linux", GOARCH=arch),
-    )
+    if os.environ.get("CT_PRODUCT_CLIENT_DIR"):
+        binaries = Path(os.environ["CT_PRODUCT_CLIENT_DIR"])
+        for name in ("product-client", "product-client-linux"):
+            shutil.copy2(binaries / name, OUT / name)
+    else:
+        generator = str(HERE.parent / "client.go")
+        check(["go", "build", "-o", str(OUT / "product-client"), generator])
+        arch = docker(
+            "image", "inspect", lab["jre_image"], "--format", "{{.Architecture}}"
+        )
+        check(
+            ["go", "build", "-o", str(OUT / "product-client-linux"), generator],
+            env=dict(os.environ, CGO_ENABLED="0", GOOS="linux", GOARCH=arch),
+        )
+    save(OUT / "initializing.json", {"tag": tag, "network": lab["net"]})
     network_ids = docker("network", "ls", "-q").splitlines()
     configs = docker(
         "network", "inspect", "--format", "{{json .IPAM.Config}}", *network_ids
@@ -428,7 +586,9 @@ def init():
             "SELECT current_setting('fsync'),current_setting('synchronous_commit'),current_setting('full_page_writes');",
         ),
         jre=docker("run", "--rm", lab["jre_image"], "java", "--version"),
-        go=check(["go", "version"]),
+        go="prebuilt (pinned by client SHA)"
+        if os.environ.get("CT_PRODUCT_CLIENT_DIR")
+        else check(["go", "version"]),
         host_cpus=check(["sysctl", "-n", "hw.logicalcpu"]),
         host_bytes=check(["sysctl", "-n", "hw.memsize"]),
     )
@@ -436,13 +596,55 @@ def init():
     print(lab["db"], lab["postgres"], flush=True)
 
 
+def validate_fixture_date(lab):
+    today = sql(lab, ROLE, "SELECT current_date")
+    actual = sql(
+        lab,
+        TEMPLATE,
+        "SELECT (min(reservation_start_at) AT TIME ZONE 'Asia/Seoul')::date-1 FROM reservation WHERE store_id IN (1,2,3) AND status='CONFIRMED'",
+    )
+    if actual != today:
+        raise RuntimeError("Fixture is for another Seoul date; create a dated fixture")
+    return today
+
+
+def prepare_date():
+    lab = state()
+    day = sql(lab, ROLE, "SELECT to_char(current_date,'YYYYMMDD')")
+    name = "rb0_fixture_" + day
+    matches = (
+        sql(lab, ROLE, f"SELECT count(*) FROM pg_database WHERE datname='{name}'")
+        == "1"
+    )
+    if matches:
+        anchored = sql(
+            lab,
+            name,
+            "SELECT to_char((min(reservation_start_at) AT TIME ZONE 'Asia/Seoul')::date-1,'YYYYMMDD') FROM reservation WHERE status='CONFIRMED'",
+        )
+        if anchored != day:
+            raise RuntimeError("Existing dated fixture is incomplete")
+        print(name, flush=True)
+        return
+    sql(lab, ROLE, f"CREATE DATABASE {name} TEMPLATE template0")
+    logs = OUT / ("init-" + day)
+    logs.mkdir()
+    with apps(lab, name, 1, logs):
+        pass
+    sql(lab, name, "CREATE EXTENSION pg_stat_statements")
+    sql(lab, name, (HERE / "fixture.sql").read_text())
+    print(name, flush=True)
+
+
 if __name__ == "__main__":
     with lock():
         if sys.argv[1:] == ["init"]:
             init()
+        elif sys.argv[1:] == ["prepare-date"]:
+            prepare_date()
         elif sys.argv[1:] in (["stop"], ["start"]):
             lab = state()
             inspect_db(lab)
             print(docker(sys.argv[1], lab["id"]))
         else:
-            raise SystemExit("lab.py init | stop | start")
+            raise SystemExit("lab.py init | stop | start | prepare-date")

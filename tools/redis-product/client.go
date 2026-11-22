@@ -5,11 +5,13 @@ import (
 	"bufio"
 	"bytes"
 	"compress/gzip"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptrace"
+	"net/netip"
 	"os"
 	"regexp"
 	"strconv"
@@ -20,10 +22,12 @@ import (
 
 type Config struct {
 	Network                                        string
+	LabHost                                        string
 	AppPrefix                                      string
 	Follow                                         bool
 	FinalLimit                                     int
 	LaunchSpanMS                                   int
+	OpeningEpochUS                                 int64
 	Flow                                           string
 	Apps, Users, Window, Before, After, Background int
 	Date                                           string
@@ -95,7 +99,7 @@ func (r *Runner) request(seed Sample, op, pathOverride string, attempt int) Samp
 	if pathOverride != "" {
 		path = pathOverride
 	}
-	host := fmt.Sprintf("127.0.0.1:%d", 18681+s.App)
+	host := fmt.Sprintf("%s:%d", r.LabHost, 18681+s.App)
 	switch r.Network {
 	case "published-from-linux":
 		host = fmt.Sprintf("host.docker.internal:%d", 18681+s.App)
@@ -124,7 +128,14 @@ func (r *Runner) request(seed Sample, op, pathOverride string, attempt int) Samp
 		}
 	}}
 	s.StartUS = r.now()
-	res, err := r.http.Do(req.WithContext(httptrace.WithClientTrace(req.Context(), trace)))
+	ctx := req.Context()
+	if op == "poll" || op == "retry" {
+		var cancel context.CancelFunc
+		deadline := r.origin.Add(time.Duration(s.JourneyStartUS)*time.Microsecond + time.Duration(r.FinalLimit)*time.Second)
+		ctx, cancel = context.WithDeadline(ctx, deadline)
+		defer cancel()
+	}
+	res, err := r.http.Do(req.WithContext(httptrace.WithClientTrace(ctx, trace)))
 	if err == nil {
 		s.Status = res.StatusCode
 		s.Location = res.Header.Get("Location")
@@ -177,10 +188,11 @@ func (r *Runner) request(seed Sample, op, pathOverride string, attempt int) Samp
 func (r *Runner) schedule(cohort string, users int, start, span time.Duration, tasks *sync.WaitGroup) {
 	for i := 0; i < users; i++ {
 		due := start + time.Duration(int64(span)*int64(i)/int64(users))
-		time.Sleep(time.Until(r.origin.Add(due)))
+
 		tasks.Add(1)
 		go func(i int, due time.Duration) {
 			defer tasks.Done()
+			time.Sleep(time.Until(r.origin.Add(due)))
 			s := Sample{Cohort: cohort, App: i % r.Apps, Store: 1, Member: 1000 + i, DueUS: due.Microseconds(), JourneyStartUS: r.now()}
 			flow := r.Flow
 			if cohort == "other" {
@@ -209,6 +221,9 @@ func (r *Runner) follow(seed, reply Sample) {
 	limit := seed.JourneyStartUS + int64(r.FinalLimit)*1000000
 	for n := 1; (reply.Status == 0 || reply.Status >= 500) && n <= 3 && r.now() < limit; n++ {
 		time.Sleep(time.Duration(250+seed.Member%500) * time.Millisecond)
+		if r.now() >= limit {
+			return
+		}
 		seed.App = (seed.App + 1) % r.Apps
 		reply = r.request(seed, "retry", "", n)
 	}
@@ -258,10 +273,23 @@ func main() {
 		(c.Flow != "availability" && c.Flow != "journey" && c.Flow != "waiting") {
 		panic("invalid lab config")
 	}
+	if c.LabHost == "" {
+		c.LabHost = "127.0.0.1"
+	}
+	if c.LabHost != "127.0.0.1" {
+		ip, err := netip.ParseAddr(c.LabHost)
+		valid := netip.MustParsePrefix("192.168.64.0/24").Contains(ip)
+		if c.Network == "guest" {
+			valid = netip.MustParsePrefix("192.168.104.0/24").Contains(ip)
+		}
+		if err != nil || !valid {
+			panic("expected a local fixture host")
+		}
+	}
 	if c.Before < 1 || c.After < 1 || c.Background < 1 || c.Background*(c.Before+c.Window+c.After) > 5000 {
 		panic("invalid other store fixture range")
 	}
-	if c.Network != "" && c.Network != "host" && c.Network != "published-from-linux" && c.Network != "bridge" {
+	if c.Network != "" && c.Network != "host" && c.Network != "published-from-linux" && c.Network != "bridge" && c.Network != "guest" {
 		panic("invalid lab network")
 	}
 	if c.Network == "bridge" && !regexp.MustCompile("^ct-product-[0-9a-f]{8}-rb0_full[0-9]+$").MatchString(c.AppPrefix) {
@@ -273,6 +301,20 @@ func main() {
 	if c.FinalLimit < 1 || c.FinalLimit > 300 {
 		panic("invalid observation limit")
 	}
+	tail := 12
+	if c.Flow == "journey" {
+		tail = 24
+	}
+	if c.Flow == "waiting" && c.Follow {
+		tail = c.FinalLimit
+	}
+	longest := c.After
+	if tail+8 > longest {
+		longest = tail + 8
+	}
+	if (c.Before+c.Window+longest+1)*c.Background > 5000 {
+		panic("background identity range is too small for final observation deadline")
+	}
 	if c.LaunchSpanMS == 0 {
 		c.LaunchSpanMS = 1000 * c.Window
 	}
@@ -280,7 +322,16 @@ func main() {
 		panic("invalid launch interval")
 	}
 	transport := &http.Transport{MaxIdleConns: 3000, MaxIdleConnsPerHost: 1000, IdleConnTimeout: 30 * time.Second, DisableCompression: true}
-	r := Runner{c, time.Now().Add(time.Second), &http.Client{Transport: transport, Timeout: 12 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}, make(chan Sample, 24000)}
+	origin := time.Now().Add(time.Second)
+	if c.OpeningEpochUS != 0 {
+		begin := time.UnixMicro(c.OpeningEpochUS).Add(-time.Duration(c.Before) * time.Second)
+		wait := time.Until(begin)
+		if wait < 0 || wait > 2*time.Minute {
+			panic("invalid scheduled fixture opening")
+		}
+		origin = time.Now().Add(wait)
+	}
+	r := Runner{c, origin, &http.Client{Transport: transport, Timeout: 12 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}, make(chan Sample, 24000)}
 	f, err := os.OpenFile(os.Args[2]+"/client.jsonl.gz", os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0644)
 	if err != nil {
 		panic(err)

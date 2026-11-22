@@ -149,6 +149,14 @@ def run_client(lab, db, ports, ids, folder):
                 try:
                     if proc.wait(timeout=150):
                         raise RuntimeError("Client did not complete")
+                except subprocess.TimeoutExpired:
+                    proc.terminate()
+                    try:
+                        proc.wait(timeout=4)
+                    except subprocess.TimeoutExpired:
+                        proc.kill()
+                        proc.wait(timeout=4)
+                    raise
                 finally:
                     stop.set()
                     sampler.join()
@@ -429,6 +437,7 @@ def replay_committed_timeouts(variant=None):
     lab = L.state()
     L.JAR = L.OUT / "measured.jar"
     for original in sorted(L.OUT.glob("*-open-3app")):
+        if not (original/"result.json").is_file(): continue
         cfg = json.loads((original / "config.json").read_text())
         if variant and cfg.get("variant") != variant:
             continue
@@ -463,6 +472,7 @@ def replay_committed_timeouts(variant=None):
                 except (OSError, ValueError, client.HTTPException) as error:
                     status, reply, location, hint = 0, {"error": type(error).__name__}, None, None
                 elapsed = (time.monotonic() - at) * 1000
+                if not isinstance(reply,dict):reply={"error":"empty_or_invalid_response"}
                 expected = receipts[m]
                 match = (
                     status == 200
@@ -616,6 +626,7 @@ def export_results(destination):
     destination.mkdir(parents=True, exist_ok=True)
     for name, rows in (("runs", runs), ("http", latencies)):
         with (destination / (name + ".csv")).open("w", newline="") as f:
+            if not rows: continue
             w = csv.DictWriter(f, fieldnames=rows[0], lineterminator="\n")
             w.writeheader()
             w.writerows(rows)

@@ -21,7 +21,23 @@ def enable(lab, db, store, day, capacity, gate):
         or capacity < 1
     ):
         raise ValueError("Invalid scope")
-    if gate.get("eligible") is not True:
+    expected = {("w1k", 3), ("w5k", 3), ("w10k", 3), ("open", 3), ("open", 1)}
+    cases = gate.get("cases", [])
+    if (
+        gate.get("eligible") is not True
+        or gate.get("jars") != [L.digest(L.JAR)]
+        or gate.get("scope") != "local product comparison"
+        or gate.get("expected_trials") not in (15, 45)
+        or gate.get("observed_trials") != gate["expected_trials"]
+        or not isinstance(cases, list)
+        or not all(isinstance(c, dict) for c in cases)
+        or len(cases) != len(expected)
+        or {(c.get("case"), c.get("apps")) for c in cases} != expected
+        or not all(
+            c.get("trials") == c.get("passing") == 3 and c.get("insufficient") == 0
+            for c in cases
+        )
+    ):
         return "BLOCKED"
     return L.sql(
         lab, db, f"SELECT enable_waiting_intake({store}, DATE '{date}', {capacity});"
@@ -32,6 +48,7 @@ def scenario():
     import time
 
     lab = L.state()
+    L.validate_fixture_date(lab)
     db = "rb0_roll" + str(time.time_ns())
     folder = L.OUT / (db + "-rollout")
     folder.mkdir()
@@ -39,8 +56,27 @@ def scenario():
     with L.apps(lab, db, 1, folder):
         today = L.sql(lab, db, "SELECT current_date;")
         tomorrow = L.sql(lab, db, "SELECT current_date+1;")
-        passed = {"eligible": True}
-        failed = {"eligible": False}
+        passed = {
+            "eligible": True,
+            "scope": "local product comparison",
+            "jars": [L.digest(L.JAR)],
+            "observed_trials": 15,
+            "expected_trials": 15,
+            "cases": [
+                {"case": k, "apps": n, "trials": 3, "passing": 3, "insufficient": 0}
+                for k, n in (
+                    ("open", 3),
+                    ("w1k", 3),
+                    ("w5k", 3),
+                    ("w10k", 3),
+                    ("open", 1),
+                )
+            ],
+        }
+        failed = {**passed, "eligible": False}
+        assert (
+            enable(lab, db, 2, tomorrow, 4, {**passed, "jars": ["wrong"]}) == "BLOCKED"
+        )
         results = [
             enable(lab, db, 1, today, 4, passed),
             enable(lab, db, 2, tomorrow, 4, failed),

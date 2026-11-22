@@ -115,7 +115,13 @@ def summarize_trial(folder):
             valid_instrument and r["verdict"] == "pass" and bg_recovery is not None and bg_recovery <= 20
         ),
     }
-    L.save(folder / "batch-result.json", diag)
+    containers = list(folder.glob("container-*.json"))
+    diag["incident"] = len(containers)!=cfg["Apps"] or any(read(p)["oom"] for p in containers) or not valid_instrument
+    if diag["incident"]:
+        diag["candidate_pass"]=False
+        (folder/"batch-result.json").unlink(missing_ok=True)
+    else:
+        L.save(folder / "batch-result.json", diag)
     return cfg, r, diag
 
 
@@ -126,13 +132,19 @@ def write_csv(path, rows):
         w.writerows(rows)
 
 
+def completed_trials(expected_jar=None):
+    folders=sorted(f.parent for f in L.OUT.glob("*app/result.json"))
+    jars={read(f/"config.json")["jar_sha256"] for f in folders}
+    if len(jars)>1 or (jars and expected_jar is not None and jars!={expected_jar}):
+        raise RuntimeError("Batch comparison contains different product JARs")
+    return folders
+
+
 def report():
     out = L.OUT.parent / "batch-summary"
     out.mkdir(exist_ok=True)
     runs, details, timings = [], [], []
-    for folder in sorted(L.OUT.glob("*app")):
-        if not (folder / "result.json").exists():
-            continue
+    for folder in completed_trials():
         cfg, r, b = summarize_trial(folder)
         prefix = {"run": folder.name, "arm": cfg["variant"], "case": cfg["case"], "apps": cfg["Apps"]}
         row = {
@@ -250,7 +262,7 @@ def schedule():
 
 
 def suite(resume=False):
-    complete = sorted(p.parent for p in L.OUT.glob("*app/batch-result.json"))
+    complete = completed_trials(L.digest(L.OUT/"measured.jar"))
     plan = list(schedule())
     if complete and not resume:
         raise RuntimeError("Completed trial data exists; use resume or a new lab")
@@ -259,9 +271,7 @@ def suite(resume=False):
     for index, (case, apps, arm) in enumerate(plan):
         if index < len(complete):
             cfg, _, diag = summarize_trial(complete[index])
-            if (cfg["case"], cfg["Apps"], cfg["variant"]) != (case, apps, arm) or not diag[
-                "instrument_agrees"
-            ]:
+            if (cfg["case"], cfg["Apps"], cfg["variant"]) != (case, apps, arm) or diag["incident"]:
                 raise RuntimeError("Trial prefix or XID/meter reconciliation failed: " + complete[index].name)
             continue
         setting(arm)
@@ -281,7 +291,7 @@ def suite(resume=False):
             r["bg_errors"],
             flush=True,
         )
-        if not diag["instrument_agrees"] or any(read(p)["oom"] for p in folder.glob("container-*.json")):
+        if diag["incident"]:
             raise RuntimeError("Instrument or process limits failed; inspect this preserved trial")
 
 

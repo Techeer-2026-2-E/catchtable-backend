@@ -14,6 +14,7 @@ L = topology.L
 
 def verify():
     lab = L.state()
+    L.validate_fixture_date(lab)
     stamp = str(time.time_ns())
     db = "rb0_product" + stamp
     folder = L.OUT / (stamp + "-registration-slots")
@@ -31,7 +32,7 @@ def verify():
                 db,
                 "SELECT version FROM flyway_schema_history ORDER BY installed_rank DESC LIMIT 1",
             ),
-            "49",
+            "55",
         )
         L.sql(
             lab,
@@ -95,7 +96,7 @@ def verify():
         assert hits > 0
         results = {
             "jar": L.digest(L.JAR),
-            "flyway": 49,
+            "flyway": 55,
             "apps": 3,
             "customers": 2,
             "while_slots_held": {

@@ -4,6 +4,9 @@ import concurrent.futures
 import contextlib
 import json
 import math
+import queue
+import threading
+import uuid
 import os
 import subprocess
 import time
@@ -16,7 +19,7 @@ API = "/api/user/waitings"
 
 
 def http(port, method, path, member, body=None, key=None):
-    connection = client.HTTPConnection("127.0.0.1", port, timeout=12)
+    connection = client.HTTPConnection(L.HTTP_HOST, port, timeout=12)
     headers = {"X-Member-Id": str(member), "Content-Type": "application/json"}
     if key:
         headers["Idempotency-Key"] = key
@@ -36,15 +39,31 @@ def http(port, method, path, member, body=None, key=None):
         connection.close()
 
 
+def stop_process(proc):
+    if proc.poll() is not None:
+        return
+    proc.terminate()
+    try:
+        proc.wait(timeout=4)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        proc.wait(timeout=4)
+
+
 @contextlib.contextmanager
-def sql_session(lab, db, *, begin=False):
+def sql_session(lab, db, *, begin=False, timeout=15):
     L.inspect_db(lab)
+    if not 0 < timeout <= 120:
+        raise ValueError("Invalid SQL barrier deadline")
+    marker = "ct_barrier_" + uuid.uuid4().hex
     args = [
-        "docker",
-        "--context",
-        "desktop-linux",
+        *L.DOCKER,
         "exec",
         "-i",
+        "-e",
+        "PGAPPNAME=" + marker,
+        "-e",
+        f"PGOPTIONS=-c statement_timeout={int(timeout * 1000)} -c idle_in_transaction_session_timeout=180000",
         lab["id"],
         "psql",
         "-XqAt",
@@ -58,16 +77,39 @@ def sql_session(lab, db, *, begin=False):
     with subprocess.Popen(
         args, text=True, stdin=subprocess.PIPE, stdout=subprocess.PIPE
     ) as p:
+        received = queue.Queue()
+
+        def read():
+            try:
+                for line in p.stdout:
+                    received.put(line.rstrip())
+            finally:
+                received.put(None)
+
+        reader = threading.Thread(target=read, daemon=True)
+        reader.start()
 
         def step(statement):
-            p.stdin.write(statement + "\n\\echo rb0_barrier\n")
+            sql = statement.rstrip()
+            if not sql.endswith(";"):
+                sql += ";"
+            p.stdin.write(sql + "\n\\echo " + marker + " :SQLSTATE\n")
             p.stdin.flush()
             rows = []
-            for line in p.stdout:
-                if line.rstrip() == "rb0_barrier":
+            deadline = time.monotonic() + timeout
+            while True:
+                try:
+                    line = received.get(timeout=max(0, deadline - time.monotonic()))
+                except queue.Empty as error:
+                    raise TimeoutError("SQL barrier deadline exceeded") from error
+                if line is None:
+                    raise RuntimeError("SQL barrier session ended")
+                if line.startswith(marker + " "):
+                    state = line.split()[-1]
+                    if state != "00000":
+                        raise RuntimeError("SQL barrier failed with SQLSTATE " + state)
                     return rows
-                rows.append(line.rstrip())
-            raise RuntimeError("Barrier not reached")
+                rows.append(line)
 
         try:
             if begin:
@@ -76,7 +118,18 @@ def sql_session(lab, db, *, begin=False):
         finally:
             if p.poll() is None:
                 p.stdin.close()
-            p.wait(timeout=5)
+            try:
+                p.wait(timeout=2)
+            except subprocess.TimeoutExpired:
+                try:
+                    L.sql(
+                        lab,
+                        db,
+                        f"SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE application_name='{marker}' AND datname=current_database()",
+                    )
+                finally:
+                    stop_process(p)
+            reader.join(timeout=2)
 
 
 def distribution(values):

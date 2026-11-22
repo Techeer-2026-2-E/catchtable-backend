@@ -1,6 +1,8 @@
 """Owned product integration lab. Reuse the verified PG/app harness from the local baseline."""
 
 import argparse
+import contextlib
+import re
 import ipaddress
 import json
 import os
@@ -62,7 +64,50 @@ def power(name, on):
     docker("start" if on else "stop", cid)
 
 
+@contextlib.contextmanager
+def offline(*names):
+    r = runtime()
+    with contextlib.ExitStack() as restore:
+        for name in names:
+            cid = r["nodes"][name]
+            verify(cid, r["owner"])
+            if docker("inspect", "--format", "{{.State.Running}}", cid) == "true":
+                restore.callback(power, name, True)
+                power(name, False)
+        yield
+
+
+def discard_partial():
+    path = L.OUT / "redis-product.json"
+    r = runtime()
+    if not re.fullmatch(re.escape(L.state()["tag"]) + r"-[0-9a-f]{6}", r["owner"]):
+        raise RuntimeError("Unknown Redis initialization owner")
+    ids = docker(
+        "ps", "-aq", "--filter", "label=ct.product.redis=" + r["owner"]
+    ).splitlines()
+    for cid in ids:
+        verify(cid, r["owner"])
+        docker("rm", "-f", "-v", cid)
+    path.unlink(missing_ok=True)
+    (L.OUT / ".redis-password").unlink(missing_ok=True)
+
+
 def init():
+    manifest = L.OUT / "redis-product.json"
+    if manifest.exists():
+        prior = runtime()
+        if prior.get("ready", len(prior.get("nodes", {})) == 6):
+            raise RuntimeError("Redis lab already created")
+        discard_partial()
+    try:
+        initialize_nodes()
+    except BaseException:
+        if manifest.exists() and not runtime().get("ready", False):
+            discard_partial()
+        raise
+
+
+def initialize_nodes():
     lab = L.state()
     L.inspect_db(lab)
     image = docker(
@@ -79,6 +124,14 @@ def init():
     names = {
         k: owner + "-" + k for k in ["cache", "master", "replica", "s1", "s2", "s3"]
     }
+    record = {
+        "owner": owner,
+        "nodes": nodes,
+        "names": names,
+        "image": image,
+        "ready": False,
+    }
+    L.save(L.OUT / "redis-product.json", record)
     pw = secrets.token_hex(24)
     with os.fdopen(
         os.open(L.OUT / ".redis-password", os.O_WRONLY | os.O_EXCL | os.O_CREAT, 0o600),
@@ -138,7 +191,7 @@ def init():
         )
         L.save(
             L.OUT / "redis-product.json",
-            {"owner": owner, "nodes": nodes, "names": names, "image": image},
+            record,
         )
     for _ in range(100):
         try:
@@ -151,6 +204,8 @@ def init():
         time.sleep(0.2)
     else:
         raise RuntimeError("Initial replication/Sentinel quorum not ready")
+    record["ready"] = True
+    L.save(L.OUT / "redis-product.json", record)
     print(
         "Redis cache, queue master/replica and three Sentinels ready", owner, flush=True
     )
@@ -181,7 +236,13 @@ def settings(cache=True, queue=True, immediate=True, async_http=False, poll=2):
         },
         "waiting": {
             "intake": {
-                "batch": {"enabled": True, "size": 32, "window-ms": 2},
+                "batch": {
+                    "enabled": True,
+                    "size": int(os.environ.get("CT_PRODUCT_BATCH_SIZE", "256")),
+                    "window-ms": int(
+                        os.environ.get("CT_PRODUCT_BATCH_WINDOW_MS", "48")
+                    ),
+                },
                 "async": {"enabled": async_http},
             },
             "dispatch": {
@@ -200,8 +261,10 @@ def settings(cache=True, queue=True, immediate=True, async_http=False, poll=2):
 
 
 def stop():
+    r = runtime()
     for name in ("s3", "s2", "s1", "replica", "master", "cache"):
-        power(name, False)
+        if name in r["nodes"]:
+            power(name, False)
 
 
 if __name__ == "__main__":

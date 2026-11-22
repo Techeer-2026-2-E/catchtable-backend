@@ -18,17 +18,29 @@ import uuid
 from check import check, http, post, receipt, until
 
 
-def run(manifest, password_file, ports, date, record):
+def run(manifest, password_file, ports, date, record, peer_addresses=False):
     topology = json.loads(manifest.read_text())
     names, ips, boot = (topology[k] for k in ("names", "vz", "boot_ids"))
     if not (len(set(names)) == len(set(ips)) == len(set(boot)) == len(names) == 3):
         raise ValueError(
             "expected three distinct test VMs, addresses and boot identities"
         )
-    if any(not re.fullmatch(r"ctr49-[a-f0-9]{6}-[abc]", n) for n in names):
+    if any(
+        not re.fullmatch(
+            r"(?:ctr49-[a-f0-9]{6}-[abc]|ctfix-[a-f0-9]{6}-(?:cache|primary|replica))",
+            n,
+        )
+        for n in names
+    ):
         raise ValueError("unexpected lab VM name")
     if any(not ipaddress.ip_address(ip).is_private for ip in ips):
         raise ValueError("only private lab addresses allowed")
+    if peer_addresses:
+        ips = topology["peer"]
+        if len(set(ips)) != 3 or any(
+            not ipaddress.ip_address(ip).is_private for ip in ips
+        ):
+            raise ValueError("Expected three private peer addresses")
     secret = password_file.read_text().strip()
     env = dict(os.environ, REDISCLI_AUTH=secret)
     phases = {}
@@ -66,12 +78,15 @@ def run(manifest, password_file, ports, date, record):
             return ""
 
     def primary(i, others):
-        name = names[i] + ".test"
+        expected = (
+            [names[i] + ".test", "6379"],
+            [topology.get("peer", ips)[i], "6379"],
+        )
         return all(
             rd(
                 s, 26379, "SENTINEL", "get-master-addr-by-name", "ct-waiting"
             ).splitlines()
-            == [name, "6379"]
+            in expected
             and rd(s, 26379, "SENTINEL", "CKQUORUM", "ct-waiting").startswith("OK")
             for s in others
         ) and "role:master" in rd(i, 6379, "INFO", "replication")
@@ -228,7 +243,15 @@ if __name__ == "__main__":
     parser.add_argument("--date", required=True)
     parser.add_argument("--ports", nargs=3, type=int, required=True)
     parser.add_argument("--record", type=Path, required=True)
+    parser.add_argument("--peer-addresses", action="store_true")
     args = parser.parse_args()
     if args.record.exists():
         raise SystemExit("use a new evidence path")
-    run(args.manifest, args.password_file, args.ports, args.date, args.record)
+    run(
+        args.manifest,
+        args.password_file,
+        args.ports,
+        args.date,
+        args.record,
+        args.peer_addresses,
+    )

@@ -12,6 +12,7 @@ L = R.L
 
 def verify():
     lab = L.state()
+    L.validate_fixture_date(lab)
     L.inspect_db(lab)
     db = "rb0_product" + str(time.time_ns())
     folder = L.OUT / (db + "-storage-recovery")

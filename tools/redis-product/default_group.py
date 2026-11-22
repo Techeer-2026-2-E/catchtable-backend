@@ -1,5 +1,7 @@
 """Issue a real restaurant number using the application's unmodified default Sentinel URI."""
 
+import contextlib
+import subprocess
 import json
 import os
 import re
@@ -11,20 +13,25 @@ from check import check, post, receipt, until
 L = R.L
 
 
-def verify():
+def verify(silent_first=False):
     lab = L.state()
+    L.validate_fixture_date(lab)
     db = "rb0_product" + str(time.time_ns())
-    folder = L.OUT / (db + "-default-group")
+    folder = L.OUT / (db + ("-sentinel-fallback" if silent_first else "-default-group"))
     folder.mkdir()
     L.sql(lab, L.ROLE, f"CREATE DATABASE {db} TEMPLATE {L.TEMPLATE}")
-    os.environ["CT_PRODUCT_CONFIG"] = json.dumps(
-        {"waiting": {"dispatch": {"enabled": True}}}
-    )
     group = re.search(
         r"^sentinel monitor ([A-Za-z0-9_-]+) ",
         (L.ROOT / "infra/redis/node.sh").read_text(),
         re.M,
     )[1]
+    settings = {"waiting": {"dispatch": {"enabled": True}}}
+    if silent_first:
+        settings["waiting"]["dispatch"].update(
+            uri=f"redis-sentinel://127.0.0.1:26378,127.0.0.1:26379/0?sentinelMasterId={group}",
+            timeout="250ms",
+        )
+    os.environ["CT_PRODUCT_CONFIG"] = json.dumps(settings)
     image = R.runtime()["image"]
     with L.apps(lab, db, 1, folder) as (ports, ids):
         label = lab["tag"] + "-" + db
@@ -45,6 +52,17 @@ def verify():
         containers = []
         try:
             # Both listeners are confined to this JVM's loopback network namespace.
+            if silent_first:
+                containers.append(
+                    L.docker(
+                        *common,
+                        "--entrypoint",
+                        "sh",
+                        image,
+                        "-c",
+                        "while true; do nc -l -p 26378 >/dev/null; done",
+                    )
+                )
             containers.append(
                 L.docker(
                     *common,
@@ -72,20 +90,24 @@ def verify():
                     env=dict(os.environ, CT_SENTINEL_CONF=config),
                 )
             )
-            until(
-                lambda: L.docker(
-                    "exec",
-                    containers[-1],
-                    "redis-cli",
-                    "-p",
-                    "26379",
-                    "--raw",
-                    "SENTINEL",
-                    "get-master-addr-by-name",
-                    group,
-                ),
-                lambda answer: answer.splitlines() == ["127.0.0.1", "6379"],
-            )
+
+            def listening():
+                try:
+                    return L.docker(
+                        "exec",
+                        containers[-1],
+                        "redis-cli",
+                        "-p",
+                        "26379",
+                        "--raw",
+                        "SENTINEL",
+                        "get-master-addr-by-name",
+                        group,
+                    ).splitlines() == ["127.0.0.1", "6379"]
+                except subprocess.CalledProcessError:
+                    return False
+
+            until(listening, bool)
             check(
                 L.sql(lab, db, "SELECT enable_waiting_intake(1,current_date,2)"),
                 "ENABLED",
@@ -104,14 +126,16 @@ def verify():
                 {
                     "jar": L.digest(L.JAR),
                     "group": group,
-                    "uri_override": False,
+                    "uri_override": silent_first,
+                    "silent_first_seed": silent_first,
                     "http": code,
                     "actual_number": 1,
                 },
             )
             print(folder.name, group, code, final["waitNumber"], flush=True)
         finally:
-            for cid in reversed(containers):
+
+            def remove(cid):
                 check(
                     L.docker(
                         "inspect",
@@ -121,10 +145,14 @@ def verify():
                     ),
                     label,
                 )
-                L.docker("stop", cid)
-                L.docker("rm", "-v", cid)
+                L.docker("rm", "-f", "-v", cid)
+
+            with contextlib.ExitStack() as cleanup:
+                for cid in containers:
+                    cleanup.callback(remove, cid)
 
 
 if __name__ == "__main__":
     with L.lock():
         verify()
+        verify(silent_first=True)

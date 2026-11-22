@@ -37,3 +37,5 @@ jobs:
         with:
           cache-provider: basic
       - run: ./gradlew build
+      - name: Verify benchmark evidence and failure cleanup
+        run: python3 -m unittest discover -s tools/redis-product -p 'test_*.py'

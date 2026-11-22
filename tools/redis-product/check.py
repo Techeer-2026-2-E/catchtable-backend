@@ -1,6 +1,7 @@
 """Product contracts on real HTTP/PG/Redis. All SQL, Redis power changes and clients are bound to the owned lab."""
 
 import datetime as dt
+import contextlib
 import http.client
 import json
 import os
@@ -131,6 +132,7 @@ def reconcile_cancellations(lab, db, folder, race):
 
 def check_product():
     lab = L.state()
+    L.validate_fixture_date(lab)
     stamp = str(time.time_ns())
     db = "rb0_product" + stamp
     folder = L.OUT / (stamp + "-product")
@@ -192,7 +194,37 @@ def check_product():
 
         for p in ports:
             check(slots(p), 12)
+
+        def version():
+            return topology.cli(
+                "cache",
+                "MGET",
+                "ct:availability:namespace",
+                "ct:availability:s:1:*",
+                "ct:availability:s:1:" + target,
+            ).splitlines()
+
+        def physical(parts):
+            return "ct:availability:s:1:" + target + ":2:" + ":".join(parts)
+
+        def hits(p):
+            code, data, *_ = http(
+                p, "GET", "/actuator/metrics/availability.cache.hit", 4
+            )
+            if code == 404:
+                return 0
+            check(code, 200)
+            return next(
+                m["value"] for m in data["measurements"] if m["statistic"] == "COUNT"
+            )
+
+        before_version = version()
+        previous = physical(before_version)
+        topology.cli("cache", "DEL", previous)
         check(slots(ports[0]), 12)
+        before_other = hits(ports[1])
+        check(slots(ports[1]), 12)
+        check(hits(ports[1]) - before_other, 1)
         code, hold, *_ = http(
             ports[0],
             "POST",
@@ -205,7 +237,11 @@ def check_product():
             },
         )
         check(code, 201)
+        until(version, lambda current: current != before_version, 1.5)
+        check(topology.cli("cache", "EXISTS", previous), "1")
         until(lambda: slots(ports[2]), lambda n: n == 11, 3)
+        held_version = version()
+        held_key = physical(held_version)
         check(
             http(
                 ports[0],
@@ -215,19 +251,15 @@ def check_product():
             )[0],
             204,
         )
+        until(version, lambda current: current != held_version, 1.5)
+        check(topology.cli("cache", "EXISTS", held_key), "1")
         until(lambda: slots(ports[1]), lambda n: n == 12, 3)
-        hit = sum(
-            http(p, "GET", "/actuator/metrics/availability.cache.hit", 4)[1].get(
-                "measurements", [{"value": 0}]
-            )[0]["value"]
-            for p in ports
-        )
+        hit = sum(hits(p) for p in ports)
         assert hit > 0
         save(
             "cache", {"shared_read_hits": hit, "before": 12, "hold": 11, "released": 12}
         )
-        topology.power("cache", False)
-        try:
+        with topology.offline("cache"):
             check(slots(ports[0]), 12)
             code, other, loc, _ = post(ports[2], 1001)
             reg2 = until(
@@ -238,15 +270,11 @@ def check_product():
             save(
                 "cache_down", {"db_bypass": True, "queue_continues": reg2["waitNumber"]}
             )
-        finally:
-            topology.power("cache", True)
 
         old = until(actual_master, lambda n: n is not None, 40)
         check(old in ("master", "replica"), True)
         follower = "replica" if old == "master" else "master"
-        topology.power(follower, False)
-        topology.power(old, False)
-        try:
+        with topology.offline(follower, old):
             # Both queue data nodes are unavailable; PG is still authoritative.
             enrolled = {}
             for m in range(1010, 1014):
@@ -273,9 +301,6 @@ def check_product():
                     "registered_cancel": True,
                 },
             )
-        finally:
-            topology.power(old, True)
-            topology.power(follower, True)
 
         # Fence the registrar after it has durably claimed but before its store-locked registration.
         # If the previous restart has already drained, use newly accepted work with all global permits held.
@@ -295,9 +320,7 @@ def check_product():
         # Pause drivers using a store lock only after durable admission, by briefly disconnecting the queue.
         old = until(actual_master, lambda n: n is not None, 40)
         follower = "replica" if old == "master" else "master"
-        topology.power(follower, False)
-        topology.power(old, False)
-        try:
+        with topology.offline(follower, old):
             code, r, loc, _ = post(ports[2], 1050)
             check(code, 202)
             with sql_session(lab, db, begin=True) as lock:
@@ -326,18 +349,6 @@ def check_product():
                 lambda b: b["status"] in ("WITHDRAWN", "CANCELED"),
             )
             save("cancellation_race", terminal)
-        finally:
-            for n in (old, follower):
-                if (
-                    L.docker(
-                        "inspect",
-                        "--format",
-                        "{{.State.Running}}",
-                        topology.runtime()["nodes"][n],
-                    )
-                    == "false"
-                ):
-                    topology.power(n, True)
 
         old = until(actual_master, lambda n: n is not None, 40)
         follower = "replica" if old == "master" else "master"
@@ -345,8 +356,7 @@ def check_product():
             lambda: topology.cli(follower, "INFO", "replication"),
             lambda s: "master_link_status:up" in s,
         )
-        topology.power(old, False)
-        try:
+        with topology.offline(old):
             until(lambda: actual_master(), lambda n: n == follower, 35)
             code, r, loc, _ = post(ports[0], 1060)
             check(code in (201, 202), True)
@@ -359,8 +369,6 @@ def check_product():
                 "sentinel",
                 {"old": old, "promoted": follower, "waitNumber": final["waitNumber"]},
             )
-        finally:
-            topology.power(old, True)
 
         check(L.sql(lab, db, "SELECT retire_waiting_intake(1,current_date);"), "t")
         check(post(ports[1], 1070)[0], 201)
@@ -392,18 +400,17 @@ def check_product():
             "INSERT INTO waiting_intake_day(store_id,received_date,capacity) VALUES(3,current_date,2);",
         )
         nodes = topology.runtime()
-        try:
-            for n in ("s1", "s2", "s3"):
-                topology.power(n, False)
-            for n in (master, follower):
-                cid = nodes["nodes"][n]
+        with contextlib.ExitStack() as restart:
+            for name in ("s1", "s2", "s3"):
+                restart.callback(topology.power, name, True)
+                topology.power(name, False)
+            for name in (master, follower):
+                cid = nodes["nodes"][name]
                 topology.verify(cid, nodes["owner"])
+                restart.callback(topology.power, name, True)
                 L.docker("kill", "--signal", "KILL", cid)
             code, receipt3, loc3, _ = post(ports[0], 1200, store=3)
             check(code, 202)
-        finally:
-            for n in (master, follower, "s1", "s2", "s3"):
-                topology.power(n, True)
         until(lambda: actual_master(), lambda x: x in ("master", "replica"), 30)
         until(
             lambda: topology.cli(actual_master(), "GET", mark),

@@ -13,6 +13,7 @@ L = R.L
 
 def run():
     lab = L.state()
+    L.validate_fixture_date(lab)
     stamp = str(time.time_ns())
     db = "rb0_product" + stamp
     folder = L.OUT / (stamp + "-cache-edges")
@@ -37,6 +38,20 @@ def run():
             )
             return code, len(body.get("slots", [])), hint
 
+        def counter(name):
+            total = 0
+            for port in ports:
+                code, body, *_ = http(port, "GET", "/actuator/metrics/" + name, 4)
+                if code == 404:
+                    continue
+                check(code, 200)
+                total += next(
+                    m["value"]
+                    for m in body["measurements"]
+                    if m["statistic"] == "COUNT"
+                )
+            return total
+
         for i in range(3):
             check(get(i)[:2], (200, 44))
 
@@ -50,8 +65,10 @@ def run():
         k = physical()
         check(R.cli("cache", "EXISTS", k), "1")
         ttl1 = int(R.cli("cache", "PTTL", k))
+        hit_before = counter("availability.cache.hit")
         for i in range(3):
-            get(i)
+            check(get(i)[:2], (200, 44))
+        check(counter("availability.cache.hit") - hit_before, 3)
         ttl2 = int(R.cli("cache", "PTTL", k))
         assert 0 < ttl2 < ttl1 <= 2000, (ttl1, ttl2)
         R.cli("cache", "DEL", base + date)
@@ -71,6 +88,7 @@ def run():
             with sql_session(lab, db, begin=True) as holder:
                 pid = int(holder("SELECT pg_backend_pid();")[0])
                 holder("LOCK TABLE store_table IN ACCESS EXCLUSIVE MODE;")
+                captured_key = physical()
                 old = users.submit(get, 0)
                 until(
                     lambda: L.sql(
@@ -91,6 +109,13 @@ def run():
                 )
                 holder("COMMIT;")
             check(old.result(timeout=5)[:2], (200, 44))
+            pinned = R.cli("cache", "GET", captured_key)
+            if not pinned:
+                raise AssertionError(
+                    "old fill expired before its target could be verified"
+                )
+            check(len(json.loads(pinned)["slots"]), 44)
+            assert physical() != captured_key
             check(get(1)[:2], (200, 22))
             check(get(2)[:2], (200, 22))
             out["late_old_fill"] = {"old_slots": 44, "next_generation_slots": 22}
@@ -116,18 +141,31 @@ def run():
                     with sql_session(lab, db, begin=True) as holder:
                         pid = int(holder("SELECT pg_backend_pid();")[0])
                         holder("LOCK TABLE store_table IN ACCESS EXCLUSIVE MODE;")
+                        joins_before = counter("availability.cache.join")
+                        computation = (
+                            "availability.cache.bypass"
+                            if mode == "outage"
+                            else "availability.cache.compute"
+                        )
+                        leaders_before = counter(computation)
                         futures = [users.submit(get, i % 3) for i in range(12)]
                         count_sql = f"""SELECT count(*) FROM pg_stat_activity WHERE {pid}=ANY(pg_blocking_pids(pid))
                             AND query ILIKE '%SELECT count(st.id)%';"""
                         until(lambda: L.sql(lab, db, count_sql), lambda n: n == "3", 4)
-                        time.sleep(0.12)
+                        until(
+                            lambda: counter("availability.cache.join") - joins_before,
+                            lambda n: n == 9,
+                            3,
+                        )
                         check(L.sql(lab, db, count_sql), "3")
                         if mode == "outage":
                             extra = get(0, 3)
                             check((extra[0], extra[2]), (503, "2"))
                         holder("COMMIT;")
                     assert all(f.result(timeout=5)[:2] == (200, 22) for f in futures)
+                    check(counter(computation) - leaders_before, 3)
                     out[mode] = {
+                        "observed_followers": 9,
                         "clients": 12,
                         "actual_db_calculations_blocked": 3,
                         "excess_other_key_http": 503 if mode == "outage" else None,
