@@ -105,6 +105,8 @@ DB_USERNAME=catchtable DB_PASSWORD=catchtable TOSS_SECRET_KEY= ALIMTALK_ENABLED=
 
 ## 호출·재전송의 SSE 수용·전달 계약 — 2026-11-12
 
+> 2026-11-23 갱신. 아래는 V38 원장의 당시 동작이다. 현재 백엔드는 업무와 함께 알림 작업을 저장하고 커밋 뒤 전송한다. 이전 용량 503은 종료됐으며, 재연결 시에는 현재 업무 상태를 조회한다. [현재 SSE 전송 계약](../waiting-sse-durability.md#현재-전송-계약)
+
 `POST /api/owner/waitings/{waitingId}/call`과 `/recall`은 기존 `X-Member-Id` 점주 유형·매장 소유권 및 상태 검사를 유지한다. `/call`의 기존 설명은 [기능44의 SSE 보완](feature-44-owner-waiting-list.md#웨이팅-sse-전달-보완--2026-11-11)에도 있다. `/recall`의 만료 전 CALLED 조건, 200 응답 필드·원래 기한/응답 유지와 409 `WAITING_NOT_RECALLABLE`은 그대로다.
 
 업무 상태·V36 이력·SSE 작업을 같은 TX에서 저장한다. SSE 수용 한도에 걸리면 `503 WAITING_SSE_CAPACITY_EXCEEDED`, `Retry-After: 30`을 반환하고 해당 호출/재전송 TX 전체가 rollback된다. 호출 차수·재전송 횟수·기한 변경과 알림톡 enqueue 등 이 TX의 변경도 함께 취소된다. 보존 한도는 완료 이력까지 포함하므로 30초 뒤 자동으로 용량이 풀린다는 뜻이 아니다.
