@@ -21,6 +21,7 @@ import com.catchtable.waiting.entity.WaitingEndHistory;
 import com.catchtable.waiting.entity.WaitingStatus;
 import com.catchtable.waiting.repository.WaitingEndHistoryRepository;
 import com.catchtable.waiting.repository.WaitingRepository;
+import com.catchtable.waiting.repository.WaitingReceiptRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
@@ -38,6 +39,7 @@ import java.util.Optional;
 public class WaitingService {
 
     private final WaitingRepository waitingRepository;
+    private final WaitingReceiptRepository receipts;
     private final WaitingEventRecorder eventRecorder;
     private final WaitingEndHistoryRepository historyRepository;
     private final StoreRepository storeRepository;
@@ -53,32 +55,29 @@ public class WaitingService {
         Store store = storeRepository.findByIdForUpdate(storeId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.STORE_NOT_FOUND));
 
-        // 오늘 날짜
-        LocalDate today = LocalDate.now(clock);
+        LocalDateTime at = LocalDateTime.now(clock);
+        if (receipts.openForLockedStore(storeId, at.toLocalDate())) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT);
+        }
+        return registerLocked(memberId, store, partyCount, at);
+    }
 
-        // 2. 진행 중 웨이팅 확인 (마감 체크보다 먼저 → 재시도 시 항상 같은 결과)
-        Optional<Waiting> existing = waitingRepository
-                .findFirstByMemberIdAndStoreIdAndWaitingDateAndStatusIn(
-                        memberId, storeId, today, WaitingStatus.ACTIVE);
-
+    // Called within the submission transaction with the store write lock already held.
+    WaitingCreateResult registerLocked(Long memberId, Store store, int partyCount, LocalDateTime at) {
+        Long storeId = store.getId();
+        LocalDate today = at.toLocalDate();
+        var existing = existingRegistration(memberId, storeId, today, partyCount);
         if (existing.isPresent()) {
-            Waiting waiting = existing.get();
-            // 인원 다름 → 중복 신청 에러 (409)
-            if (waiting.getPartyCount() != partyCount) {
-                throw new BusinessException(ErrorCode.DUPLICATE_ACTIVE_WAITING);
-            }
-            // 인원 같음 → 재시도, 기존 웨이팅 반환
-            return new WaitingCreateResult(toResponse(waiting, storeId), false);
+            return existing.get();
         }
+        validateIntakeOpen(store, at);
+        receipts.reserveLegacyRegistrationSlot(today);
+        return registerAccepted(memberId, store, partyCount, today);
+    }
 
-        // 3. 접수 마감 체크
-        store.validateWaitingAvailable();
-
-        // 영업시간 체크 (특정일 설정 우선, 휴무일·브레이크·자정 넘김 포함)
-        if (!businessHourService.isOpen(storeId, LocalDateTime.now(clock))) {
-            throw new BusinessException(ErrorCode.WAITING_OUTSIDE_BUSINESS_HOURS);
-        }
-
+    // Eligibility and the Seoul date were persisted when the receipt was accepted.
+    WaitingCreateResult registerAccepted(Long memberId, Store store, int partyCount, LocalDate today) {
+        Long storeId=store.getId();
         // 회원 조회
         Member member = memberRepository.findById(memberId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.MEMBER_NOT_FOUND));
@@ -96,6 +95,30 @@ public class WaitingService {
                 "대기 목록이 변경되었습니다.").withWaitingEvent(event));
 
         return new WaitingCreateResult(toResponse(saved, storeId), true);
+    }
+
+    Optional<WaitingCreateResult> existingRegistration(Long memberId, Long storeId, LocalDate day, int partyCount) {
+        return waitingRepository.findFirstByMemberIdAndStoreIdAndWaitingDateAndStatusIn(
+                memberId, storeId, day, WaitingStatus.ACTIVE).map(waiting -> {
+            if (waiting.getPartyCount() != partyCount) {
+                throw new BusinessException(ErrorCode.DUPLICATE_ACTIVE_WAITING);
+            }
+            return new WaitingCreateResult(toResponse(waiting, storeId), false);
+        });
+    }
+
+    void validateIntakeOpen(Store store, LocalDateTime at) {
+        intakeClosedReason(store, at).ifPresent(reason -> { throw new BusinessException(reason); });
+    }
+
+    Optional<ErrorCode> intakeClosedReason(Store store, LocalDateTime at) {
+        try {
+            store.validateWaitingAvailable();
+        } catch (BusinessException closed) {
+            return Optional.of(closed.getErrorCode());
+        }
+        return businessHourService.isOpen(store.getId(), at)
+                ? Optional.empty() : Optional.of(ErrorCode.WAITING_OUTSIDE_BUSINESS_HOURS);
     }
 
     // 호출 응답
