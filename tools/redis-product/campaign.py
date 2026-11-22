@@ -362,6 +362,7 @@ def analyze(folder):
     bg = []
     bad = []
     hold_acks = set()
+    hold_ends = []
     http_n = 0
     lat = defaultdict(list)
     completed = Counter()
@@ -436,6 +437,8 @@ def analyze(folder):
                     )
                 ):
                     bad.append([member, "A slots"])
+            if op == "hold":
+                hold_ends.append((member, o, s["EndUS"]))
             if op == "hold" and s["Status"] == 201:
                 hold_acks.add(member)
                 if (
@@ -468,6 +471,13 @@ def analyze(folder):
                 ):
                     bad.append([member, "number"])
                 final[member] = (s["EndUS"] - s["JourneyStartUS"]) / 1000
+    journeys = defaultdict(list)
+    for member, outcome, end_us in hold_ends:
+        read = initial.get(member)
+        if not read or read["Op"] != "availability" or read["Available"] <= 0:
+            bad.append([member, "missing positive availability before hold"])
+        else:
+            journeys[outcome].append((end_us - read["StartUS"]) / 1000)
     numbers = [int(r["wait_number"]) for r in ledger if r["wait_number"]]
     reverse = sum(a >= b for a, b in zip(numbers, numbers[1:]))
     actual_bad = [
@@ -592,6 +602,9 @@ def analyze(folder):
         "wire": wire,
         "first_success": len(first_ok),
         "first_ms": fp,
+        "hold_journey_ms": {
+            outcome: distribution(times) for outcome, times in journeys.items()
+        },
         "final_observed": len(final),
         "final_ms": terminal,
         "db_receipts": len(ledger),
