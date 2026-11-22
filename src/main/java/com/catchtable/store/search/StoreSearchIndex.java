@@ -91,19 +91,36 @@ public class StoreSearchIndex {
 
     // 문서 일괄 색인. 한 건이라도 실패하면 예외
     public void bulkIndex(String index, List<Map<String, Object>> documents) {
+        bulk(index, documents, List.of(), "/_bulk");
+    }
+
+    // 별칭(현재 색인)에 변경 반영: 문서 upsert + 없어진 매장 삭제
+    public void applyChanges(List<Map<String, Object>> documents, List<Long> deletedStoreIds) {
+        bulk(alias, documents, deletedStoreIds, "/_bulk?refresh=wait_for");   // 반영 직후 검색 가능
+    }
+
+    private void bulk(String index, List<Map<String, Object>> documents, List<Long> deleteIds, String uri) {
+        if (documents.isEmpty() && deleteIds.isEmpty()) {
+            return;
+        }
         StringBuilder ndjson = new StringBuilder();
         try {
             for (Map<String, Object> doc : documents) {
                 ndjson.append(mapper.writeValueAsString(Map.of("index", Map.of("_index", index, "_id", doc.get("id")))))
                         .append('\n').append(mapper.writeValueAsString(doc)).append('\n');
             }
+            for (Long id : deleteIds) {
+                ndjson.append(mapper.writeValueAsString(Map.of("delete", Map.of("_index", index, "_id", id))))
+                        .append('\n');
+            }
         } catch (JsonProcessingException e) {
             throw new IllegalStateException(e);
         }
-        JsonNode result = client.post().uri("/_bulk").contentType(MediaType.parseMediaType("application/x-ndjson"))
+        JsonNode result = client.post().uri(uri)
+                .contentType(MediaType.parseMediaType("application/x-ndjson"))
                 .body(ndjson.toString()).retrieve().body(JsonNode.class);
         if (result.path("errors").asBoolean()) {
-            throw new IllegalStateException("OpenSearch bulk 색인 실패: " + firstError(result));
+            throw new IllegalStateException("OpenSearch bulk 실패: " + firstError(result));
         }
     }
 
@@ -147,9 +164,10 @@ public class StoreSearchIndex {
 
     private static String firstError(JsonNode bulkResult) {
         for (JsonNode item : bulkResult.path("items")) {
-            JsonNode error = item.path("index").path("error");
-            if (!error.isMissingNode()) {
-                return error.toString();
+            for (JsonNode op : item) {
+                if (op.has("error")) {
+                    return op.path("error").toString();
+                }
             }
         }
         return "unknown";

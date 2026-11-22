@@ -31,6 +31,7 @@ import com.catchtable.waiting.entity.WaitingStatus;
 import com.catchtable.waiting.repository.WaitingRepository;
 import com.catchtable.waiting.repository.WaitingDeferHistoryRepository;
 import com.catchtable.waiting.repository.WaitingEndHistoryRepository;
+import com.catchtable.store.search.StoreSearchOutbox;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
@@ -57,6 +58,7 @@ public class OwnerWaitingService {
     private final NotificationService notificationService;
     private final ApplicationEventPublisher eventPublisher;
     private final Clock clock;
+    private final StoreSearchOutbox storeSearchOutbox;
 
     public List<OwnerWaitingResponse> getWaitings(Long memberId, Long storeId) {
         requireOwnerStore(memberId, storeId);
@@ -108,6 +110,7 @@ public class OwnerWaitingService {
     public WaitingPolicyResponse openWaiting(Long memberId, Long storeId) {
         Store store = findOwnerStoreForUpdate(memberId, storeId);
         store.openWaiting();
+        storeSearchOutbox.record(storeId);
         return WaitingPolicyResponse.from(store);
     }
 
@@ -115,6 +118,7 @@ public class OwnerWaitingService {
     public WaitingPolicyResponse closeWaiting(Long memberId, Long storeId) {
         Store store = findOwnerStoreForUpdate(memberId, storeId);
         store.closeWaiting();
+        storeSearchOutbox.record(storeId);
         return WaitingPolicyResponse.from(store);
     }
 

@@ -1,6 +1,11 @@
 package com.catchtable.store.controller;
 
+import com.catchtable.store.dto.StoreInfoUpdateRequest;
 import com.catchtable.store.search.StoreReindexService;
+import com.catchtable.store.search.StoreSearchOutbox;
+import com.catchtable.store.search.StoreSearchSyncService;
+import com.catchtable.store.service.StoreInfoService;
+import jakarta.persistence.EntityManager;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.DisplayName;
@@ -61,6 +66,10 @@ class StoreOpenSearchKeywordSearchTest {
     @Autowired JdbcTemplate jdbc;
     @Autowired ObjectMapper mapper;
     @Autowired StoreReindexService reindexService;
+    @Autowired StoreInfoService storeInfoService;
+    @Autowired StoreSearchOutbox outbox;
+    @Autowired StoreSearchSyncService syncService;
+    @Autowired EntityManager entityManager;
 
     @Test
     @DisplayName("돈까스·돈가스·돈카츠는 같은 매장을 찾는다")
@@ -175,6 +184,82 @@ class StoreOpenSearchKeywordSearchTest {
         assertThat(aliases.has(second)).isTrue();
         assertThat(indices).hasSize(1);
         assertThat(first).isNotEqualTo(second);
+    }
+
+    @Test
+    @DisplayName("매장 이름을 바꾸면 워커 1회 실행 후 새 이름으로 검색된다")
+    void renamedStoreIsSearchableAfterSync() throws Exception {
+        long owner = owner();
+        long id = store(owner, "옛골식당", "KOREAN", "서울특별시 중구 세종대로 1");
+        reindexService.reindexAll();
+
+        storeInfoService.updateInfo(id, new StoreInfoUpdateRequest("새벽감자탕", null, null, null, null, null));
+        entityManager.flush();
+        assertThat(outboxCount(id)).isEqualTo(1);
+
+        syncService.syncDue();
+
+        assertThat(search("감자탕")).contains(id);
+        assertThat(search("옛골식당")).doesNotContain(id);
+        assertThat(outboxCount(id)).isZero();
+    }
+
+    @Test
+    @DisplayName("없어진 매장은 동기화 때 색인에서 지운다")
+    void deletedStoreIsRemovedFromIndex() throws Exception {
+        long id = store(null, "사라질국밥", "KOREAN", "서울특별시 중구 세종대로 1");
+        reindexService.reindexAll();
+        assertThat(search("사라질국밥")).contains(id);
+
+        jdbc.update("DELETE FROM store WHERE id = ?", id);
+        outbox.record(id);
+        syncService.syncDue();
+
+        assertThat(search("사라질국밥")).doesNotContain(id);
+    }
+
+    @Test
+    @DisplayName("OpenSearch 반영이 실패하면 시도 횟수만 늘리고 행을 남겼다가, 복구 후 반영한다")
+    void failedSyncIsRetriedAfterRecovery() throws Exception {
+        long id = store(null, "재시도칼국수", "KOREAN", "서울특별시 중구 세종대로 1");
+        reindexService.reindexAll();
+        jdbc.update("UPDATE store SET name = '복구된칼국수' WHERE id = ?", id);
+        outbox.record(id);
+
+        RestClient client = RestClient.create("http://" + OPENSEARCH.getHost() + ":" + OPENSEARCH.getMappedPort(9200));
+        writeBlock(client, true);
+        try {
+            syncService.syncDue();
+        } finally {
+            writeBlock(client, false);
+        }
+        assertThat(jdbc.queryForObject("SELECT attempts FROM store_search_outbox WHERE store_id = ?", Integer.class, id))
+                .isEqualTo(1);
+        assertThat(jdbc.queryForObject("SELECT last_error FROM store_search_outbox WHERE store_id = ?", String.class, id))
+                .isNotBlank();
+        assertThat(jdbc.queryForObject("SELECT next_attempt_at > created_at FROM store_search_outbox WHERE store_id = ?",
+                Boolean.class, id)).isTrue();
+        assertThat(search("복구된칼국수")).doesNotContain(id);
+
+        jdbc.update("UPDATE store_search_outbox SET next_attempt_at = next_attempt_at - INTERVAL '1 hour' WHERE store_id = ?", id);
+        syncService.syncDue();
+
+        assertThat(search("복구된칼국수")).contains(id);
+        assertThat(outboxCount(id)).isZero();
+    }
+
+    private void writeBlock(RestClient client, boolean blocked) {
+        client.put().uri("/stores/_settings").contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                .body(java.util.Map.of("index.blocks.write", blocked)).retrieve().toBodilessEntity();
+    }
+
+    private int outboxCount(long storeId) {
+        return jdbc.queryForObject("SELECT count(*) FROM store_search_outbox WHERE store_id = ?", Integer.class, storeId);
+    }
+
+    private long owner() {
+        return jdbc.queryForObject(
+                "INSERT INTO member(name, phone, user_type) VALUES ('owner', '000', 'OWNER') RETURNING id", Long.class);
     }
 
     private List<Long> search(String keyword) throws Exception {

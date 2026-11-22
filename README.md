@@ -51,7 +51,7 @@ docker compose exec -T postgres psql -U catchtable -d catchtable < scripts/local
 
 ## 매장 키워드 검색 (OpenSearch, 선택)
 
-기본은 DB 검색이다. OpenSearch로 키워드 검색을 확인할 때만 아래처럼 실행한다. 공공데이터를 적재한 뒤 한 번 재색인하고, 매장을 바꾼 뒤에도 다시 재색인한다.
+기본은 DB 검색이다. OpenSearch로 키워드 검색을 확인할 때만 아래처럼 실행한다. 점주의 매장·메뉴 수정과 웨이팅 접수 변경은 Outbox(`store_search_outbox`)를 거쳐 1초 간격으로 자동 반영된다. 공공데이터 대량 적재와 SQL 스크립트로 바꾼 데이터는 자동 반영되지 않으므로 적재 후 전체 재색인한다.
 
 ```bash
 docker compose --profile search up -d
