@@ -11,7 +11,7 @@
 | `waiting.dispatch.enabled`, `waiting.dispatch.uri`, `waiting.dispatch.sentinel-password` | 워커 기본 꺼짐. 전환 전 모든 앱에 같은 대기열 연결 정보와 워커 설정을 적용한다. 앱 기본값과 제공 구성의 Sentinel 그룹 이름은 `ct-waiting`이다. 데이터 노드와 Sentinel 인증값은 런타임 비밀로 전달한다. |
 | `waiting_intake_policy`, `waiting_intake_day` | 매장에서 새 방식을 한 번 켜면 그날부터 이어진다. 서울 날짜가 바뀐 뒤 첫 신청이 그날의 경로와 미완료 한도를 고정한다. Redis 대기열이 중단돼도 PG 여유 안에서 신규 수락하고, 가득 차면 429를 준다. 기존 표의 조회·재시도·취소는 계속 처리한다. |
 | `waiting_registration_permit` | 번호 발급 트랜잭션이 커밋할 때까지 허가 행을 잠근다. V48의 초기값은 DB 전체 2개다. 장부를 사용하는 기간에는 기존 경로의 번호 발급도 같은 허가를 사용한다. |
-| `waiting.intake.batch.enabled`, `waiting.intake.async.enabled` | 기본 꺼짐. 매장별 한 묶음은 최대 256건이다. 평상시는 최대 2ms, 4건 이상이 모인 경우 최대 48ms 안에 커밋 작업을 시작한다. 고부하 HTTP 모드에서는 가상 작업자가 PG 커밋을 기다린다. 서블릿 처리를 시작한 요청 수는 JVM 최대 힙 512KiB당 1개, 최대 2,048개로 제한한다. `waiting.intake.async.max-in-flight`로 더 줄일 수 있다. |
+| `waiting.intake.batch.enabled`, `waiting.intake.async.enabled` | 기본 꺼짐. 매장별 한 묶음은 최대 256건이다. 평상시는 최대 2ms, 4건 이상이 모인 경우 최대 48ms 안에 커밋 작업을 시작한다. 고부하 HTTP 모드에서는 가상 작업자가 PG 커밋을 기다린다. 서블릿 처리를 시작한 요청 수는 JVM 최대 힙 512KiB당 1개, 최대 2,048개로 제한한다. `waiting.intake.async.max-in-flight`로 더 줄일 수 있다. 묶음 쓰기 작업자는 앱당 2개라, 한 묶음의 잠금 대기는 `waiting.intake.batch.lock-timeout`(기본 5초)까지만 기다린다. 넘으면 그 묶음은 아무것도 쓰지 않고 503과 재시도 간격을 반환한다. 고객은 같은 요청 키로 다시 신청한다. |
 | `waiting.dispatch.immediate`, `waiting.dispatch.poll-hint-seconds`, `waiting.dispatch.max-poll-seconds` | 한산한 매장의 첫 신청은 즉시 발급을 시도한다. 미완료 표의 기본 조회 간격은 2~10초다. `waiting.dispatch.admission-priority-ms`는 폭주 매장의 수락 커밋을 먼저 진행하는 최대 시간이다. 기본 1,800ms이며 가장 오래된 표가 이 시간을 넘으면 새 신청이 이어져도 워커가 진행한다. |
 
 장부 한도, 허가 수, 응답·회복 지연은 실험 후보값을 사용했다. 운영 확대는 별도 결정이다. 배치와 비동기 HTTP는 각각 끌 수 있다. 로컬 측정 때 앱 3대 합계 CPU 3개, heap 768MiB, Hikari 12개를 사용했다.
