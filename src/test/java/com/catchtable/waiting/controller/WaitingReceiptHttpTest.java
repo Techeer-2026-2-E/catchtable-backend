@@ -20,10 +20,11 @@ import org.springframework.transaction.support.TransactionTemplate;
 import java.time.*;
 import java.util.List;
 import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.Mockito.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
@@ -36,18 +37,37 @@ class WaitingReceiptHttpTest {
 
     @TestConfiguration
     static class TimeConfig {
-        @Bean @Primary Clock testClock() {
-            Clock clock = mock(Clock.class);
-            when(clock.getZone()).thenReturn(SEOUL);
-            when(clock.instant()).thenReturn(START);
-            return clock;
+        @Bean @Primary SteppedClock testClock() {
+            return new SteppedClock();
         }
+    }
+
+    // Notification workers read the shared Clock on their own threads after each commit.
+    // Re-stubbing a Mockito mock while another thread calls it is not thread-safe.
+    static final class SteppedClock extends Clock {
+        private final AtomicReference<List<Instant>> steps = new AtomicReference<>(List.of(START));
+        private final AtomicInteger read = new AtomicInteger();
+
+        /** Returns each instant once in order, then keeps the last one. */
+        void set(Instant... instants) {
+            read.set(0);
+            steps.set(List.of(instants));
+        }
+
+        @Override public Instant instant() {
+            var values = steps.get();
+            return values.get(Math.min(read.getAndIncrement(), values.size() - 1));
+        }
+
+        @Override public ZoneId getZone() { return SEOUL; }
+
+        @Override public Clock withZone(ZoneId zone) { return Clock.fixed(instant(), zone); }
     }
 
     @Autowired WaitingService legacyService;
     @Autowired MockMvc mvc;
     @Autowired JdbcTemplate jdbc;
-    @Autowired Clock clock;
+    @Autowired SteppedClock clock;
     @Autowired TransactionTemplate transactions;
     private long store;
     private long first;
@@ -55,7 +75,7 @@ class WaitingReceiptHttpTest {
 
     @BeforeEach
     void prepare() {
-        when(clock.instant()).thenReturn(START);
+        clock.set(START);
         first = member();
         second = member();
         store = jdbc.queryForObject("""
@@ -76,7 +96,7 @@ class WaitingReceiptHttpTest {
 
     @AfterEach
     void clean() {
-        when(clock.instant()).thenReturn(START);
+        clock.set(START);
         jdbc.update("DELETE FROM waiting_receipt_cancel WHERE member_id IN (?,?)", first, second);
         jdbc.update("DELETE FROM waiting_receipt_key WHERE member_id IN (?,?)", first, second);
         jdbc.update("DELETE FROM waiting_receipt WHERE store_id=?", store);
@@ -102,7 +122,7 @@ class WaitingReceiptHttpTest {
                 .isEqualTo("ALREADY_ENABLED");
         String firstTicket = apply(first, "persistent-before", 2).andExpect(status().isAccepted())
                 .andReturn().getResponse().getHeader("Location");
-        when(clock.instant()).thenReturn(START.plusSeconds(4));
+        clock.set(START.plusSeconds(4));
         assertThat(jdbc.queryForObject("SELECT count(*) FROM waiting_intake_day WHERE store_id=? AND received_date=?",
                 Integer.class, store, tomorrow)).isZero();
         String nextTicket = apply(second, "persistent-after", 2).andExpect(status().isAccepted())
@@ -113,7 +133,7 @@ class WaitingReceiptHttpTest {
         assertThat(jdbc.queryForObject("SELECT retire_waiting_intake(?,?)", Boolean.class, store, tomorrow)).isFalse();
         mvc.perform(delete(firstTicket).header("X-Member-Id", first)).andExpect(status().isOk());
         assertThat(jdbc.queryForObject("SELECT retire_waiting_intake(?,?)", Boolean.class, store, tomorrow)).isTrue();
-        when(clock.instant()).thenReturn(START.plusSeconds(86404));
+        clock.set(START.plusSeconds(86404));
         apply(first, "persistent-reverted", 2).andExpect(status().isCreated()).andExpect(jsonPath("$.waitNumber").value(1));
         mvc.perform(get(nextTicket).header("X-Member-Id", second)).andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("WITHDRAWN"));
@@ -131,7 +151,7 @@ class WaitingReceiptHttpTest {
         apply(first,"another",2).andExpect(status().isOk()).andExpect(header().string("Location",location));
         apply(first,"first",3).andExpect(status().isConflict());
         apply(first,"different",3).andExpect(status().isConflict());
-        when(clock.instant()).thenReturn(START.plusSeconds(4));
+        clock.set(START.plusSeconds(4));
         for (String key : new String[]{"first","another"}) {
             apply(first,key,2).andExpect(status().isOk()).andExpect(header().string("Location",location))
                     .andExpect(jsonPath("$.receivedDate").value("2031-02-01"));
@@ -171,7 +191,7 @@ class WaitingReceiptHttpTest {
     void aClosedStoreAttemptDoesNotFreezeTomorrowUntilTheFirstValidApplication() throws Exception {
         LocalDate today=LocalDate.now(clock), tomorrow=today.plusDays(1);
         assertThat(jdbc.queryForObject("SELECT enable_waiting_intake(?,?,1)",String.class,store,today)).isEqualTo("ALREADY_ENABLED");
-        when(clock.instant()).thenReturn(START.plusSeconds(4));
+        clock.set(START.plusSeconds(4));
         jdbc.update("UPDATE store SET waiting_available=false WHERE id=?",store);
         apply(first,"before-opening",2).andExpect(status().isConflict());
         assertThat(jdbc.queryForObject("SELECT count(*) FROM waiting_intake_day WHERE store_id=? AND received_date=?",Integer.class,store,tomorrow)).isZero();
@@ -185,7 +205,7 @@ class WaitingReceiptHttpTest {
         jdbc.update("DELETE FROM waiting_intake_day WHERE store_id=?", store);
         assertThat(jdbc.queryForObject("SELECT enable_waiting_intake(?,?,2)", String.class, store, today))
                 .isEqualTo("ENABLED");
-        when(clock.instant()).thenReturn(START.plusSeconds(4));
+        clock.set(START.plusSeconds(4));
         LocalDate tomorrow = today.plusDays(1);
         assertThatThrownBy(() -> jdbc.update("""
                 INSERT INTO waiting(member_id,store_id,waiting_date,party_count,wait_number,queue_order,status,created_at,updated_at)
@@ -219,7 +239,7 @@ class WaitingReceiptHttpTest {
                 .andReturn().getResponse().getHeader("Location");
         jdbc.update("INSERT INTO waiting_intake_day(store_id,received_date,capacity) VALUES (?,?,1)",
                 store, tomorrow);
-        when(clock.instant()).thenReturn(START.plusSeconds(4));
+        clock.set(START.plusSeconds(4));
         String nextTicket = apply(second, "today", 2).andExpect(status().isAccepted())
                 .andExpect(jsonPath("$.receivedDate").value(tomorrow.toString()))
                 .andExpect(jsonPath("$.intakeSequence").value(1)).andReturn().getResponse().getHeader("Location");
@@ -239,7 +259,7 @@ class WaitingReceiptHttpTest {
     @Test
     void choosesTheNewDayIfTheStoreLockSpansSeoulMidnight() throws Exception {
         // The route hint sees a ledger day. Validation under the store lock sees the next, legacy day.
-        when(clock.instant()).thenReturn(START, START.plusSeconds(4));
+        clock.set(START, START.plusSeconds(4));
         apply(second, "at-midnight", 2).andExpect(status().isCreated())
                 .andExpect(jsonPath("$.waitNumber").value(1));
         assertThat(jdbc.queryForObject("SELECT waiting_date FROM waiting WHERE store_id=?", LocalDate.class, store))
