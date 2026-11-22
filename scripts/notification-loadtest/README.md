@@ -19,10 +19,12 @@ docker compose up -d postgres
 docker compose exec -T postgres createdb -U catchtable catchtable_loadtest
 ```
 
-앱을 전용 DB·별도 포트로 띄운다 (Flyway가 빈 DB에 스키마를 만든다). 알림톡은 기본값이 꺼져 있어 외부 발송이 없다.
+11월 11일 측정과 같은 고도화 전 앱은 `a44952e`다. 현재 체크아웃의 스크립트는 그대로 두고, 아래 명령으로 해당 소스의 앱을 전용 빈 DB와 별도 포트에 띄운다. 새 앱을 비교할 때는 새 격리 DB와 대상 커밋을 기록한다.
 
 ```bash
-DB_NAME=catchtable_loadtest ./gradlew bootRun --args='--server.port=8089'
+ct_baseline_dir=$(mktemp -d)
+git archive a44952e37993e5003c860714f126057cd311dba5 | tar -x -C "$ct_baseline_dir"
+(cd "$ct_baseline_dir" && DB_NAME=catchtable_loadtest ./gradlew bootRun --args='--server.port=8089')
 ```
 
 앱이 뜬 뒤 시드를 넣는다. `N`은 고객 수(실험의 `N` 이상이어야 한다).
@@ -31,7 +33,7 @@ DB_NAME=catchtable_loadtest ./gradlew bootRun --args='--server.port=8089'
 docker compose exec -T postgres psql -U catchtable -d catchtable_loadtest -v N=500 -f - < scripts/notification-loadtest/seed.sql
 ```
 
-k6는 Homebrew(`brew install k6`) 기준. SSE 확장(`k6/x/sse`)은 첫 실행 때 자동으로 받는다.
+k6는 Homebrew(`brew install k6`) 기준이다. 공통 스크립트에서 실제 구독을 확인한 k6 2.1.0과 SSE 확장 0.2.0을 지정한다. `k6 deps scripts/notification-loadtest/exp5-call-latency.js`로 선택한 버전을 볼 수 있다. [Grafana의 확장 버전 지정 방법](https://grafana.com/whats-new/2025-08-18-extensions-and-version-support-in-grafana-cloud-k6/)
 
 ## 실행
 
@@ -59,6 +61,8 @@ k6 run -e N=10 scripts/notification-loadtest/exp5-call-latency.js
 
 exp5는 `N=10`, `100`, `500`으로 반복해 응답 시간 추세를 비교한다.
 
+exp5의 기본 호출 수는 최대 10건이다. exp2·exp5에서 `OWNER_SECONDS`로 점주 실행 시간을 늘릴 수 있고, `SUBSCRIBE_SECONDS`는 점주 시작 시각과 실행 시간을 합친 값보다 길어야 한다.
+
 ```bash
 k6 run -e N=200 -e CALLS=50 -e CALL_RATE=5 scripts/notification-loadtest/exp6-position-storm.js
 ```
@@ -66,6 +70,9 @@ k6 run -e N=200 -e CALLS=50 -e CALL_RATE=5 scripts/notification-loadtest/exp6-po
 옵션(`-e`): `BASE_URL`(기본 `http://localhost:8089`), `N` 구독자 수, `CALLS` 호출 수(`N` 이하), `CALL_RATE` 초당 호출, `RECONNECT_EVERY`·`RECONNECT_DELAY`(exp3, 초).
 
 ## 결과 읽기
+
+- JSON의 `attempts`, `ownerCalls`, `failedCalls`는 각각 시도·HTTP 200·실패 건수다. 호출 지연에는 성공 응답만 포함한다. 실제 시작·성공 건수가 예정과 다르면 `valid=false`와 이유를 기록한다.
+- 전체 구독자의 접속을 가정하는 exp2의 1차 구간과 exp5·exp6에서는 마지막 접속부터 첫 연결 종료까지가 실제 호출 구간 전체를 포함해야 한다. 누락된 접속이나 이탈한 구독자가 있으면 해당 회차의 유실률·성능 결론을 보류한다.
 
 - 터미널 끝의 `==== 결과 ====` 블록이 발표용 요약이다. 같은 내용이 `results/<실험>-<시각>.json`에 남는다 (git 제외).
 - 알림 이름은 서버 `NotificationType` 그대로다. `WAITING_CALLED`는 호출 당사자 1명, `WAITING_POSITION_CHANGED`는 호출마다 ACTIVE 전원에게 간다. 그래서 기대 수신 = 호출 수 × N.

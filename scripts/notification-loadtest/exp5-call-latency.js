@@ -8,16 +8,18 @@
 //     k6 run -e N=500 scripts/notification-loadtest/exp5-call-latency.js
 import exec from 'k6/execution';
 import { sleep } from 'k6';
-import { N, createWaitings, ownerCall, ownerCalls, subscribe, myMemberId, makeSummary } from './lib.js';
+import { N, createWaitings, ownerCall, subscribe, myMemberId, makeSummary, connectedWindow, callThresholds } from './lib.js';
 
-const CALLS = parseInt(__ENV.CALLS || '20', 10);
+const CALLS = parseInt(__ENV.CALLS || String(Math.min(10, N)), 10);
 const CALL_INTERVAL = 0.3; // 초. 호출 사이 간격 (이전 전송이 끝난 뒤 재기 위해)
 const OWNER_START = 5;
-const SUBSCRIBE_SECONDS = OWNER_START + Math.ceil(CALLS * (CALL_INTERVAL + 0.5)) + 3;
+const window = connectedWindow(OWNER_START, Math.ceil(CALLS * (CALL_INTERVAL + 2)));
+const SUBSCRIBE_SECONDS = window.subscription;
 
 if (CALLS > N) throw new Error(`CALLS(${CALLS})는 N(${N}) 이하여야 한다`);
 
 export const options = {
+    thresholds: callThresholds(CALLS),
     scenarios: {
         subscribers: {
             executor: 'per-vu-iterations', vus: N, iterations: 1, exec: 'subscriber',
@@ -25,7 +27,7 @@ export const options = {
         },
         owner_calls: {
             executor: 'shared-iterations', vus: 1, iterations: CALLS, exec: 'owner',
-            startTime: `${OWNER_START}s`, maxDuration: `${SUBSCRIBE_SECONDS}s`,
+            startTime: `${OWNER_START}s`, maxDuration: `${window.owner}s`,
         },
     },
 };
@@ -35,12 +37,11 @@ export function setup() {
 }
 
 export function subscriber() {
-    subscribe(myMemberId(), `${SUBSCRIBE_SECONDS}s`);
+    subscribe(myMemberId(), `${SUBSCRIBE_SECONDS}s`, undefined, true);
 }
 
 export function owner(data) {
     ownerCall(data.waitings[exec.scenario.iterationInTest].waitingId);
-    ownerCalls.add(1);
     sleep(CALL_INTERVAL);
 }
 
@@ -52,4 +53,4 @@ export const handleSummary = makeSummary('exp5-call-latency', (r) => {
         `/call 응답 시간(ms): 평균 ${f(d.avg)}, p50 ${f(d.med)}, p90 ${f(d['p(90)'])}, p95 ${f(d['p(95)'])}, 최대 ${f(d.max)}`,
         `호출마다 전송된 순번 알림: 총 ${r.received.positionChanged}건 (= 호출 수 × 구독자 수 ${r.ownerCalls * N})`,
     ];
-});
+}, { expectedCalls: CALLS, measureWindow: true });

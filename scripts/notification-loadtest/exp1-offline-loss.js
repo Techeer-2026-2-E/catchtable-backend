@@ -5,12 +5,13 @@
 import http from 'k6/http';
 import { check } from 'k6';
 import { Counter } from 'k6/metrics';
-import { BASE_URL, N, createWaitings, ownerCall, ownerCalls, subscribe, myMemberId, makeSummary } from './lib.js';
+import { BASE_URL, N, createWaitings, ownerCall, subscribe, myMemberId, makeSummary, callThresholds } from './lib.js';
 
 const SUBSCRIBE_SECONDS = parseInt(__ENV.SUBSCRIBE_SECONDS || '5', 10);
 const listApi404 = new Counter('list_api_404');
 
 export const options = {
+    thresholds: callThresholds(N),
     scenarios: {
         late_subscribers: {
             executor: 'per-vu-iterations',
@@ -25,7 +26,6 @@ export function setup() {
     const waitings = createWaitings(N);
     for (const w of waitings) {
         ownerCall(w.waitingId);
-        ownerCalls.add(1);
     }
     console.log(`접속자 0명 상태에서 ${waitings.length}명 호출 완료 → 이제 고객이 접속한다`);
     return { waitings };
@@ -44,4 +44,4 @@ export const handleSummary = makeSummary('exp1-offline-loss', (r) => [
     `발생: 접속자 0명일 때 호출 ${r.ownerCalls}건 (WAITING_CALLED ${r.ownerCalls}건 발생)`,
     `접속 후 ${r.params.SUBSCRIBE_SECONDS || 5}초 동안 수신: WAITING_CALLED ${r.received.waitingCalled}건`,
     `사후 조회: 알림 목록 API 없음 (GET /api/user/notifications → 404, ${r.extra.list_api_404}/${N}명 확인)`,
-], ['list_api_404']);
+], { expectedCalls: N, expectedConnections: N, extraCounters: ['list_api_404'] });

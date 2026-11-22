@@ -4,7 +4,7 @@
 //   그래서 사용자 1명이 받는 CALLS건은 전부 같은 순번을 다시 받은 것이다(순번 비교·묶음 전송의 근거).
 //   실행: k6 run -e N=200 -e CALLS=50 -e CALL_RATE=5 scripts/notification-loadtest/exp6-position-storm.js
 import exec from 'k6/execution';
-import { N, createWaitings, ownerCall, ownerCalls, subscribe, myMemberId, makeSummary } from './lib.js';
+import { N, createWaitings, ownerCall, subscribe, myMemberId, makeSummary, callThresholds } from './lib.js';
 
 const CALLS = parseInt(__ENV.CALLS || '50', 10);
 const CALL_RATE = parseInt(__ENV.CALL_RATE || '5', 10);
@@ -15,6 +15,7 @@ const SUBSCRIBE_SECONDS = OWNER_START + OWNER_SECONDS + 5;
 if (CALLS > N) throw new Error(`CALLS(${CALLS})는 N(${N}) 이하여야 한다`);
 
 export const options = {
+    thresholds: callThresholds(CALLS),
     scenarios: {
         subscribers: {
             executor: 'per-vu-iterations', vus: N, iterations: 1, exec: 'subscriber',
@@ -33,14 +34,13 @@ export function setup() {
 }
 
 export function subscriber() {
-    subscribe(myMemberId(), `${SUBSCRIBE_SECONDS}s`);
+    subscribe(myMemberId(), `${SUBSCRIBE_SECONDS}s`, undefined, true);
 }
 
 export function owner(data) {
     const i = exec.scenario.iterationInTest;
     if (i >= CALLS) return;
     ownerCall(data.waitings[i].waitingId);
-    ownerCalls.add(1);
 }
 
 export const handleSummary = makeSummary('exp6-position-storm', (r) => {
@@ -53,4 +53,4 @@ export const handleSummary = makeSummary('exp6-position-storm', (r) => {
         `순번이 실제로 바뀐 알림: 0건 (호출은 대기열에서 아무도 빼지 않아 순번이 그대로다)`,
         `개선 기대치(계산값): 순번이 바뀐 사람에게만 보내면 0건, 매장당 1초 모아 보내면 약 ${OWNER_SECONDS} × ${N} = ${OWNER_SECONDS * N}건`,
     ];
-});
+}, { expectedCalls: CALLS, measureWindow: true });

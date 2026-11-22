@@ -6,7 +6,7 @@
 //   실행: k6 run -e N=100 -e CALLS=50 scripts/notification-loadtest/exp3-reconnect-gap.js
 import exec from 'k6/execution';
 import { sleep } from 'k6';
-import { N, createWaitings, ownerCall, ownerCalls, subscribe, myMemberId, makeSummary } from './lib.js';
+import { N, createWaitings, ownerCall, subscribe, myMemberId, makeSummary, callThresholds } from './lib.js';
 
 const CALLS = parseInt(__ENV.CALLS || '50', 10);               // 총 호출 수 (N 이하)
 const CALL_RATE = parseInt(__ENV.CALL_RATE || '1', 10);         // 초당 호출 수
@@ -20,6 +20,7 @@ const DURATION = OWNER_START + Math.ceil(CALLS / CALL_RATE) + 3;
 if (CALLS > N) throw new Error(`CALLS(${CALLS})는 N(${N}) 이하여야 한다. 호출은 웨이팅 1건당 1번만 된다`);
 
 export const options = {
+    thresholds: callThresholds(CALLS),
     scenarios: {
         subscribers: {
             // VU 1개 = 고객 1명. 한 반복 안에서 DURATION 동안 끊고 붙기를 반복한다
@@ -52,7 +53,6 @@ export function owner(data) {
     const i = exec.scenario.iterationInTest;
     if (i >= CALLS) return;
     ownerCall(data.waitings[i].waitingId);
-    ownerCalls.add(1);
 }
 
 export const handleSummary = makeSummary('exp3-reconnect-gap', (r) => {
@@ -66,4 +66,4 @@ export const handleSummary = makeSummary('exp3-reconnect-gap', (r) => {
         `유실: ${lost}건 (${expected ? ((lost / expected) * 100).toFixed(1) : 0}%, 끊김 비율 이론값 ${((RECONNECT_DELAY / CYCLE) * 100).toFixed(1)}%)`,
         `호출 당사자 알림(WAITING_CALLED): 발생 ${r.ownerCalls}건 / 수신 ${r.received.waitingCalled}건`,
     ];
-});
+}, { expectedCalls: CALLS });

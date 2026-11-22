@@ -5,10 +5,11 @@
 //   실행: k6 run -e N=100 scripts/notification-loadtest/exp2-no-history.js
 import exec from 'k6/execution';
 import { Counter } from 'k6/metrics';
-import { N, createWaitings, ownerCall, ownerCalls, subscribe, myMemberId, makeSummary } from './lib.js';
+import { N, createWaitings, ownerCall, subscribe, myMemberId, makeSummary, connectedWindow, callThresholds } from './lib.js';
 
-// 1차 연결 유지 시간: 호출 N건이 끝날 때까지 (대략 0.1초/건 + 여유)
-const FIRST_SECONDS = parseInt(__ENV.SUBSCRIBE_SECONDS || String(Math.max(12, Math.ceil(5 + N * 0.1))), 10);
+const OWNER_START = 3;
+const window = connectedWindow(OWNER_START, Math.max(10, Math.ceil(N * 0.5)));
+const FIRST_SECONDS = window.subscription;
 const SECOND_SECONDS = 5;
 const RECONNECT_AT = FIRST_SECONDS + 3;
 
@@ -16,6 +17,7 @@ const phase1 = new Counter('phase1_received');
 const phase2 = new Counter('phase2_received');
 
 export const options = {
+    thresholds: callThresholds(N),
     scenarios: {
         first_connect: {
             executor: 'per-vu-iterations', vus: N, iterations: 1, exec: 'firstConnect',
@@ -23,7 +25,7 @@ export const options = {
         },
         owner_calls_all: {
             executor: 'shared-iterations', vus: 1, iterations: N, exec: 'owner',
-            startTime: '3s', maxDuration: `${FIRST_SECONDS}s`,
+            startTime: `${OWNER_START}s`, maxDuration: `${window.owner}s`,
         },
         reconnect: {
             executor: 'per-vu-iterations', vus: N, iterations: 1, exec: 'reconnect',
@@ -37,13 +39,12 @@ export function setup() {
 }
 
 export function firstConnect() {
-    subscribe(myMemberId(), `${FIRST_SECONDS}s`, () => phase1.add(1));
+    subscribe(myMemberId(), `${FIRST_SECONDS}s`, () => phase1.add(1), true);
 }
 
 export function owner(data) {
     const w = data.waitings[exec.scenario.iterationInTest];
     ownerCall(w.waitingId);
-    ownerCalls.add(1);
 }
 
 export function reconnect() {
@@ -54,4 +55,4 @@ export const handleSummary = makeSummary('exp2-no-history', (r) => [
     `발생: 호출 ${r.ownerCalls}건 (전원 접속 중)`,
     `1차 접속 중 수신: ${r.extra.phase1_received}건 (WAITING_CALLED + 순번 변경)`,
     `재접속 후 수신: ${r.extra.phase2_received}건 → 이전 알림은 다시 볼 수 없음`,
-], ['phase1_received', 'phase2_received']);
+], { expectedCalls: N, expectedConnections: 2 * N, measureWindow: true, extraCounters: ['phase1_received', 'phase2_received'] });
