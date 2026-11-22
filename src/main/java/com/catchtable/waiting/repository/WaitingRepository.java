@@ -54,6 +54,9 @@ public interface WaitingRepository extends JpaRepository<Waiting, Long> {
     Optional<Waiting> findFirstByMemberIdAndStoreIdAndWaitingDateAndStatusIn(
             Long memberId, Long storeId, LocalDate waitingDate, Collection<WaitingStatus> statuses);
 
+    List<Waiting> findByStoreIdAndWaitingDateAndMemberIdInAndStatusIn(
+            Long storeId, LocalDate day, Collection<Long> members, Collection<WaitingStatus> statuses);
+
     // 해당 날짜에 진행 중인 웨이팅이 있는지 (영업시간 변경 충돌 검사용)
     boolean existsByStoreIdAndWaitingDateAndStatusIn(
             Long storeId, LocalDate waitingDate, Collection<WaitingStatus> statuses);

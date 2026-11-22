@@ -80,6 +80,7 @@ DB_HOST=localhost DB_PORT=5433 DB_NAME=catchtable_test DB_USERNAME=catchtable DB
 - 예약·웨이팅 SSE는 업무 트랜잭션에서 `notification_job`을 기록하고 커밋 뒤 전송한다. 처리 순서·재시도·구버전 원장 전환은 [알림 전송 계약](waiting-sse-durability.md)을 따른다.
 - SSE 수신·재연결 뒤 재조회 계약과 커밋 후 알림을 보존한다. 현재 메모리 기반 연결을 여러 서버 간 전달 구조로 간주하지 않는다.
 - 선점 코드의 존재를 외부 결제·환불 연동 완료로 쓰지 않는다. 결제와의 연결 조건은 실제 공통 계약을 확인한다.
+- 날짜별 예약 가능 조회에 공유 캐시를 켤 수 있다. 웨이팅은 매장·서울 접수일 단위로 기존 등록 또는 PG 장부 접수와 식당 번호 발급을 사용한다. 두 기능은 별도 설정이며 초기에는 꺼져 있다. 설정·장애 복구·격리 재현은 [Redis 제품 경로](redis-product.md), 신청·조회·취소 응답은 [웨이팅 대기표 계약](frontend/waiting-receipt-lifecycle.md), 실측 범위는 [초기 검증](../work-log/2026-11-22-redis-product.md)과 [개점 성능·장애 수정 검증](../work-log/2026-11-23-redis-pr-fixes.md)에 있다.
 
 ## 협업 기준
 

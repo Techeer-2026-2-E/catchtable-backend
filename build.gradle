@@ -50,7 +50,7 @@ dependencies {
     // OpenSearch 검색 통합 테스트 (nori 이미지 빌드)
     testImplementation 'org.testcontainers:junit-jupiter'
 
-    // Redis / RabbitMQ / ClickHouse / S3 는 해당 기능 구현 시작할 때 추가할 것
+    implementation 'io.lettuce:lettuce-core'
 }
 
 tasks.named('test') {

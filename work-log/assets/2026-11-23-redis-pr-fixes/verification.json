@@ -1,0 +1,1393 @@
+{
+  "build": {
+    "source": "66f4b13bd5e7ec0f163b1621096351816e76c070",
+    "sha": "1efab112adeecb47792541e572d0f839895017e46bc6730cd9d150391bcd3ae7",
+    "classes": 117,
+    "python": 5,
+    "tests": 1252,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "profile": {
+    "total_application_cpu": 3,
+    "total_heap_mib": 768,
+    "total_hikari": 12,
+    "total_app_cgroup_mib": 1920,
+    "pg_cpu": 2,
+    "pg_mib": 768,
+    "app_pg_vm_gib": 5,
+    "test_vm_count": 5,
+    "redis_vm_count": 3,
+    "physical_failure_proven": false,
+    "application_topology": "private routed Linux VM",
+    "go_generator": "separate 3-vCPU Linux VM",
+    "cold_open_verified": 6,
+    "max_connections_total": 12000,
+    "accept_backlog_total": 4096,
+    "recovery_window_s": 20,
+    "three_app_open_peak_working_set_mib_apps_plus_pg": {
+      "1795364458073596000-both-guest-open-3app": 1765.4,
+      "1795364803276753000-both-guest-open-3app": 1764.6,
+      "1795365166314603000-both-guest-open-3app": 1777.8
+    }
+  },
+  "core_gate": {
+    "eligible": true,
+    "scope": "local product comparison",
+    "jars": [
+      "1efab112adeecb47792541e572d0f839895017e46bc6730cd9d150391bcd3ae7"
+    ],
+    "cases": [
+      {
+        "case": "w1k",
+        "apps": 3,
+        "trials": 3,
+        "passing": 3,
+        "insufficient": 0
+      },
+      {
+        "case": "w5k",
+        "apps": 3,
+        "trials": 3,
+        "passing": 3,
+        "insufficient": 0
+      },
+      {
+        "case": "w10k",
+        "apps": 3,
+        "trials": 3,
+        "passing": 3,
+        "insufficient": 0
+      },
+      {
+        "case": "open",
+        "apps": 3,
+        "trials": 3,
+        "passing": 3,
+        "insufficient": 0
+      },
+      {
+        "case": "open",
+        "apps": 1,
+        "trials": 3,
+        "passing": 3,
+        "insufficient": 0
+      }
+    ],
+    "observed_trials": 15,
+    "expected_trials": 15
+  },
+  "core": [
+    {
+      "trial": "1795364458073596000-both-guest-open-3app",
+      "case": "open",
+      "apps": 3,
+      "jar": "1efab112adeecb47792541e572d0f839895017e46bc6730cd9d150391bcd3ae7",
+      "client": "a5cdc47c22aaae5f8eaafa5699135575111598850e4c649c496dcd6273d59cbc",
+      "opening_to_first_recorded_acceptance_ms": 58.016,
+      "started": 10000,
+      "wire": 10000,
+      "first_success": 10000,
+      "final_observed": 10000,
+      "db_receipts": 10000,
+      "db_waiting": 10000,
+      "target": 10000,
+      "first_ms": {
+        "n": 10000,
+        "p50": 390.899,
+        "p95": 581.154,
+        "p99": 611.746,
+        "max": 992.495
+      },
+      "final_ms": {
+        "n": 10000,
+        "p50": 14200.56,
+        "p95": 26673.384,
+        "p99": 28240.414,
+        "max": 28914.365
+      },
+      "fifo_inversions": 0,
+      "B_errors": 0,
+      "B_recovery_s": 12.0,
+      "verdict": "pass",
+      "apps_with_heap_errors": 0
+    },
+    {
+      "trial": "1795364560845696000-both-guest-w1k-3app",
+      "case": "w1k",
+      "apps": 3,
+      "jar": "1efab112adeecb47792541e572d0f839895017e46bc6730cd9d150391bcd3ae7",
+      "client": "a5cdc47c22aaae5f8eaafa5699135575111598850e4c649c496dcd6273d59cbc",
+      "opening_to_first_recorded_acceptance_ms": null,
+      "started": 1000,
+      "wire": 1000,
+      "first_success": 1000,
+      "final_observed": 1000,
+      "db_receipts": 1000,
+      "db_waiting": 1000,
+      "target": 1000,
+      "first_ms": {
+        "n": 1000,
+        "p50": 6.085,
+        "p95": 9.189,
+        "p99": 36.92,
+        "max": 128.553
+      },
+      "final_ms": {
+        "n": 1000,
+        "p50": 3646.831,
+        "p95": 4431.018,
+        "p99": 4501.227,
+        "max": 5629.952
+      },
+      "fifo_inversions": 0,
+      "B_errors": 0,
+      "B_recovery_s": 16.0,
+      "verdict": "pass",
+      "apps_with_heap_errors": 0
+    },
+    {
+      "trial": "1795364610445336000-both-guest-w5k-3app",
+      "case": "w5k",
+      "apps": 3,
+      "jar": "1efab112adeecb47792541e572d0f839895017e46bc6730cd9d150391bcd3ae7",
+      "client": "a5cdc47c22aaae5f8eaafa5699135575111598850e4c649c496dcd6273d59cbc",
+      "opening_to_first_recorded_acceptance_ms": null,
+      "started": 5000,
+      "wire": 5000,
+      "first_success": 5000,
+      "final_observed": 5000,
+      "db_receipts": 5000,
+      "db_waiting": 5000,
+      "target": 5000,
+      "first_ms": {
+        "n": 5000,
+        "p50": 7.856,
+        "p95": 16.744,
+        "p99": 70.581,
+        "max": 144.904
+      },
+      "final_ms": {
+        "n": 5000,
+        "p50": 12060.301,
+        "p95": 14716.061,
+        "p99": 14957.716,
+        "max": 15017.81
+      },
+      "fifo_inversions": 0,
+      "B_errors": 0,
+      "B_recovery_s": 8.0,
+      "verdict": "pass",
+      "apps_with_heap_errors": 0
+    },
+    {
+      "trial": "1795364661596733000-both-guest-w10k-3app",
+      "case": "w10k",
+      "apps": 3,
+      "jar": "1efab112adeecb47792541e572d0f839895017e46bc6730cd9d150391bcd3ae7",
+      "client": "a5cdc47c22aaae5f8eaafa5699135575111598850e4c649c496dcd6273d59cbc",
+      "opening_to_first_recorded_acceptance_ms": null,
+      "started": 10000,
+      "wire": 10000,
+      "first_success": 10000,
+      "final_observed": 10000,
+      "db_receipts": 10000,
+      "db_waiting": 10000,
+      "target": 10000,
+      "first_ms": {
+        "n": 10000,
+        "p50": 6.706,
+        "p95": 43.677,
+        "p99": 70.265,
+        "max": 103.484
+      },
+      "final_ms": {
+        "n": 10000,
+        "p50": 13416.369,
+        "p95": 25538.396,
+        "p99": 27021.309,
+        "max": 28431.42
+      },
+      "fifo_inversions": 0,
+      "B_errors": 0,
+      "B_recovery_s": 8.0,
+      "verdict": "pass",
+      "apps_with_heap_errors": 0
+    },
+    {
+      "trial": "1795364723685472000-both-guest-open-1app",
+      "case": "open",
+      "apps": 1,
+      "jar": "1efab112adeecb47792541e572d0f839895017e46bc6730cd9d150391bcd3ae7",
+      "client": "a5cdc47c22aaae5f8eaafa5699135575111598850e4c649c496dcd6273d59cbc",
+      "opening_to_first_recorded_acceptance_ms": 53.79,
+      "started": 10000,
+      "wire": 10000,
+      "first_success": 10000,
+      "final_observed": 10000,
+      "db_receipts": 10000,
+      "db_waiting": 10000,
+      "target": 10000,
+      "first_ms": {
+        "n": 10000,
+        "p50": 130.635,
+        "p95": 262.599,
+        "p99": 298.67,
+        "max": 304.052
+      },
+      "final_ms": {
+        "n": 10000,
+        "p50": 14703.023,
+        "p95": 26829.264,
+        "p99": 28167.536,
+        "max": 32611.228
+      },
+      "fifo_inversions": 0,
+      "B_errors": 0,
+      "B_recovery_s": 8.0,
+      "verdict": "pass",
+      "apps_with_heap_errors": 0
+    },
+    {
+      "trial": "1795364803276753000-both-guest-open-3app",
+      "case": "open",
+      "apps": 3,
+      "jar": "1efab112adeecb47792541e572d0f839895017e46bc6730cd9d150391bcd3ae7",
+      "client": "a5cdc47c22aaae5f8eaafa5699135575111598850e4c649c496dcd6273d59cbc",
+      "opening_to_first_recorded_acceptance_ms": 54.062,
+      "started": 10000,
+      "wire": 10000,
+      "first_success": 10000,
+      "final_observed": 10000,
+      "db_receipts": 10000,
+      "db_waiting": 10000,
+      "target": 10000,
+      "first_ms": {
+        "n": 10000,
+        "p50": 356.19,
+        "p95": 477.49,
+        "p99": 525.916,
+        "max": 1164.713
+      },
+      "final_ms": {
+        "n": 10000,
+        "p50": 14351.823,
+        "p95": 27132.006,
+        "p99": 28609.417,
+        "max": 34273.921
+      },
+      "fifo_inversions": 0,
+      "B_errors": 0,
+      "B_recovery_s": 12.0,
+      "verdict": "pass",
+      "apps_with_heap_errors": 0
+    },
+    {
+      "trial": "1795364926169439000-both-guest-w1k-3app",
+      "case": "w1k",
+      "apps": 3,
+      "jar": "1efab112adeecb47792541e572d0f839895017e46bc6730cd9d150391bcd3ae7",
+      "client": "a5cdc47c22aaae5f8eaafa5699135575111598850e4c649c496dcd6273d59cbc",
+      "opening_to_first_recorded_acceptance_ms": null,
+      "started": 1000,
+      "wire": 1000,
+      "first_success": 1000,
+      "final_observed": 1000,
+      "db_receipts": 1000,
+      "db_waiting": 1000,
+      "target": 1000,
+      "first_ms": {
+        "n": 1000,
+        "p50": 6.146,
+        "p95": 12.29,
+        "p99": 25.92,
+        "max": 95.661
+      },
+      "final_ms": {
+        "n": 1000,
+        "p50": 3559.55,
+        "p95": 4417.638,
+        "p99": 4497.194,
+        "max": 4668.649
+      },
+      "fifo_inversions": 0,
+      "B_errors": 0,
+      "B_recovery_s": 16.0,
+      "verdict": "pass",
+      "apps_with_heap_errors": 0
+    },
+    {
+      "trial": "1795364977523727000-both-guest-w5k-3app",
+      "case": "w5k",
+      "apps": 3,
+      "jar": "1efab112adeecb47792541e572d0f839895017e46bc6730cd9d150391bcd3ae7",
+      "client": "a5cdc47c22aaae5f8eaafa5699135575111598850e4c649c496dcd6273d59cbc",
+      "opening_to_first_recorded_acceptance_ms": null,
+      "started": 5000,
+      "wire": 5000,
+      "first_success": 5000,
+      "final_observed": 5000,
+      "db_receipts": 5000,
+      "db_waiting": 5000,
+      "target": 5000,
+      "first_ms": {
+        "n": 5000,
+        "p50": 7.749,
+        "p95": 14.623,
+        "p99": 58.954,
+        "max": 88.236
+      },
+      "final_ms": {
+        "n": 5000,
+        "p50": 12070.809,
+        "p95": 14717.314,
+        "p99": 14955.457,
+        "max": 15018.886
+      },
+      "fifo_inversions": 0,
+      "B_errors": 0,
+      "B_recovery_s": 8.0,
+      "verdict": "pass",
+      "apps_with_heap_errors": 0
+    },
+    {
+      "trial": "1795365029023152000-both-guest-w10k-3app",
+      "case": "w10k",
+      "apps": 3,
+      "jar": "1efab112adeecb47792541e572d0f839895017e46bc6730cd9d150391bcd3ae7",
+      "client": "a5cdc47c22aaae5f8eaafa5699135575111598850e4c649c496dcd6273d59cbc",
+      "opening_to_first_recorded_acceptance_ms": null,
+      "started": 10000,
+      "wire": 10000,
+      "first_success": 10000,
+      "final_observed": 10000,
+      "db_receipts": 10000,
+      "db_waiting": 10000,
+      "target": 10000,
+      "first_ms": {
+        "n": 10000,
+        "p50": 6.718,
+        "p95": 41.267,
+        "p99": 59.312,
+        "max": 106.36
+      },
+      "final_ms": {
+        "n": 10000,
+        "p50": 13545.854,
+        "p95": 25690.981,
+        "p99": 27140.802,
+        "max": 28430.879
+      },
+      "fifo_inversions": 0,
+      "B_errors": 0,
+      "B_recovery_s": 8.0,
+      "verdict": "pass",
+      "apps_with_heap_errors": 0
+    },
+    {
+      "trial": "1795365092825084000-both-guest-open-1app",
+      "case": "open",
+      "apps": 1,
+      "jar": "1efab112adeecb47792541e572d0f839895017e46bc6730cd9d150391bcd3ae7",
+      "client": "a5cdc47c22aaae5f8eaafa5699135575111598850e4c649c496dcd6273d59cbc",
+      "opening_to_first_recorded_acceptance_ms": 44.184,
+      "started": 10000,
+      "wire": 10000,
+      "first_success": 10000,
+      "final_observed": 10000,
+      "db_receipts": 10000,
+      "db_waiting": 10000,
+      "target": 10000,
+      "first_ms": {
+        "n": 10000,
+        "p50": 174.292,
+        "p95": 295.837,
+        "p99": 329.463,
+        "max": 765.403
+      },
+      "final_ms": {
+        "n": 10000,
+        "p50": 14650.8,
+        "p95": 27134.711,
+        "p99": 28469.226,
+        "max": 35600.964
+      },
+      "fifo_inversions": 0,
+      "B_errors": 0,
+      "B_recovery_s": 8.0,
+      "verdict": "pass",
+      "apps_with_heap_errors": 0
+    },
+    {
+      "trial": "1795365166314603000-both-guest-open-3app",
+      "case": "open",
+      "apps": 3,
+      "jar": "1efab112adeecb47792541e572d0f839895017e46bc6730cd9d150391bcd3ae7",
+      "client": "a5cdc47c22aaae5f8eaafa5699135575111598850e4c649c496dcd6273d59cbc",
+      "opening_to_first_recorded_acceptance_ms": 38.372,
+      "started": 10000,
+      "wire": 10000,
+      "first_success": 10000,
+      "final_observed": 10000,
+      "db_receipts": 10000,
+      "db_waiting": 10000,
+      "target": 10000,
+      "first_ms": {
+        "n": 10000,
+        "p50": 367.891,
+        "p95": 524.977,
+        "p99": 560.618,
+        "max": 736.672
+      },
+      "final_ms": {
+        "n": 10000,
+        "p50": 15583.286,
+        "p95": 29112.97,
+        "p99": 36129.709,
+        "max": 39068.729
+      },
+      "fifo_inversions": 0,
+      "B_errors": 0,
+      "B_recovery_s": 12.0,
+      "verdict": "pass",
+      "apps_with_heap_errors": 0
+    },
+    {
+      "trial": "1795365291151660000-both-guest-w1k-3app",
+      "case": "w1k",
+      "apps": 3,
+      "jar": "1efab112adeecb47792541e572d0f839895017e46bc6730cd9d150391bcd3ae7",
+      "client": "a5cdc47c22aaae5f8eaafa5699135575111598850e4c649c496dcd6273d59cbc",
+      "opening_to_first_recorded_acceptance_ms": null,
+      "started": 1000,
+      "wire": 1000,
+      "first_success": 1000,
+      "final_observed": 1000,
+      "db_receipts": 1000,
+      "db_waiting": 1000,
+      "target": 1000,
+      "first_ms": {
+        "n": 1000,
+        "p50": 6.109,
+        "p95": 8.427,
+        "p99": 19.434,
+        "max": 49.103
+      },
+      "final_ms": {
+        "n": 1000,
+        "p50": 3671.391,
+        "p95": 4436.694,
+        "p99": 4506.734,
+        "max": 5587.817
+      },
+      "fifo_inversions": 0,
+      "B_errors": 0,
+      "B_recovery_s": 16.0,
+      "verdict": "pass",
+      "apps_with_heap_errors": 0
+    },
+    {
+      "trial": "1795365342472346000-both-guest-w5k-3app",
+      "case": "w5k",
+      "apps": 3,
+      "jar": "1efab112adeecb47792541e572d0f839895017e46bc6730cd9d150391bcd3ae7",
+      "client": "a5cdc47c22aaae5f8eaafa5699135575111598850e4c649c496dcd6273d59cbc",
+      "opening_to_first_recorded_acceptance_ms": null,
+      "started": 5000,
+      "wire": 5000,
+      "first_success": 5000,
+      "final_observed": 5000,
+      "db_receipts": 5000,
+      "db_waiting": 5000,
+      "target": 5000,
+      "first_ms": {
+        "n": 5000,
+        "p50": 8.068,
+        "p95": 15.8,
+        "p99": 61.126,
+        "max": 131.408
+      },
+      "final_ms": {
+        "n": 5000,
+        "p50": 12059.707,
+        "p95": 14716.801,
+        "p99": 14954.763,
+        "max": 15027.259
+      },
+      "fifo_inversions": 0,
+      "B_errors": 0,
+      "B_recovery_s": 8.0,
+      "verdict": "pass",
+      "apps_with_heap_errors": 0
+    },
+    {
+      "trial": "1795365392112575000-both-guest-w10k-3app",
+      "case": "w10k",
+      "apps": 3,
+      "jar": "1efab112adeecb47792541e572d0f839895017e46bc6730cd9d150391bcd3ae7",
+      "client": "a5cdc47c22aaae5f8eaafa5699135575111598850e4c649c496dcd6273d59cbc",
+      "opening_to_first_recorded_acceptance_ms": null,
+      "started": 10000,
+      "wire": 10000,
+      "first_success": 10000,
+      "final_observed": 10000,
+      "db_receipts": 10000,
+      "db_waiting": 10000,
+      "target": 10000,
+      "first_ms": {
+        "n": 10000,
+        "p50": 6.796,
+        "p95": 44.391,
+        "p99": 68.516,
+        "max": 177.061
+      },
+      "final_ms": {
+        "n": 10000,
+        "p50": 13542.634,
+        "p95": 25981.738,
+        "p99": 27724.824,
+        "max": 28448.171
+      },
+      "fifo_inversions": 0,
+      "B_errors": 0,
+      "B_recovery_s": 8.0,
+      "verdict": "pass",
+      "apps_with_heap_errors": 0
+    },
+    {
+      "trial": "1795365455751970000-both-guest-open-1app",
+      "case": "open",
+      "apps": 1,
+      "jar": "1efab112adeecb47792541e572d0f839895017e46bc6730cd9d150391bcd3ae7",
+      "client": "a5cdc47c22aaae5f8eaafa5699135575111598850e4c649c496dcd6273d59cbc",
+      "opening_to_first_recorded_acceptance_ms": 125.092,
+      "started": 10000,
+      "wire": 10000,
+      "first_success": 10000,
+      "final_observed": 10000,
+      "db_receipts": 10000,
+      "db_waiting": 10000,
+      "target": 10000,
+      "first_ms": {
+        "n": 10000,
+        "p50": 30.572,
+        "p95": 233.974,
+        "p99": 250.78,
+        "max": 263.201
+      },
+      "final_ms": {
+        "n": 10000,
+        "p50": 14504.242,
+        "p95": 26598.282,
+        "p99": 28028.243,
+        "max": 28463.885
+      },
+      "fifo_inversions": 0,
+      "B_errors": 0,
+      "B_recovery_s": 8.0,
+      "verdict": "pass",
+      "apps_with_heap_errors": 0
+    }
+  ],
+  "domains": [
+    {
+      "case": "read",
+      "arm": "legacy",
+      "trial": "1795365579631846000-legacy-guest-read-3app",
+      "wire": 1000,
+      "started": 1000,
+      "first_success": 1000,
+      "first_ms": {
+        "n": 1000,
+        "p50": 5.048,
+        "p95": 6.034,
+        "p99": 13.353,
+        "max": 75.161
+      },
+      "final_observed": 0,
+      "final_ms": {
+        "n": 0
+      },
+      "B_errors": 0,
+      "B_recovery_s": 8.0,
+      "fifo_inversions": 0,
+      "response_mismatches": [],
+      "apps_with_heap_errors": 0,
+      "db_receipts": 0,
+      "db_waiting": 0,
+      "db": {
+        "slot_count": {
+          "calls": 1342,
+          "exec_ms": 3628.98
+        },
+        "batch_rows": {
+          "calls": 0,
+          "exec_ms": 0
+        },
+        "waiting_insert": {
+          "calls": 114,
+          "exec_ms": 44.34
+        },
+        "availability.cache.hit": 0,
+        "availability.cache.compute": 0,
+        "availability.cache.join": 0,
+        "availability.cache.bypass": 0,
+        "hikaricp.connections.timeout": 0.0
+      },
+      "outcomes": {
+        "other/waiting/http_201": 114,
+        "other/availability/http_200": 342,
+        "hot/availability/http_200": 1000
+      },
+      "hold_journey_ms": {},
+      "integrity": true,
+      "verdict": "pass"
+    },
+    {
+      "case": "read",
+      "arm": "cache",
+      "trial": "1795365627399631000-cache-guest-read-3app",
+      "wire": 1000,
+      "started": 1000,
+      "first_success": 1000,
+      "first_ms": {
+        "n": 1000,
+        "p50": 3.091,
+        "p95": 5.681,
+        "p99": 14.891,
+        "max": 55.762
+      },
+      "final_observed": 0,
+      "final_ms": {
+        "n": 0
+      },
+      "B_errors": 0,
+      "B_recovery_s": 12.0,
+      "fifo_inversions": 0,
+      "response_mismatches": [],
+      "apps_with_heap_errors": 0,
+      "db_receipts": 0,
+      "db_waiting": 0,
+      "db": {
+        "slot_count": {
+          "calls": 28,
+          "exec_ms": 106.02
+        },
+        "batch_rows": {
+          "calls": 0,
+          "exec_ms": 0
+        },
+        "waiting_insert": {
+          "calls": 114,
+          "exec_ms": 47.8
+        },
+        "availability.cache.hit": 1311.0,
+        "availability.cache.compute": 28.0,
+        "availability.cache.join": 3.0,
+        "availability.cache.bypass": 0,
+        "hikaricp.connections.timeout": 0.0
+      },
+      "outcomes": {
+        "other/waiting/http_201": 114,
+        "other/availability/http_200": 342,
+        "hot/availability/http_200": 1000
+      },
+      "hold_journey_ms": {},
+      "integrity": true,
+      "verdict": "pass"
+    },
+    {
+      "case": "read",
+      "arm": "cache",
+      "trial": "1795365675163467000-cache-guest-read-3app",
+      "wire": 1000,
+      "started": 1000,
+      "first_success": 1000,
+      "first_ms": {
+        "n": 1000,
+        "p50": 2.896,
+        "p95": 5.537,
+        "p99": 13.408,
+        "max": 60.502
+      },
+      "final_observed": 0,
+      "final_ms": {
+        "n": 0
+      },
+      "B_errors": 0,
+      "B_recovery_s": null,
+      "fifo_inversions": 0,
+      "response_mismatches": [],
+      "apps_with_heap_errors": 0,
+      "db_receipts": 0,
+      "db_waiting": 0,
+      "db": {
+        "slot_count": {
+          "calls": 29,
+          "exec_ms": 110.21
+        },
+        "batch_rows": {
+          "calls": 0,
+          "exec_ms": 0
+        },
+        "waiting_insert": {
+          "calls": 114,
+          "exec_ms": 48.69
+        },
+        "availability.cache.hit": 1309.0,
+        "availability.cache.compute": 29.0,
+        "availability.cache.join": 4.0,
+        "availability.cache.bypass": 0,
+        "hikaricp.connections.timeout": 0.0
+      },
+      "outcomes": {
+        "other/waiting/http_201": 114,
+        "other/availability/http_200": 342,
+        "hot/availability/http_200": 1000
+      },
+      "hold_journey_ms": {},
+      "integrity": true,
+      "verdict": "fail"
+    },
+    {
+      "case": "read",
+      "arm": "legacy",
+      "trial": "1795365722921124000-legacy-guest-read-3app",
+      "wire": 1000,
+      "started": 1000,
+      "first_success": 1000,
+      "first_ms": {
+        "n": 1000,
+        "p50": 5.064,
+        "p95": 6.172,
+        "p99": 9.466,
+        "max": 48.869
+      },
+      "final_observed": 0,
+      "final_ms": {
+        "n": 0
+      },
+      "B_errors": 0,
+      "B_recovery_s": 8.0,
+      "fifo_inversions": 0,
+      "response_mismatches": [],
+      "apps_with_heap_errors": 0,
+      "db_receipts": 0,
+      "db_waiting": 0,
+      "db": {
+        "slot_count": {
+          "calls": 1342,
+          "exec_ms": 3680.02
+        },
+        "batch_rows": {
+          "calls": 0,
+          "exec_ms": 0
+        },
+        "waiting_insert": {
+          "calls": 114,
+          "exec_ms": 45.5
+        },
+        "availability.cache.hit": 0,
+        "availability.cache.compute": 0,
+        "availability.cache.join": 0,
+        "availability.cache.bypass": 0,
+        "hikaricp.connections.timeout": 0.0
+      },
+      "outcomes": {
+        "other/waiting/http_201": 114,
+        "other/availability/http_200": 342,
+        "hot/availability/http_200": 1000
+      },
+      "hold_journey_ms": {},
+      "integrity": true,
+      "verdict": "pass"
+    },
+    {
+      "case": "read",
+      "arm": "legacy",
+      "trial": "1795365770913228000-legacy-guest-read-3app",
+      "wire": 1000,
+      "started": 1000,
+      "first_success": 1000,
+      "first_ms": {
+        "n": 1000,
+        "p50": 5.032,
+        "p95": 6.067,
+        "p99": 8.957,
+        "max": 53.712
+      },
+      "final_observed": 0,
+      "final_ms": {
+        "n": 0
+      },
+      "B_errors": 0,
+      "B_recovery_s": 8.0,
+      "fifo_inversions": 0,
+      "response_mismatches": [],
+      "apps_with_heap_errors": 0,
+      "db_receipts": 0,
+      "db_waiting": 0,
+      "db": {
+        "slot_count": {
+          "calls": 1342,
+          "exec_ms": 3653.73
+        },
+        "batch_rows": {
+          "calls": 0,
+          "exec_ms": 0
+        },
+        "waiting_insert": {
+          "calls": 114,
+          "exec_ms": 44.01
+        },
+        "availability.cache.hit": 0,
+        "availability.cache.compute": 0,
+        "availability.cache.join": 0,
+        "availability.cache.bypass": 0,
+        "hikaricp.connections.timeout": 0.0
+      },
+      "outcomes": {
+        "other/waiting/http_201": 114,
+        "other/availability/http_200": 342,
+        "hot/availability/http_200": 1000
+      },
+      "hold_journey_ms": {},
+      "integrity": true,
+      "verdict": "pass"
+    },
+    {
+      "case": "read",
+      "arm": "cache",
+      "trial": "1795365818688910000-cache-guest-read-3app",
+      "wire": 1000,
+      "started": 1000,
+      "first_success": 1000,
+      "first_ms": {
+        "n": 1000,
+        "p50": 2.853,
+        "p95": 5.412,
+        "p99": 14.085,
+        "max": 89.366
+      },
+      "final_observed": 0,
+      "final_ms": {
+        "n": 0
+      },
+      "B_errors": 0,
+      "B_recovery_s": 16.0,
+      "fifo_inversions": 0,
+      "response_mismatches": [],
+      "apps_with_heap_errors": 0,
+      "db_receipts": 0,
+      "db_waiting": 0,
+      "db": {
+        "slot_count": {
+          "calls": 29,
+          "exec_ms": 103.24
+        },
+        "batch_rows": {
+          "calls": 0,
+          "exec_ms": 0
+        },
+        "waiting_insert": {
+          "calls": 114,
+          "exec_ms": 48.6
+        },
+        "availability.cache.hit": 1311.0,
+        "availability.cache.compute": 29.0,
+        "availability.cache.join": 2.0,
+        "availability.cache.bypass": 0,
+        "hikaricp.connections.timeout": 0.0
+      },
+      "outcomes": {
+        "other/waiting/http_201": 114,
+        "other/availability/http_200": 342,
+        "hot/availability/http_200": 1000
+      },
+      "hold_journey_ms": {},
+      "integrity": true,
+      "verdict": "pass"
+    },
+    {
+      "case": "hold",
+      "arm": "legacy",
+      "trial": "1795365866434295000-legacy-guest-hold-3app",
+      "wire": 300,
+      "started": 300,
+      "first_success": 300,
+      "first_ms": {
+        "n": 300,
+        "p50": 5.409,
+        "p95": 27.318,
+        "p99": 61.256,
+        "max": 87.657
+      },
+      "final_observed": 0,
+      "final_ms": {
+        "n": 0
+      },
+      "B_errors": 0,
+      "B_recovery_s": 8.0,
+      "fifo_inversions": 0,
+      "response_mismatches": [],
+      "apps_with_heap_errors": 0,
+      "db_receipts": 0,
+      "db_waiting": 0,
+      "db": {
+        "slot_count": {
+          "calls": 570,
+          "exec_ms": 2180.5
+        },
+        "batch_rows": {
+          "calls": 0,
+          "exec_ms": 0
+        },
+        "waiting_insert": {
+          "calls": 90,
+          "exec_ms": 43.68
+        },
+        "availability.cache.hit": 0,
+        "availability.cache.compute": 0,
+        "availability.cache.join": 0,
+        "availability.cache.bypass": 0,
+        "hikaricp.connections.timeout": 0.0
+      },
+      "outcomes": {
+        "other/waiting/http_201": 90,
+        "other/availability/http_200": 270,
+        "hot/availability/http_200": 300,
+        "hot/hold/http_201": 12,
+        "hot/hold/http_409": 8
+      },
+      "hold_journey_ms": {
+        "http_201": {
+          "n": 12,
+          "p50": 71.741,
+          "p95": 123.131,
+          "p99": 123.131,
+          "max": 123.131
+        },
+        "http_409": {
+          "n": 8,
+          "p50": 57.777,
+          "p95": 99.164,
+          "p99": 99.164,
+          "max": 99.164
+        }
+      },
+      "integrity": true,
+      "verdict": "pass"
+    },
+    {
+      "case": "hold",
+      "arm": "cache",
+      "trial": "1795365906043805000-cache-guest-hold-3app",
+      "wire": 300,
+      "started": 300,
+      "first_success": 300,
+      "first_ms": {
+        "n": 300,
+        "p50": 2.567,
+        "p95": 14.799,
+        "p99": 55.068,
+        "max": 58.738
+      },
+      "final_observed": 0,
+      "final_ms": {
+        "n": 0
+      },
+      "B_errors": 0,
+      "B_recovery_s": 8.0,
+      "fifo_inversions": 0,
+      "response_mismatches": [],
+      "apps_with_heap_errors": 0,
+      "db_receipts": 0,
+      "db_waiting": 0,
+      "db": {
+        "slot_count": {
+          "calls": 24,
+          "exec_ms": 86.39
+        },
+        "batch_rows": {
+          "calls": 0,
+          "exec_ms": 0
+        },
+        "waiting_insert": {
+          "calls": 90,
+          "exec_ms": 42.36
+        },
+        "availability.cache.hit": 538.0,
+        "availability.cache.compute": 24.0,
+        "availability.cache.join": 8.0,
+        "availability.cache.bypass": 0,
+        "hikaricp.connections.timeout": 0.0
+      },
+      "outcomes": {
+        "other/waiting/http_201": 90,
+        "other/availability/http_200": 270,
+        "hot/availability/http_200": 300,
+        "hot/hold/http_201": 12,
+        "hot/hold/http_409": 5
+      },
+      "hold_journey_ms": {
+        "http_201": {
+          "n": 12,
+          "p50": 47.089,
+          "p95": 114.4,
+          "p99": 114.4,
+          "max": 114.4
+        },
+        "http_409": {
+          "n": 5,
+          "p50": 62.455,
+          "p95": 130.953,
+          "p99": 130.953,
+          "max": 130.953
+        }
+      },
+      "integrity": true,
+      "verdict": "pass"
+    },
+    {
+      "case": "w1k",
+      "arm": "waiting",
+      "trial": "1795365945744297000-waiting-guest-w1k-3app",
+      "wire": 1000,
+      "started": 1000,
+      "first_success": 1000,
+      "first_ms": {
+        "n": 1000,
+        "p50": 6.002,
+        "p95": 10.891,
+        "p99": 17.469,
+        "max": 54.508
+      },
+      "final_observed": 1000,
+      "final_ms": {
+        "n": 1000,
+        "p50": 3620.492,
+        "p95": 4429.248,
+        "p99": 4501.791,
+        "max": 4832.826
+      },
+      "B_errors": 0,
+      "B_recovery_s": 8.0,
+      "fifo_inversions": 0,
+      "response_mismatches": [],
+      "apps_with_heap_errors": 0,
+      "db_receipts": 1000,
+      "db_waiting": 1000,
+      "db": {
+        "slot_count": {
+          "calls": 342,
+          "exec_ms": 1392.02
+        },
+        "batch_rows": {
+          "calls": 1000,
+          "exec_ms": 116.03
+        },
+        "waiting_insert": {
+          "calls": 1114,
+          "exec_ms": 83.35
+        },
+        "availability.cache.hit": 0,
+        "availability.cache.compute": 0,
+        "availability.cache.join": 0,
+        "availability.cache.bypass": 0,
+        "hikaricp.connections.timeout": 0.0
+      },
+      "outcomes": {
+        "other/waiting/http_201": 114,
+        "other/availability/http_200": 342,
+        "hot/waiting/http_202": 960,
+        "hot/waiting/http_201": 40,
+        "hot/poll/http_200": 960
+      },
+      "hold_journey_ms": {},
+      "integrity": true,
+      "verdict": "pass"
+    }
+  ],
+  "domain_verification": {
+    "cache": {
+      "pairs": [
+        {
+          "legacy": {
+            "p95_ms": 6.034,
+            "p99_ms": 13.353,
+            "sql": 1342,
+            "hit": 0
+          },
+          "cache": {
+            "p95_ms": 5.681,
+            "p99_ms": 14.891,
+            "sql": 28,
+            "hit": 1311.0
+          }
+        },
+        {
+          "cache": {
+            "p95_ms": 5.537,
+            "p99_ms": 13.408,
+            "sql": 29,
+            "hit": 1309.0
+          },
+          "legacy": {
+            "p95_ms": 6.172,
+            "p99_ms": 9.466,
+            "sql": 1342,
+            "hit": 0
+          }
+        },
+        {
+          "legacy": {
+            "p95_ms": 6.067,
+            "p99_ms": 8.957,
+            "sql": 1342,
+            "hit": 0
+          },
+          "cache": {
+            "p95_ms": 5.412,
+            "p99_ms": 14.085,
+            "sql": 29,
+            "hit": 1311.0
+          }
+        }
+      ],
+      "pooled": {
+        "legacy": {
+          "n": 3000,
+          "p50": 5.046,
+          "p95": 6.095,
+          "p99": 10.102,
+          "max": 75.161
+        },
+        "cache": {
+          "n": 3000,
+          "p50": 2.928,
+          "p95": 5.541,
+          "p99": 14.085,
+          "max": 89.366
+        }
+      },
+      "all_pairs_lower_p95": true,
+      "all_pairs_reduce_sql": true
+    },
+    "vm": {
+      "start": {
+        "distinct_guest_boot_ids": 3,
+        "sentinels": 3,
+        "apps": 3
+      },
+      "primary_guest_loss": {
+        "surviving_votes": 2,
+        "promoted_guest": "C",
+        "first_http": [
+          202,
+          202
+        ],
+        "actual_numbers": [
+          2,
+          3
+        ],
+        "promotion_observed_s": 3.866,
+        "numbers_observed_s": 4.037,
+        "replicated_marker_found": true
+      },
+      "primary_rejoined": {
+        "new_kernel_boot": true,
+        "role": "replica"
+      },
+      "cache_guest_loss": {
+        "db_bypasses": 3.0,
+        "new_wait_number": 4,
+        "surviving_votes": 2
+      },
+      "complete": {
+        "cache_rebooted": true,
+        "empty_cache_recovered": true,
+        "final_quorum": 3,
+        "original_receipt_cancelled": true
+      }
+    },
+    "recovery": [
+      {
+        "source": "1795357681162137000-both-host-open-3app",
+        "source_jar": "a68c42b5ccf8180c2d1b65f108cab35d560052eeb436a0fb149f3a33ac69ac3f",
+        "recovery_jar": "1efab112adeecb47792541e572d0f839895017e46bc6730cd9d150391bcd3ae7",
+        "accepted": 10000,
+        "unfinished_before": 7863,
+        "same_key_and_number_after_restart": 10000,
+        "inversions": 0,
+        "duplicates": 0
+      },
+      {
+        "source": "1795358731777912000-both-guest-open-3app",
+        "source_jar": "ea8482a138519552f1b15b08e4ad785fc38a4834c2fc257003f31b65777283a6",
+        "recovery_jar": "1efab112adeecb47792541e572d0f839895017e46bc6730cd9d150391bcd3ae7",
+        "accepted": 6634,
+        "unfinished_before": 6440,
+        "same_key_and_number_after_restart": 6634,
+        "inversions": 0,
+        "duplicates": 0
+      }
+    ]
+  },
+  "local_http_and_recovery": {
+    "cache": {
+      "db": "rb0_product1795364545687757000",
+      "date": "2026-11-24",
+      "jar": "1efab112adeecb47792541e572d0f839895017e46bc6730cd9d150391bcd3ae7",
+      "ttl_before_after_hits_ms": [
+        1596,
+        1482
+      ],
+      "evicted_marker_new_key": true,
+      "late_old_fill": {
+        "old_slots": 44,
+        "next_generation_slots": 22
+      },
+      "rollback_kept_generation": true,
+      "normal": {
+        "observed_followers": 9,
+        "clients": 12,
+        "actual_db_calculations_blocked": 3,
+        "excess_other_key_http": null
+      },
+      "outage": {
+        "observed_followers": 9,
+        "clients": 12,
+        "actual_db_calculations_blocked": 3,
+        "excess_other_key_http": 503
+      }
+    },
+    "contracts": {
+      "db": "rb0_product1795364485373496000",
+      "day": "2026-11-23",
+      "jar": "1efab112adeecb47792541e572d0f839895017e46bc6730cd9d150391bcd3ae7",
+      "idle": {
+        "http": 202,
+        "actual": 1,
+        "receipt": "e0da74cf-2247-4b97-ac6a-468ccdaeab36"
+      },
+      "cache": {
+        "shared_read_hits": 3.0,
+        "before": 12,
+        "hold": 11,
+        "released": 12
+      },
+      "cache_down": {
+        "db_bypass": true,
+        "queue_continues": 2
+      },
+      "queue_down": {
+        "accepted": 5,
+        "full": 429,
+        "pending_withdrawal": true,
+        "registered_cancel": true
+      },
+      "recovery": {
+        "fifo_numbers": [
+          3,
+          4,
+          5,
+          6
+        ]
+      },
+      "cancellation_race": {
+        "receiptId": "22340bab-b049-438b-9837-045464147bde",
+        "storeId": 1,
+        "receivedDate": "2026-11-23",
+        "intakeSequence": 8,
+        "partyCount": 2,
+        "status": "WITHDRAWN",
+        "cancelOutcome": "WITHDRAWN"
+      },
+      "sentinel": {
+        "old": "master",
+        "promoted": "replica",
+        "waitNumber": 7
+      },
+      "rollback": {
+        "legacy_new": 201,
+        "old_receipt_readable": true
+      },
+      "aof_restart": {
+        "both_processes_killed": true,
+        "everysec_marker_replayed": true,
+        "missing_lane_rediscovered": true
+      },
+      "cancel_reconciliation": {
+        "checked": 3,
+        "mismatches": 0
+      }
+    },
+    "process_limit": {
+      "jar": "1efab112adeecb47792541e572d0f839895017e46bc6730cd9d150391bcd3ae7",
+      "flyway": 55,
+      "apps": 3,
+      "customers": 2,
+      "while_slots_held": {
+        "receipt_http": 202,
+        "legacy_blocked_in_pg": true,
+        "registrations": 0
+      },
+      "after_release": {
+        "A_receipt_number": 1,
+        "B_legacy_number": 1,
+        "replay": 200,
+        "cancel": "CANCELED",
+        "shared_cache_hits": 5.0
+      }
+    },
+    "pg_loss": {
+      "jar": "1efab112adeecb47792541e572d0f839895017e46bc6730cd9d150391bcd3ae7",
+      "lookup_db_down": 503,
+      "post_db_down": 503,
+      "retry_after_s": 2,
+      "original_replay_http": 200,
+      "same_receipt": true,
+      "new_key_sequence": 2,
+      "unfinished_after_withdrawals": 0
+    },
+    "default_sentinel": {
+      "jar": "1efab112adeecb47792541e572d0f839895017e46bc6730cd9d150391bcd3ae7",
+      "group": "ct-waiting",
+      "uri_override": false,
+      "silent_first_seed": false,
+      "http": 201,
+      "actual_number": 1
+    },
+    "sentinel_timeout": {
+      "jar": "1efab112adeecb47792541e572d0f839895017e46bc6730cd9d150391bcd3ae7",
+      "group": "ct-waiting",
+      "uri_override": true,
+      "silent_first_seed": true,
+      "http": 201,
+      "actual_number": 1
+    }
+  },
+  "additional_guards": {
+    "outbox": {
+      "commits": 6000,
+      "writers": 4,
+      "retained_mailboxes": 4,
+      "with_store_invalidation": 4,
+      "duration_s": 0.617
+    },
+    "barrier": {
+      "wait_limit_s": 0.35,
+      "observed_s": 0.424,
+      "remaining_sessions": 0
+    },
+    "legacy_evidence": {
+      "empty_gate": false,
+      "mixed_binaries_rejected": true
+    }
+  },
+  "evidence_archive": {
+    "files": 626,
+    "sha256": "de66c80d2f45286fc29c65094f8dd274d4ca468b28f7fce628e50e8f945f08d0"
+  }
+}
