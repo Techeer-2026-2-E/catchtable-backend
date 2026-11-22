@@ -10,6 +10,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
@@ -34,6 +35,10 @@ class NotificationEventListenerTest {
 
     @Autowired
     private SseEmitterRepository repository;
+
+    // SSE 전송 시점만 확인 (가짜 회원 id라 알림함 저장은 끔)
+    @MockBean
+    private NotificationInboxRecorder inboxRecorder;
 
     private SseEmitter emitter;
 
