@@ -1,7 +1,9 @@
 package com.catchtable.reservation;
 
+import com.catchtable.support.MigrationSqlFiles;
 import org.flywaydb.core.Flyway;
 import org.flywaydb.core.api.FlywayException;
+import org.flywaydb.core.api.MigrationVersion;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -25,10 +27,12 @@ class ReservationRefundMigrationTest {
         Path oldMigrations = Files.createTempDirectory("catchtable-v22-without-v20-");
         try (var connection = dataSource.getConnection(); var sql = connection.createStatement()) {
             try {
-                try (var paths = Files.list(Path.of("src/main/resources/db/migration"))) {
-                    for (Path path : paths.toList()) {
-                        int version = Integer.parseInt(path.getFileName().toString().split("__")[0].substring(1));
-                        if (version <= 22 && version != 20) Files.copy(path, oldMigrations.resolve(path.getFileName()));
+                var original = MigrationVersion.fromVersion("22");
+                var missing = MigrationVersion.fromVersion("20");
+                for (Path path : MigrationSqlFiles.all()) {
+                    var version = MigrationSqlFiles.version(path);
+                    if (version.compareTo(original) <= 0 && !version.equals(missing)) {
+                        Files.copy(path, oldMigrations.resolve(path.getFileName()));
                     }
                 }
                 Flyway.configure().dataSource(dataSource).schemas(schema).defaultSchema(schema)
