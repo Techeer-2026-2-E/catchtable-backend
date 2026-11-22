@@ -30,7 +30,7 @@
 
 ## 저장과 경합
 
-- V41은 매장·일자별 수용량/미완료 수/마지막 수락 순번, 회원 소유 대기표, 재시도 키 매핑을 추가한다. 마이그레이션만 적용하면 활성 매장·일자는 0개다. V42는 장부 일자 개설과 기존 등록을 같은 매장 락으로 직렬화하고 레거시 등록 이력이 있는 날의 중도 개설을 거부한다. 키 없는 기존 Java 서비스 진입점도 설정된 날에 직접 등록할 수 없다. [장부 스키마](../src/main/resources/db/migration/V41__create_waiting_intake_ledger.sql) · [경로 전환 가드](../src/main/resources/db/migration/V42__guard_waiting_intake_day_activation.sql)
+- V43.1(작성 당시 V41)은 매장·일자별 수용량/미완료 수/마지막 수락 순번, 회원 소유 대기표, 재시도 키 매핑을 추가한다. 마이그레이션만 적용하면 활성 매장·일자는 0개다. V43.2(작성 당시 V42)는 장부 일자 개설과 기존 등록을 같은 매장 락으로 직렬화하고 레거시 등록 이력이 있는 날의 중도 개설을 거부한다. 키 없는 기존 Java 서비스 진입점도 설정된 날에 직접 등록할 수 없다. [장부 스키마](../src/main/resources/db/migration/V43.1__create_waiting_intake_ledger.sql) · [경로 전환 가드](../src/main/resources/db/migration/V43.2__guard_waiting_intake_day_activation.sql)
 - 같은 회원의 키·별칭 경합은 회원 행의 `FOR NO KEY UPDATE`로 정리한다. 매장별 영업 상태·기존 활성 웨이팅·영업시간과 인원(1~20)을 확인한 뒤 매장·일자 행의 조건부 UPDATE로 용량과 수락 순번을 함께 배정한다. 다른 회원의 다른 매장은 같은 카운터를 사용하지 않는다.
 - 새 대기표에는 해당 회원·키 바인딩을 같은 SQL에 넣었다. PG가 커밋을 완료하고 Spring 트랜잭션이 반환한 뒤 컨트롤러가 202를 만든다. 롤백되면 고객의 키·표·카운터 갱신이 함께 취소된다. 접수 순서는 `intakeSequence`로 확인한다. 클라이언트 클릭이나 HTTP 응답 도착 시각으로 순서를 판정하지 않는다. [접수 서비스](../src/main/java/com/catchtable/waiting/service/WaitingIntakeService.java) · [저장소](../src/main/java/com/catchtable/waiting/repository/WaitingReceiptRepository.java)
 - 신규 유효성과 접수일은 매장 잠금을 얻은 뒤 한 번 읽은 서울 시각으로 판정한다. ON 힌트를 읽고 공유 잠금을 기다리다 자정이 지나면 쓰기 없는 첫 TX를 끝내 잠금을 반환하고 새 날의 경로를 배타 잠금 아래 다시 고른다. 이미 수락된 키는 자정 후에도 원래 표를 조회한다.

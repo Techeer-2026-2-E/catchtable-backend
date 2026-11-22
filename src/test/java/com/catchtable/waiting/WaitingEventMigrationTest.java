@@ -1,5 +1,6 @@
 package com.catchtable.waiting;
 
+import com.catchtable.support.MigrationSqlFiles;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -7,7 +8,6 @@ import org.springframework.boot.test.context.SpringBootTest;
 import javax.sql.DataSource;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.Comparator;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -24,11 +24,8 @@ class WaitingEventMigrationTest {
             sql.execute("CREATE SCHEMA " + schema);
             try {
                 sql.execute("SET search_path TO " + schema + ", public");
-                try (var paths = Files.list(Path.of("src/main/resources/db/migration"))) {
-                    for (Path migration : paths.filter(p -> p.toString().endsWith(".sql"))
-                            .filter(p -> version(p) < 36).sorted(Comparator.comparingInt(WaitingEventMigrationTest::version)).toList()) {
-                        sql.execute(Files.readString(migration));
-                    }
+                for (Path migration : MigrationSqlFiles.before(36)) {
+                    sql.execute(Files.readString(migration));
                 }
                 sql.execute(Files.readAllLines(Path.of("scripts/local-seed.sql")).stream()
                         .filter(line -> !line.startsWith("\\")).collect(Collectors.joining("\n")));
@@ -96,10 +93,5 @@ class WaitingEventMigrationTest {
             }
         }
         return data.toString();
-    }
-
-    private static int version(Path path) {
-        String name = path.getFileName().toString();
-        return Integer.parseInt(name.substring(1, name.indexOf("__")));
     }
 }

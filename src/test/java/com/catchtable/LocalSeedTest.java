@@ -1,5 +1,6 @@
 package com.catchtable;
 
+import com.catchtable.support.MigrationSqlFiles;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -15,7 +16,6 @@ import java.sql.Connection;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.List;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -41,14 +41,8 @@ class LocalSeedTest {
         sql = connection.createStatement();
         sql.execute("CREATE SCHEMA " + schema);
         sql.execute("SET search_path TO " + schema + ", public");
-        try (var migrations = Files.list(Path.of("src/main/resources/db/migration"))) {
-            // 파일명 문자열 정렬은 V10이 V2보다 앞서므로 Flyway처럼 버전 숫자로 정렬한다.
-            List<Path> ordered = migrations.filter(p -> p.toString().endsWith(".sql"))
-                    .sorted(Comparator.comparingInt(LocalSeedTest::migrationVersion))
-                    .toList();
-            for (Path migration : ordered) {
-                sql.execute(Files.readString(migration));
-            }
+        for (Path migration : MigrationSqlFiles.all()) {
+            sql.execute(Files.readString(migration));
         }
         // psql 전용 메타 명령만 제거하고, 실제 배포할 seed SQL의 BEGIN/COMMIT까지 그대로 실행한다.
         seed = Files.readAllLines(Path.of("scripts/local-seed.sql")).stream()
@@ -109,11 +103,5 @@ class LocalSeedTest {
             }
         }
         return rows;
-    }
-
-    // V{버전}__설명.sql 에서 버전 숫자를 꺼낸다.
-    private static int migrationVersion(Path migration) {
-        String name = migration.getFileName().toString();
-        return Integer.parseInt(name.substring(1, name.indexOf("__")));
     }
 }
