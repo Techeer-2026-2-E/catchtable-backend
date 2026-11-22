@@ -6,6 +6,8 @@ import io.micrometer.core.instrument.DistributionSummary;
 import io.micrometer.core.instrument.MeterRegistry;
 import jakarta.annotation.PreDestroy;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.dao.CannotAcquireLockException;
+import org.springframework.jdbc.UncategorizedSQLException;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayDeque;
@@ -119,7 +121,7 @@ public class WaitingIntakeBatcher {
             decisions=batch.orElseGet(()->Collections.nCopies(calls.size(),WaitingBatchWriter.Decision.DIRECT));
             if(batch.isPresent()) committedSizes.record(calls.size());
         } catch(RuntimeException | Error failure) {
-            error=failure;
+            error=lockTimeout(failure);
         }
         // PostgreSQL has now committed or rolled back the entire prefix. Wake the next
         // writer before delivering these responses; a slow reader cannot hold the lane.
@@ -133,6 +135,14 @@ public class WaitingIntakeBatcher {
             else calls.get(i).reply.completeExceptionally(error);
         }
         pending.addAndGet(-calls.size());
+    }
+
+    // Spring does not categorize PostgreSQL lock_timeout (55P03). Report it as a transient lock
+    // failure so the caller receives 503 and retries with the same key; the batch wrote nothing.
+    private static Throwable lockTimeout(Throwable failure) {
+        return failure instanceof UncategorizedSQLException sql && sql.getSQLException() != null
+                && "55P03".equals(sql.getSQLException().getSQLState())
+                ? new CannotAcquireLockException(sql.getMessage(), sql) : failure;
     }
 
     @PreDestroy void close() {

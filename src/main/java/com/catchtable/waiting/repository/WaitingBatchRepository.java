@@ -8,6 +8,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.support.SqlArrayValue;
 import org.springframework.stereotype.Repository;
 
+import java.time.Duration;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.util.Collection;
@@ -26,6 +27,11 @@ public class WaitingBatchRepository {
 
     public record Day(long lastSequence, int room, int pendingCount) {}
     public record NewReceipt(WaitingBatchItem.Key key, WaitingReceiptResponse receipt) {}
+
+    // Bound every lock wait in this transaction. Writers are shared by all stores in this app.
+    public void boundLockWait(Duration timeout) {
+        jdbc.queryForObject("SELECT set_config('lock_timeout', ?, true)", String.class, timeout.toMillis() + "ms");
+    }
 
     public Set<Long> lockMembers(List<Long> memberIds) {
         return new HashSet<>(jdbc.queryForList("""

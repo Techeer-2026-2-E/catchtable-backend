@@ -8,11 +8,14 @@ import com.catchtable.waiting.dto.WaitingReceiptResponse;
 import com.catchtable.waiting.dto.WaitingSubmission;
 import com.catchtable.waiting.repository.WaitingBatchRepository;
 import com.catchtable.waiting.repository.WaitingReceiptRepository;
+import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Clock;
+import java.time.Duration;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
@@ -30,6 +33,14 @@ public class WaitingBatchWriter {
     private final StoreRepository stores;
     private final WaitingService waitings;
     private final Clock clock;
+    // Two writer threads serve every store. A lock held elsewhere must not keep one forever.
+    @Value("${waiting.intake.batch.lock-timeout:5s}") private Duration lockTimeout;
+
+    // PostgreSQL treats lock_timeout=0 as unlimited, which would restore the unbounded wait.
+    @PostConstruct
+    void requireLockBound() {
+        if (lockTimeout.toMillis() < 1) throw new IllegalArgumentException("waiting.intake.batch.lock-timeout must be at least 1 ms");
+    }
 
     public record Decision(WaitingSubmission.Receipt receipt, ErrorCode error) {
         static final Decision DIRECT = new Decision(null, null);
@@ -50,10 +61,12 @@ public class WaitingBatchWriter {
         }
     }
 
-    // One autocommitted statement on a scheduler thread. If it cannot prove every
-    // precondition it makes no writes and releases its locks before the general path.
+    // One statement on a scheduler thread. If it cannot prove every precondition, including
+    // a lock wait within the bound, it makes no writes and releases its locks before the general path.
+    @Transactional
     public Optional<List<Decision>> regular(long store,List<WaitingBatchItem> items) {
         if (items.size()<2) return Optional.empty();
+        batches.boundLockWait(lockTimeout);
         var at=OffsetDateTime.now(clock);
         var ids=items.stream().map(i->UUID.randomUUID()).toList();
         return batches.issueRegular(store,at,items,ids).map(allocation -> accepted(store,at.toLocalDate(),items,ids,allocation));
@@ -73,6 +86,7 @@ public class WaitingBatchWriter {
     // Empty means that the caller should re-evaluate the ordinary route after releasing these locks.
     @Transactional
     public Optional<List<Decision>> write(long storeId, List<WaitingBatchItem> items) {
+        batches.boundLockWait(lockTimeout);
         LocalDate hint = LocalDate.now(clock);
         var route = routes.batchRoute(storeId, hint);
         if (route == WaitingReceiptRepository.DayRoute.LEGACY) {
