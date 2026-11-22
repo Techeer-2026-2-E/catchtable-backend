@@ -81,7 +81,8 @@ public interface StoreRepository extends JpaRepository<Store,Long> {
                           SELECT bh.open_time, bh.closing_time, bh.break_start_time, bh.break_end_time
                           FROM business_hour bh
                           WHERE bh.store_id = s.id AND bh.deleted_at IS NULL
-                            AND bh.day_of_week = EXTRACT(ISODOW FROM d.business_date)
+                            -- 정수 비교 → uk_business_hour_store_day 사용
+                            AND bh.day_of_week = CAST(EXTRACT(ISODOW FROM d.business_date) AS INTEGER)
                             AND NOT EXISTS (
                                 SELECT 1 FROM special_business_day sbd
                                 WHERE sbd.store_id = s.id AND sbd.deleted_at IS NULL
