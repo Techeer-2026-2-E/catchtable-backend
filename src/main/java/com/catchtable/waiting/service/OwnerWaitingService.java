@@ -138,11 +138,16 @@ public class OwnerWaitingService {
         var event = eventRecorder.record(waiting, waiting.getCallCount() == 1 ? "CALLED" : "CALLED_AGAIN",
                 "call:" + waiting.getCallCount(), waiting.getCalledAt(), memberId, before);
 
+
+        //고객에게
         eventPublisher.publishEvent(WaitingCallNotification.of(waiting.getMember().getId(), waiting.getId(),
                 waiting.getWaitNumber(), store.getName(), waiting.getCalledAt(), waiting.getCallExpiresAt()).withWaitingEvent(event));
+        //점주에게
         eventPublisher.publishEvent(new CustomerNotificationEvent(
                 store.getOwner().getId(), NotificationType.WAITING_CHANGED, store.getId(),
                 "대기 목록이 변경되었습니다.").withWaitingEvent(event));
+
+        //대기 중인 모든 고객에게
         eventPublisher.publishEvent(new WaitingQueueChangedEvent(store.getId(), waiting.getWaitingDate()).withWaitingEvent(event));
         return WaitingCallResponse.from(waiting);
     }
