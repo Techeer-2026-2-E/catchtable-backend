@@ -49,6 +49,17 @@ docker compose exec -T postgres psql -U catchtable -d catchtable < scripts/local
 
 데모 시드는 서울 10개 지역(강남역·성수·홍대입구·잠실·종각·여의도·이태원·신촌·건대입구·압구정로데오) 근처 공공데이터 매장 일부(약 120곳)에 데모 점주(`demo-owner-*@local.test`)를 연결하고 테이블·영업시간·메뉴·방문 완료 예약·리뷰를 채운다. 메뉴·리뷰는 템플릿으로 만든 가짜 데이터라 로컬 확인용으로만 쓴다. 나머지 매장은 미입점(검색·지도만)으로 남는다. 이미 데모 매장이 있는 지역은 건너뛰므로 지역을 추가한 뒤 다시 실행하면 새 지역만 들어간다. 양식·일식 데모 매장은 예약금(양식 2만 원, 일식 1만 원)을 받아 토스 결제 흐름을 확인할 수 있다. 목 점주(`id=2`)가 있으면 이 중 지역별 1곳(홍대 한식·성수 카페·강남역 일식)을 목 점주 매장으로 넘긴다. 프런트 `VITE_OWNER_STORE_IDS`에 그 매장 id를 넣어 점주 화면에서 확인한다. 두 단계 모두 다시 실행해도 데이터가 늘지 않는다.
 
+## 매장 키워드 검색 (OpenSearch, 선택)
+
+기본은 DB 검색이다. OpenSearch로 키워드 검색을 확인할 때만 아래처럼 실행한다. 공공데이터를 적재한 뒤 한 번 재색인하고, 매장을 바꾼 뒤에도 다시 재색인한다.
+
+```bash
+docker compose --profile search up -d
+SEARCH_ENGINE=opensearch ./gradlew bootRun --args='--catchtable.search.reindex=true'
+```
+
+설계·검증은 [작업 기록](work-log/286-opensearch-keyword-search.md)에 있다.
+
 ## 점주 웨이팅과 예약 선점·변경
 
 정책 선택, 프런트 연동 계약, 팀 논의 대기 항목은 [개발 의사결정 기록](docs/development-decisions.md)에 모았다.
