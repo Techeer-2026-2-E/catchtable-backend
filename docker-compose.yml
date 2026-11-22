@@ -6,6 +6,9 @@
 # 호스트 포트는 5433. 다른 프로젝트나 로컬 PostgreSQL이 쓰는 5432와 겹치지 않게 피했다.
 # 5433도 이미 쓰고 있다면 .env 에 DB_PORT=5434 처럼 적으면 된다 (.env 는 커밋되지 않는다).
 #
+# 키워드 검색용 OpenSearch(nori 포함)는 profile search 로만 실행한다.
+#   docker compose --profile search up -d
+#
 # Redis / RabbitMQ 는 해당 기능 구현 시작할 때 추가할 것
 services:
   postgres:
@@ -25,5 +28,22 @@ services:
       timeout: 3s
       retries: 10
 
+  # 로컬 전용: 단일 노드, 보안 플러그인 끔
+  opensearch:
+    profiles: ["search"]
+    build: docker/opensearch
+    image: catchtable-opensearch:local
+    container_name: catchtable-opensearch
+    ports:
+      - "9200:9200"
+    environment:
+      discovery.type: single-node
+      DISABLE_SECURITY_PLUGIN: "true"
+      DISABLE_INSTALL_DEMO_CONFIG: "true"
+      OPENSEARCH_JAVA_OPTS: -Xms512m -Xmx512m
+    volumes:
+      - opensearch-data:/usr/share/opensearch/data
+
 volumes:
   postgres-data:
+  opensearch-data:

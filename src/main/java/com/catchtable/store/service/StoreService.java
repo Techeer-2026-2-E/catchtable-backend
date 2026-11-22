@@ -11,13 +11,16 @@ import com.catchtable.store.entity.StoreCategory;
 import com.catchtable.store.repository.BusinessHourRepository;
 import com.catchtable.store.repository.MenuRepository;
 import com.catchtable.store.repository.StoreRepository;
+import com.catchtable.store.search.StoreSearchIndex;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Slice;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.client.RestClientException;
 
 import java.time.Clock;
 import java.time.LocalDateTime;
@@ -25,8 +28,13 @@ import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Optional;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
@@ -38,6 +46,9 @@ public class StoreService {
     private final StoreOpenStatusService storeOpenStatusService;
     private final ReviewRepository reviewRepository;
     private final Clock clock;
+    private final Optional<StoreSearchIndex> storeSearchIndex;   // catchtable.search.engine=opensearch일 때만 사용
+
+    private static final int MAX_KEYWORD_PAGE = 49;
 
     public StoreDetailResponse getStoreDetail(Long storeId)
     {
@@ -64,6 +75,9 @@ public class StoreService {
 
     public StoreListResponse searchStores(StoreSearchCondition condition)
     {
+        if (usesOpenSearch(condition)) {
+            return searchByKeyword(condition);
+        }
         return condition.hasFilter()
                 ? searchWithFilter(condition)
                 : listPage(condition);
@@ -93,6 +107,37 @@ public class StoreService {
                 (long) condition.page() * condition.size());
         boolean hasNext = matches.size() > condition.size();
         List<StoreSummaryResponse> stores = matches.stream().limit(condition.size())
+                .map(StoreSummaryResponse::of).toList();
+        return new StoreListResponse(withStats(stores), condition.page(), condition.size(), hasNext);
+    }
+
+    // 키워드만 있는 검색(카테고리 함께 가능)
+    private boolean usesOpenSearch(StoreSearchCondition condition)
+    {
+        return condition.keyword() != null && condition.partySize() == null && !condition.hasDateTime()
+                && storeSearchIndex.filter(StoreSearchIndex::searchEnabled).isPresent();
+    }
+
+    // OpenSearch는 id 순서만, 응답은 DB 매장으로. 장애 시 DB 키워드 검색으로 대체
+    private StoreListResponse searchByKeyword(StoreSearchCondition condition)
+    {
+        if (condition.page() > MAX_KEYWORD_PAGE) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT);
+        }
+        List<Long> ids;
+        try {
+            ids = storeSearchIndex.orElseThrow().searchIds(condition.keyword(), condition.category(),
+                    condition.page() * condition.size(), condition.size() + 1);
+        } catch (RestClientException e) {
+            log.warn("OpenSearch 키워드 검색 실패, DB 검색으로 대체: {}", e.toString());
+            return searchWithFilter(condition);
+        }
+        boolean hasNext = ids.size() > condition.size();
+        List<Long> pageIds = ids.stream().limit(condition.size()).toList();
+        Map<Long, Store> found = storeRepository.findAllById(pageIds).stream()
+                .collect(Collectors.toMap(Store::getId, Function.identity()));
+        List<StoreSummaryResponse> stores = pageIds.stream()
+                .map(found::get).filter(Objects::nonNull)
                 .map(StoreSummaryResponse::of).toList();
         return new StoreListResponse(withStats(stores), condition.page(), condition.size(), hasNext);
     }

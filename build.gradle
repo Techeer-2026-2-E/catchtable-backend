@@ -4,6 +4,9 @@ plugins {
     id 'io.spring.dependency-management' version '1.1.6'
 }
 
+// CI 최신 Docker 대응 (1.20.x는 접속 거부)
+ext['testcontainers.version'] = '1.21.4'
+
 group = 'com.catchtable'
 version = '0.0.1-SNAPSHOT'
 
@@ -44,6 +47,8 @@ dependencies {
     // --- 테스트 ---
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+    // OpenSearch 검색 통합 테스트 (nori 이미지 빌드)
+    testImplementation 'org.testcontainers:junit-jupiter'
 
     // Redis / RabbitMQ / ClickHouse / S3 는 해당 기능 구현 시작할 때 추가할 것
 }
