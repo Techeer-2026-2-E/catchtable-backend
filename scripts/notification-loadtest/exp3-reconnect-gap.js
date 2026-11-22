@@ -20,7 +20,7 @@ const DURATION = OWNER_START + Math.ceil(CALLS / CALL_RATE) + 3;
 if (CALLS > N) throw new Error(`CALLS(${CALLS})는 N(${N}) 이하여야 한다. 호출은 웨이팅 1건당 1번만 된다`);
 
 export const options = {
-    thresholds: callThresholds(CALLS),
+    thresholds: { ...callThresholds(CALLS), subscribed_vus: [`count==${N}`] },
     scenarios: {
         subscribers: {
             // VU 1개 = 고객 1명. 한 반복 안에서 DURATION 동안 끊고 붙기를 반복한다
@@ -66,4 +66,4 @@ export const handleSummary = makeSummary('exp3-reconnect-gap', (r) => {
         `유실: ${lost}건 (${expected ? ((lost / expected) * 100).toFixed(1) : 0}%, 끊김 비율 이론값 ${((RECONNECT_DELAY / CYCLE) * 100).toFixed(1)}%)`,
         `호출 당사자 알림(WAITING_CALLED): 발생 ${r.ownerCalls}건 / 수신 ${r.received.waitingCalled}건`,
     ];
-}, { expectedCalls: CALLS });
+}, { expectedCalls: CALLS, expectedVus: N });

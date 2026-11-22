@@ -73,6 +73,7 @@ k6 run -e N=200 -e CALLS=50 -e CALL_RATE=5 scripts/notification-loadtest/exp6-po
 
 - JSON의 `attempts`, `ownerCalls`, `failedCalls`는 각각 시도·HTTP 200·실패 건수다. 호출 지연에는 성공 응답만 포함한다. 실제 시작·성공 건수가 예정과 다르면 `valid=false`와 이유를 기록한다.
 - 전체 구독자의 접속을 가정하는 exp2의 1차 구간과 exp5·exp6에서는 마지막 접속부터 첫 연결 종료까지가 실제 호출 구간 전체를 포함해야 한다. 누락된 접속이나 이탈한 구독자가 있으면 해당 회차의 유실률·성능 결론을 보류한다.
+- exp3에서는 각 고객이 한 번 이상 연결 인사를 받았는지와 재접속 시도마다 연결이 성립했는지를 확인한다. 구독 자체가 실패한 회차에는 재접속 구간의 알림 유실률을 산출하지 않는다.
 
 - 터미널 끝의 `==== 결과 ====` 블록이 발표용 요약이다. 같은 내용이 `results/<실험>-<시각>.json`에 남는다 (git 제외).
 - 알림 이름은 서버 `NotificationType` 그대로다. `WAITING_CALLED`는 호출 당사자 1명, `WAITING_POSITION_CHANGED`는 호출마다 ACTIVE 전원에게 간다. 그래서 기대 수신 = 호출 수 × N.

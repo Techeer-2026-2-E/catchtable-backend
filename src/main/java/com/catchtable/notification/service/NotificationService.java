@@ -2,6 +2,7 @@ package com.catchtable.notification.service;
 
 
 import com.catchtable.notification.repository.SseEmitterRepository;
+import com.catchtable.notification.job.SseTransportConfiguration;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -21,12 +22,12 @@ public class NotificationService {
     public SseEmitter subscribe(Long memberId)
     {
         SseEmitter emitter=new SseEmitter(TIMEOUT_MILLIS);
-        emitterRepository.save(memberId,emitter);
-
-        emitter.onCompletion(() -> emitterRepository.delete(memberId, emitter));
+        Runnable remove = () -> emitterRepository.delete(memberId, emitter);
+        emitter.onCompletion(remove);
         emitter.onTimeout(emitter::complete);
-        emitter.onError(e -> emitterRepository.delete(memberId, emitter));
+        emitter.onError(e -> remove.run());
 
+        SseTransportConfiguration.onSubscriptionReady(() -> emitterRepository.save(memberId, emitter), remove);
         send(memberId, emitter, SseEmitter.event().name("connect").data("connected"));
 
         return emitter;

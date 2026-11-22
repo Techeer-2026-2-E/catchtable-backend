@@ -43,6 +43,9 @@ const opened = new Counter('measured_subscriptions_opened');
 const closed = new Counter('measured_subscriptions_closed');
 const openedAt = new Trend('measured_subscription_opened_at_ms');
 const closedAt = new Trend('measured_subscription_closed_at_ms');
+const subscriptionAttempts = new Counter('subscription_attempts');
+const connectedVus = new Counter('subscribed_vus');
+let vuHadConnection = false;
 
 export function callThresholds(expected) {
     return { owner_calls: [`count==${expected}`], owner_failures: ['count==0'], checks: ['rate==1'] };
@@ -100,6 +103,7 @@ export function subscribe(memberId, timeout, onEvent, measureWindow = false) {
     let count = 0;
     let joined = false;
     let disconnectTime;
+    subscriptionAttempts.add(1);
     const res = sse.open(`${BASE_URL}/api/user/notifications/subscribe?memberId=${memberId}`,
         { timeout, tags: { name: 'subscribe' } },
         (client) => {
@@ -107,6 +111,10 @@ export function subscribe(memberId, timeout, onEvent, measureWindow = false) {
                 if (ev.name === 'connect') {
                     if (!joined) {
                         joined = true;
+                        if (!vuHadConnection) {
+                            vuHadConnection = true;
+                            connectedVus.add(1);
+                        }
                         received.connect.add(1);
                         if (measureWindow) {
                             opened.add(1);
@@ -134,6 +142,7 @@ export function subscribe(memberId, timeout, onEvent, measureWindow = false) {
         closed.add(1);
         closedAt.add(disconnectTime === undefined ? Date.now() : disconnectTime);
     }
+    check(joined, { 'SSE 연결 인사 확인': value => value });
     if (res && res.status && res.status !== 200) console.error(`subscribe 실패 member=${memberId} status=${res.status}`);
     eventsPerConnection.add(count);
     return count;
@@ -141,7 +150,7 @@ export function subscribe(memberId, timeout, onEvent, measureWindow = false) {
 
 // 결과를 results/<exp>-<시각>.json 에 남기고 터미널에는 기본 요약을 찍는다
 // extraCounters: 실험별 Counter 이름 목록. 결과 JSON의 extra에 건수로 들어간다
-export function makeSummary(expName, describe, { expectedCalls, expectedConnections, extraCounters = [], measureWindow = false }) {
+export function makeSummary(expName, describe, { expectedCalls, expectedConnections, expectedVus, extraCounters = [], measureWindow = false }) {
     return function (data) {
         const m = data.metrics;
         const count = (name) => (m[name] && m[name].values && m[name].values.count) || 0;
@@ -165,6 +174,8 @@ export function makeSummary(expName, describe, { expectedCalls, expectedConnecti
             attempts: count('owner_attempts'),
             failedCalls: count('owner_failures'),
             droppedIterations: count('dropped_iterations'),
+            subscriptionAttempts: count('subscription_attempts'),
+            connectedVus: count('subscribed_vus'),
             checks: m.checks ? m.checks.values : null,
             extra,
         };
@@ -172,6 +183,9 @@ export function makeSummary(expName, describe, { expectedCalls, expectedConnecti
         if (result.ownerCalls !== expectedCalls || result.attempts !== expectedCalls || result.failedCalls || result.droppedIterations)
             issues.push('예정·시도·성공 호출 수가 다르거나 시작하지 못한 반복이 있음');
         if (result.checks && result.checks.fails > 0) issues.push('HTTP 또는 시나리오 검사 실패');
+        if (result.subscriptionAttempts !== result.received.connect ||
+            (expectedVus !== undefined && result.connectedVus !== expectedVus))
+            issues.push('구독을 시도한 고객 또는 재접속의 연결 인사를 확인할 수 없음');
         if (expectedConnections !== undefined && result.received.connect !== expectedConnections)
             issues.push('확인한 SSE 구독 수가 예정과 다름');
         if (measureWindow) {

@@ -5,6 +5,8 @@ import com.catchtable.notification.repository.SseEmitterRepository;
 import org.junit.jupiter.api.Test;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
+import java.io.IOException;
+import java.net.SocketTimeoutException;
 import java.time.Duration;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -14,6 +16,23 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
 class SseConnectionWriterTest {
+    @Test
+    void wrappedServletTimeoutKeepsTheDeliveryUnconfirmed() throws IOException {
+        var repo = new SseEmitterRepository();
+        var writer = new SseConnectionWriter(repo, Duration.ofSeconds(1), 2);
+        var emitter = mock(SseEmitter.class);
+        repo.save(1L, emitter);
+        doThrow(new IOException("ServletOutputStream", new SocketTimeoutException()))
+                .when(emitter).send(any(SseEmitter.SseEventBuilder.class));
+        try {
+            assertThat(writer.send(NotificationJobKind.NOTIFY, 1L, emitter, SseEmitter.event()))
+                    .isEqualTo(SseConnectionWriter.Outcome.RETRY);
+            assertThat(repo.findAllByMemberId(1L)).isEmpty();
+        } finally {
+            writer.close();
+        }
+    }
+
     @Test
     void timedOutWritesKeepTheirSlotsAndOtherLaneCanStillDeliver() throws Exception {
         var connections = new SseEmitterRepository();

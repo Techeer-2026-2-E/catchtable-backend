@@ -8,6 +8,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.io.IOException;
+import java.io.InterruptedIOException;
 import java.time.Duration;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
@@ -20,6 +21,7 @@ import java.util.concurrent.TimeoutException;
 @Component
 public class SseConnectionWriter {
     enum Outcome { SENT, CLOSED, RETRY }
+    private static final ThreadLocal<Long> WRITE_DEADLINE = new ThreadLocal<>();
 
     private final SseEmitterRepository connections;
     private final long timeoutMillis;
@@ -46,8 +48,9 @@ public class SseConnectionWriter {
     Outcome send(NotificationJobKind kind, long memberId, SseEmitter emitter, SseEmitter.SseEventBuilder event) {
         var result = new CompletableFuture<Outcome>();
         var pool = kind == NotificationJobKind.NOTIFY ? notifyWrites : fanoutWrites;
+        long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(timeoutMillis);
         try {
-            pool.execute(() -> write(memberId, emitter, event, result));
+            pool.execute(() -> write(memberId, emitter, event, result, deadline));
         } catch (RejectedExecutionException saturated) {
             return Outcome.RETRY;
         }
@@ -59,7 +62,7 @@ public class SseConnectionWriter {
             return Outcome.RETRY;
         } catch (ExecutionException failed) {
             if (failed.getCause() instanceof TimeoutException) {
-                // 실제 쓰기는 아직 진행 중일 수 있다. 해당 연결만 제외하고 슬롯은 쓰기가 끝날 때 반환한다.
+                // 소켓에 이미 전달된 바이트는 회수할 수 없다. 실제 출력도 동일한 종료 시각을 사용한다.
                 connections.delete(memberId, emitter);
                 return Outcome.RETRY;
             }
@@ -67,19 +70,39 @@ public class SseConnectionWriter {
         }
     }
 
+    static long deadlineOr(long timeoutNanos) {
+        Long existing = WRITE_DEADLINE.get();
+        return existing != null ? existing : System.nanoTime() + timeoutNanos;
+    }
+
     private void write(long memberId, SseEmitter emitter, SseEmitter.SseEventBuilder event,
-                       CompletableFuture<Outcome> result) {
+                       CompletableFuture<Outcome> result, long deadline) {
+        WRITE_DEADLINE.set(deadline);
         try {
             emitter.send(event);
             if (!result.complete(Outcome.SENT)) {
                 emitter.complete();
             }
-        } catch (IOException | IllegalStateException closed) {
+        } catch (IOException | IllegalStateException failure) {
             connections.delete(memberId, emitter);
-            result.complete(Outcome.CLOSED);
+            if (interruptedWrite(failure)) {
+                result.complete(Outcome.RETRY);
+                emitter.completeWithError(failure);
+            } else {
+                result.complete(Outcome.CLOSED);
+            }
         } catch (RuntimeException failed) {
             result.completeExceptionally(failed);
+        } finally {
+            WRITE_DEADLINE.remove();
         }
+    }
+
+    private static boolean interruptedWrite(Throwable failure) {
+        for (Throwable cause = failure; cause != null; cause = cause.getCause()) {
+            if (cause instanceof InterruptedIOException) return true;
+        }
+        return false;
     }
 
     @PreDestroy

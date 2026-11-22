@@ -46,3 +46,13 @@ FROM flyway_schema_history
 ORDER BY installed_rank;
 ROLLBACK;
 ```
+
+## 재검토 후 실제 출력 확인
+
+호출자가 기다리는 시간만 제한하면 아직 쓰기 중인 연결이 전송 슬롯을 계속 차지할 수 있었다. 고객·점주 구독에 서블릿 비차단 출력을 적용했다. 초기 인사만 작은 버퍼에 보관하고, 컨테이너의 첫 쓰기 가능 콜백에서 연결을 공개한다. 이후에는 준비된 출력에만 최대 8KiB씩 쓰며 프레임 전체에 같은 기한을 사용한다. 기한을 넘기면 그 async 요청을 끝내고, 대기한 전송 스레드도 반환한다. [서블릿 출력](../src/main/java/com/catchtable/notification/job/SseServletOutput.java)
+
+실제 내장 Tomcat의 고객·점주 구독 주소 각각에서 `connect` 인사와 커밋 후 업무 이벤트를 받았다. 쓰기 준비가 끝까지 오지 않는 서블릿 출력 두 개를 둔 별도 회귀 검사에서는 두 요청의 종료와 같은 풀에서 다음 정상 연결의 전송을 확인했다. 실제 운영망 부하 수치와 구분한다. 재검토 회귀 검사에는 서버가 감싼 쓰기 시간 초과도 포함된다. 최종 검사 수와 실행 결과는 PR의 해당 커밋 CI에서 확인할 수 있다. [HTTP 검사](../src/test/java/com/catchtable/notification/job/SseSubscriptionHttpTest.java) · [출력 기한 검사](../src/test/java/com/catchtable/notification/job/SseServletOutputTest.java)
+
+재접속 실험에서는 모든 구독이 403인데 점주 호출만 200인 조건도 루프백에서 재현했다. 구독을 시도한 횟수와 연결 인사를 비교하고 각 고객의 첫 연결을 확인해, 정상 재접속은 유효, 전원 403은 측정 불충분과 k6 종료 코드 99로 판정했다. [재접속 시나리오](../scripts/notification-loadtest/exp3-reconnect-gap.js)
+
+번호 후보는 #291·#297·#298 독립 소스에서도 필요한 테스트 버전 비교기를 함께 적용해 마이그레이션·시드 검사 각 19건이 통과했다. 7개 통합 소스의 마이그레이션·시드 검사도 19건이 통과했다. 기존 번호 V41·V43으로 만든 #298 DB 사본에서는 신규 V43.4만 적용되고 체크섬과 미처리 알림이 보존됐다. 같은 이력에 번호 후보만 바꿔 적용 전 검증을 하면 Flyway가 거부했다.
