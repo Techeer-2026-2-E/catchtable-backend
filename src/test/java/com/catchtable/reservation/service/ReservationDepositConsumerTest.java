@@ -1,5 +1,7 @@
 package com.catchtable.reservation.service;
 
+import com.catchtable.notification.job.NotificationJobTestDrain;
+import com.catchtable.notification.job.NotificationJobWorker;
 import com.catchtable.notification.repository.SseEmitterRepository;
 import com.catchtable.payment.FakeTossPaymentsClient;
 import com.catchtable.payment.PaymentTestData;
@@ -72,6 +74,7 @@ class ReservationDepositConsumerTest {
     static final long AMOUNT = 10_001;
     static final ReservationDepositTermsReader.Terms FREE = new ReservationDepositTermsReader.Terms(false, 0, null);
     @Autowired JdbcTemplate jdbc;
+    @Autowired NotificationJobWorker notificationWorker;
     @Autowired MockMvc mvc;
     @Autowired ObjectMapper json;
     @Autowired MutableClock clock;
@@ -423,6 +426,7 @@ class ReservationDepositConsumerTest {
         assertThat(reservationCount()).isEqualTo(1);
         assertThat(historyCount()).isEqualTo(2);
         verify(toss, times(1)).confirm(anyString(), anyString(), anyLong(), anyString());
+        NotificationJobTestDrain.forMember(jdbc, notificationWorker, memberId).done();
         verify(emitter, times(1)).send(any(SseEmitter.SseEventBuilder.class));
     }
 
@@ -478,6 +482,7 @@ class ReservationDepositConsumerTest {
         assertThat(jdbc.queryForObject("SELECT refunded_amount FROM payment WHERE id = ?", Long.class, prepared.paymentId())).isEqualTo(5000);
         assertOriginal(hold.holdId());
         assertThat(toss.cancelExecutions()).isEqualTo(2);
+        NotificationJobTestDrain.forMember(jdbc, notificationWorker, memberId).done();
         verify(emitter, times(3)).send(any(SseEmitter.SseEventBuilder.class));
     }
 
@@ -501,6 +506,7 @@ class ReservationDepositConsumerTest {
         assertThat(jdbc.queryForObject("SELECT refunded_amount FROM payment WHERE id = ?", Long.class, prepared.paymentId())).isEqualTo(AMOUNT);
         assertThat(toss.cancelExecutions()).isEqualTo(1);
         assertOriginal(hold.holdId());
+        NotificationJobTestDrain.forMember(jdbc, notificationWorker, memberId).done();
         verify(emitter, times(2)).send(any(SseEmitter.SseEventBuilder.class));
     }
 

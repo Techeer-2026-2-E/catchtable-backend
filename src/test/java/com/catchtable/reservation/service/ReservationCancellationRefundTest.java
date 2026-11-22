@@ -1,5 +1,6 @@
 package com.catchtable.reservation.service;
 
+import com.catchtable.notification.job.NotificationJobTestDrain;
 import com.catchtable.global.exception.BusinessException;
 import com.catchtable.global.exception.ErrorCode;
 import com.catchtable.notification.repository.SseEmitterRepository;
@@ -148,6 +149,7 @@ class ReservationCancellationRefundTest {
                     .isEqualTo(owner ? "OWNER" : "CUSTOMER");
             assertThat(tables.countAvailable(storeId, 2, START, START.plusHours(1), NOW)).isEqualTo(1);
             awaitNotifications();
+            NotificationJobTestDrain.forMember(jdbc, jobWorker, memberId).done();
             verify(emitter, times(1)).send(any(SseEmitter.SseEventBuilder.class));
         } else {
             assertThatThrownBy(() -> cancel(owner, id)).isInstanceOfSatisfying(BusinessException.class,
@@ -169,6 +171,7 @@ class ReservationCancellationRefundTest {
         cancel(owner, id);
         assertThat(state(id)).isEqualTo("CANCELLED");
         awaitNotifications();
+        NotificationJobTestDrain.forMember(jdbc, jobWorker, memberId).done();
         verify(emitter, times(1)).send(any(SseEmitter.SseEventBuilder.class));
         verifyNoInteractions(toss);
     }
@@ -254,6 +257,7 @@ class ReservationCancellationRefundTest {
             cancellation.get(5, TimeUnit.SECONDS);
             assertThat(state(id)).isEqualTo("CANCELLED");
             awaitNotifications();
+            NotificationJobTestDrain.forMember(jdbc, jobWorker, memberId).done();
             verify(emitter, times(1)).send(any(SseEmitter.SseEventBuilder.class));
             verifyNoInteractions(toss);
         } finally {
@@ -316,6 +320,7 @@ class ReservationCancellationRefundTest {
         assertThat(state(id)).isEqualTo("CANCELLED");
         assertThat(tables.countAvailable(storeId, 2, START, START.plusHours(1), NOW)).isEqualTo(1);
         awaitNotifications();
+        NotificationJobTestDrain.forMember(jdbc, jobWorker, memberId).done();
         verify(emitter, times(1)).send(any(SseEmitter.SseEventBuilder.class));
         verify(toss, never()).cancel(anyString(), any(), anyString(), anyString());
         verify(toss, times(1)).getByPaymentKey(key);
@@ -335,6 +340,7 @@ class ReservationCancellationRefundTest {
         assertThat(state(id)).isEqualTo("CANCELLED");
         assertThat(tables.countAvailable(storeId, 2, START, START.plusHours(1), NOW)).isEqualTo(1);
         awaitNotifications();
+        NotificationJobTestDrain.forMember(jdbc, jobWorker, memberId).done();
         verify(emitter, times(1)).send(any(SseEmitter.SseEventBuilder.class));
         verifyNoInteractions(toss);
     }
