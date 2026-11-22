@@ -2,6 +2,8 @@ package com.catchtable.reservation.service;
 
 import com.catchtable.global.exception.BusinessException;
 import com.catchtable.global.exception.ErrorCode;
+import com.catchtable.notification.job.NotificationJobTestDrain;
+import com.catchtable.notification.job.NotificationJobWorker;
 import com.catchtable.notification.repository.SseEmitterRepository;
 import com.catchtable.payment.PaymentTestData;
 import com.catchtable.payment.client.TossPaymentResponse;
@@ -60,6 +62,7 @@ class ReservationRefundExecutionTest {
     @Autowired PaymentReconcileService reconciler;
     @Autowired StoreTableRepository tables;
     @Autowired SseEmitterRepository emitters;
+    @Autowired NotificationJobWorker notificationWorker;
     @Autowired PlatformTransactionManager transactionManager;
     @Autowired MockMvc mvc;
     @Autowired MutableClock clock;
@@ -84,9 +87,17 @@ class ReservationRefundExecutionTest {
 
     @AfterEach
     void cleanUp() {
-        emitters.delete(memberId, emitter);
-        data.deleteStore(storeId, List.of(memberId, ownerId, foreignId));
-        clock.set(NOW);
+        try {
+            awaitMemberNotifications();
+        } finally {
+            emitters.delete(memberId, emitter);
+            data.deleteStore(storeId, List.of(memberId, ownerId, foreignId));
+            clock.set(NOW);
+        }
+    }
+
+    private void awaitMemberNotifications() {
+        NotificationJobTestDrain.forMember(jdbc, notificationWorker, memberId).done();
     }
 
     @ParameterizedTest
@@ -139,6 +150,7 @@ class ReservationRefundExecutionTest {
         assertThat(jdbc.queryForObject("SELECT cancellation_actor FROM reservation WHERE id = ?", String.class, id))
                 .isEqualTo(owner ? "OWNER" : "CUSTOMER");
         assertThat(available()).isEqualTo(1);
+        awaitMemberNotifications();
         verify(emitter, times(1)).send(any(SseEmitter.SseEventBuilder.class));
         if (expected > 0) verify(toss, times(1)).cancel(anyString(), eq(expected), anyString(), eq("cancel"));
         else verifyNoInteractions(toss);
@@ -295,6 +307,7 @@ class ReservationRefundExecutionTest {
         assertThat(basis()).isEqualTo(initial);
         assertThat(state()).isEqualTo("CANCELLED");
         assertThat(fenced()).isFalse();
+        awaitMemberNotifications();
         verify(emitter, times(1)).send(any(SseEmitter.SseEventBuilder.class));
         verify(toss, times(1)).cancel(anyString(), any(), anyString(), anyString());
         verify(toss, times(1)).getByPaymentKey(anyString());
@@ -331,6 +344,7 @@ class ReservationRefundExecutionTest {
         assertThat(jdbc.queryForMap("SELECT requested_at, requested_amount, idempotency_key, refund_amount FROM payment_refund WHERE payment_id = ?", paymentId)).isEqualTo(commonInitial);
         assertThat(state()).isEqualTo("CANCELLED");
         verify(toss, times(2)).cancel(anyString(), eq(10000L), eq("고객 요청"), eq("reconcile-retry"));
+        awaitMemberNotifications();
         verify(emitter, times(1)).send(any(SseEmitter.SseEventBuilder.class));
     }
 
@@ -402,6 +416,7 @@ class ReservationRefundExecutionTest {
         assertThat(requestCount()).isEqualTo(1);
         assertThat(jdbc.queryForObject("SELECT count(*) FROM payment_refund WHERE payment_id = ?", Integer.class, paymentId))
                 .isEqualTo(1);
+        awaitMemberNotifications();
         verify(emitter, times(1)).send(any(SseEmitter.SseEventBuilder.class));
         assertThat(jdbc.queryForObject("SELECT refunded_amount FROM payment WHERE id = ?", Long.class, paymentId)).isEqualTo(5000);
     }
@@ -484,6 +499,7 @@ class ReservationRefundExecutionTest {
         assertThat(state()).isEqualTo("CANCELLED");
         verify(toss, times(1)).cancel(anyString(), any(), anyString(), anyString());
         verify(toss, never()).getByPaymentKey(anyString());
+        awaitMemberNotifications();
         verify(emitter, times(1)).send(any(SseEmitter.SseEventBuilder.class));
     }
 
@@ -518,6 +534,7 @@ class ReservationRefundExecutionTest {
         reconciler.reconcile(paymentId);
         assertThat(jdbc.queryForObject("SELECT status FROM reservation WHERE id = ?", String.class, next)).isEqualTo("PENDING_PAYMENT");
         assertThat(state()).isEqualTo("CANCELLED");
+        awaitMemberNotifications();
         verify(emitter, times(1)).send(any(SseEmitter.SseEventBuilder.class));
         verify(toss, times(1)).cancel(anyString(), any(), anyString(), anyString());
     }
@@ -573,6 +590,7 @@ class ReservationRefundExecutionTest {
     void assertPreserved() {
         assertThat(state()).isEqualTo("CONFIRMED");
         assertThat(available()).isZero();
+        awaitMemberNotifications();
         verifyNoInteractions(emitter);
     }
 
