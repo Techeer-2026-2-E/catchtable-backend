@@ -72,20 +72,21 @@ public class WaitingService {
         }
         validateIntakeOpen(store, at);
         receipts.reserveLegacyRegistrationSlot(today);
-        return registerAccepted(memberId, store, partyCount, today);
-    }
-
-    // Eligibility and the Seoul date were persisted when the receipt was accepted.
-    WaitingCreateResult registerAccepted(Long memberId, Store store, int partyCount, LocalDate today) {
-        Long storeId=store.getId();
-        // 회원 조회
         Member member = memberRepository.findById(memberId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.MEMBER_NOT_FOUND));
+        int next = waitingRepository.findMaxWaitNumber(storeId, today) + 1;
+        Waiting saved = registerNumber(member, store, today, partyCount, next);
+        return new WaitingCreateResult(toResponse(saved, storeId), true);
+    }
 
-        // 4. 대기번호 발급 (오늘 최대값 + 1, 락 안이라 안전)
-        int nextNumber = waitingRepository.findMaxWaitNumber(storeId, today) + 1;
+    // The receipt FK already guarantees this member exists, including after the store closes.
+    Long registerAcceptedNumber(long memberId, Store store, LocalDate day, int party, int next) {
+        return registerNumber(memberRepository.getReferenceById(memberId), store, day, party, next).getId();
+    }
 
-        // 5. 저장
+    private Waiting registerNumber(Member member, Store store, LocalDate today, int partyCount, int nextNumber) {
+        Long memberId = member.getId();
+        Long storeId = store.getId();
         Waiting saved = waitingRepository.save(
                 Waiting.create(member, store, today, partyCount, nextNumber));
 
@@ -94,7 +95,7 @@ public class WaitingService {
                 store.getOwner().getId(), NotificationType.WAITING_CHANGED, storeId,
                 "대기 목록이 변경되었습니다.").withWaitingEvent(event));
 
-        return new WaitingCreateResult(toResponse(saved, storeId), true);
+        return saved;
     }
 
     Optional<WaitingCreateResult> existingRegistration(Long memberId, Long storeId, LocalDate day, int partyCount) {

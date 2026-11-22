@@ -8,7 +8,6 @@ import com.catchtable.waiting.dto.WaitingSubmission;
 import com.catchtable.waiting.service.WaitingIntakeService;
 import com.catchtable.waiting.service.ReceiptRegistration;
 import com.catchtable.waiting.service.WaitingDispatch;
-import com.catchtable.waiting.service.AsyncReceiptAdmission;
 import org.springframework.beans.factory.annotation.Value;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -28,7 +27,6 @@ public class WaitingController {
     private final WaitingIntakeService intake;
     private final ReceiptRegistration registration;
     private final WaitingDispatch dispatch;
-    private final AsyncReceiptAdmission async;
     @Value("${waiting.dispatch.poll-hint-seconds:2}") private int pollHint;
     @Value("${waiting.dispatch.enabled:false}") private boolean deliveryEnabled;
     @Value("${waiting.dispatch.max-poll-seconds:10}") private int maxPoll;
@@ -36,9 +34,9 @@ public class WaitingController {
 
 
     @PostMapping
-    public Object createWaiting(@LoginMember Long memberId, @Valid @RequestBody WaitingCreateRequest request,
+    public ResponseEntity<?> createWaiting(@LoginMember Long memberId, @Valid @RequestBody WaitingCreateRequest request,
                                          @RequestHeader(value = "Idempotency-Key", required = false) String key) {
-        return async.handle(key,()->submit(memberId,request,key));
+        return submit(memberId,request,key);
     }
 
     private ResponseEntity<?> submit(long memberId,WaitingCreateRequest request,String key) {

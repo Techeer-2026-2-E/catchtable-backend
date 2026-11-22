@@ -70,7 +70,7 @@ public class WaitingReceiptRepository {
     public Optional<WaitingReceiptResponse> pending(long memberId, long storeId, LocalDate date) {
         return jdbc.query("""
                 SELECT * FROM waiting_receipt WHERE member_id=? AND store_id=? AND received_date=?
-                    AND (status IN ('PENDING','PROCESSING') OR (status='REGISTERED' AND EXISTS (SELECT FROM waiting w WHERE w.id=waiting_receipt.waiting_id AND w.status IN ('WAITING','CALLED','CONFIRMED'))))
+                    AND member_active
                 """, RECEIPT, memberId, storeId, date).stream().findFirst();
     }
 

@@ -38,6 +38,10 @@ public class WaitingIntakeService {
             var grouped = batcher.submit(request.storeId(), item);
             if (grouped.isPresent()) return grouped.get();
         }
+        return submitDirect(memberId,request,key);
+    }
+
+    private WaitingSubmission submitDirect(long memberId, WaitingCreateRequest request,String key) {
         WaitingSubmission result = transactions.execute(tx -> submitLocked(memberId, request, key, false));
         if (result != null) {
             return result;

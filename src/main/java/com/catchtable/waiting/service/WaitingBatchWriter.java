@@ -50,6 +50,26 @@ public class WaitingBatchWriter {
         }
     }
 
+    // One autocommitted statement on a scheduler thread. If it cannot prove every
+    // precondition it makes no writes and releases its locks before the general path.
+    public Optional<List<Decision>> regular(long store,List<WaitingBatchItem> items) {
+        if (items.size()<2) return Optional.empty();
+        var at=OffsetDateTime.now(clock);
+        var ids=items.stream().map(i->UUID.randomUUID()).toList();
+        return batches.issueRegular(store,at,items,ids).map(allocation -> accepted(store,at.toLocalDate(),items,ids,allocation));
+    }
+
+    private List<Decision> accepted(long store,LocalDate day,List<WaitingBatchItem> items,
+                                    List<UUID> ids,WaitingBatchRepository.Allocation allocation) {
+        var result=new ArrayList<Decision>(items.size());
+        for (int i=0;i<items.size();i++) {
+            var receipt=new WaitingReceiptResponse(ids.get(i),store,day,allocation.previousSequence()+i+1,
+                    items.get(i).partyCount(),"PENDING").withAhead(allocation.previousPending()+(long)i);
+            result.add(Decision.accepted(receipt,true));
+        }
+        return result;
+    }
+
     // Empty means that the caller should re-evaluate the ordinary route after releasing these locks.
     @Transactional
     public Optional<List<Decision>> write(long storeId, List<WaitingBatchItem> items) {
@@ -66,8 +86,15 @@ public class WaitingBatchWriter {
         if (store.isEmpty() || !at.toLocalDate().equals(hint)) {
             return Optional.empty();
         }
-        if (!(openingDay ? routes.openForLockedStore(storeId, hint) : routes.enabled(storeId, hint))) {
+        if (openingDay ? routes.batchRoute(storeId,hint)==WaitingReceiptRepository.DayRoute.LEGACY : !routes.enabled(storeId,hint)) {
             return Optional.empty();
+        }
+        boolean freshBatchCandidate = !openingDay && items.size()>1 && members.size()==items.size();
+        Optional<ErrorCode> closed = freshBatchCandidate ? waitings.intakeClosedReason(store.get(),at.toLocalDateTime()) : Optional.empty();
+        if (freshBatchCandidate && closed.isEmpty()) {
+            var receiptIds=items.stream().map(i->UUID.randomUUID()).toList();
+            var allocation=batches.issueFresh(storeId,hint,at,items,receiptIds);
+            if(allocation.isPresent()) return Optional.of(accepted(storeId,hint,items,receiptIds,allocation.get()));
         }
         var keys = items.stream().map(WaitingBatchItem::key).distinct().toList();
         var known = batches.byKeys(keys);
@@ -76,13 +103,13 @@ public class WaitingBatchWriter {
 
         boolean needsAdmission = items.stream().anyMatch(item -> !known.containsKey(item.key())
                 && !pending.containsKey(item.key().memberId()) && !registered.contains(item.key().memberId()));
-        var closed = needsAdmission ? waitings.intakeClosedReason(store.get(), at.toLocalDateTime())
-                                    : Optional.<ErrorCode>empty();
-        var day = needsAdmission && closed.isEmpty() ? batches.lockDay(storeId, hint)
-                                                     : Optional.<WaitingBatchRepository.Day>empty();
-        if (needsAdmission && closed.isEmpty() && day.isEmpty()) {
-            return Optional.empty();
-        }
+        if (!freshBatchCandidate && needsAdmission) closed=waitings.intakeClosedReason(store.get(),at.toLocalDateTime());
+        boolean needsRoom = needsAdmission && closed.isEmpty() && items.stream().anyMatch(item ->
+                members.contains(item.key().memberId()) && !known.containsKey(item.key())
+                && !pending.containsKey(item.key().memberId()) && !registered.contains(item.key().memberId()));
+        if (needsRoom && openingDay && !routes.openForLockedStore(storeId,hint)) return Optional.empty();
+        var day = needsRoom ? batches.lockDay(storeId,hint) : Optional.<WaitingBatchRepository.Day>empty();
+        if (needsRoom && day.isEmpty()) return Optional.empty();
 
         var issued = new ArrayList<WaitingBatchRepository.NewReceipt>();
         Map<WaitingBatchItem.Key, UUID> aliases = new LinkedHashMap<>();
@@ -120,7 +147,7 @@ public class WaitingBatchWriter {
                 issued.add(new WaitingBatchRepository.NewReceipt(key, receipt));
                 known.put(key, receipt);
                 pending.put(key.memberId(), receipt);
-                decisions.add(new Decision(new WaitingSubmission.Receipt(receipt, true, allocation.pendingCount()==0 && issued.size()==1), null));
+                decisions.add(new Decision(new WaitingSubmission.Receipt(receipt, true, items.size()==1 && allocation.pendingCount()==0 && issued.size()==1), null));
             }
         }
         if (!issued.isEmpty()) {

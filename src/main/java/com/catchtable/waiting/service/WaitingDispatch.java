@@ -97,9 +97,17 @@ public class WaitingDispatch {
             var hint=redis.use(s->{reconcile(s);return s.commands().zpopmin(READY);});
             if(hint==null || !hint.hasValue()) return;
             WaitingLane lane=WaitingLane.parse(hint.getValue());
-            for(int i=0;i<quantum;i++) {
-                var head=registration.claim(lane,null);
-                if(head.isEmpty() || !registration.complete(head.get())) break;
+            var head = registration.claimPrefix(lane,null,quantum);
+            if (head.isPresent()) {
+                try {
+                    registration.complete(head.get());
+                } catch (RuntimeException batchFailure) {
+                    // A later member (for example, the SSE capacity boundary) must not prevent
+                    // an earlier valid head from completing. The batch transaction has rolled back.
+                    if (head.get().rows().size()==1) throw batchFailure;
+                    registration.completeFirstAndReleaseRemainder(head.get());
+                    meters.counter("waiting.dispatch.batch.fallback").increment();
+                }
             }
             if(ledger.hasWork(lane)) redis.use(s->{reconcile(s);offer(s,lane);return true;});
         } catch(RedisException unavailable) {

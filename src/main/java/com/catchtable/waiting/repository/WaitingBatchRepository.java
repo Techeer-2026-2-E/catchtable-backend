@@ -51,7 +51,7 @@ public class WaitingBatchRepository {
         var result = new HashMap<Long, WaitingReceiptResponse>();
         jdbc.query("""
                 SELECT * FROM waiting_receipt WHERE store_id=? AND received_date=?
-                    AND member_id = ANY(?) AND (status IN ('PENDING','PROCESSING') OR (status='REGISTERED' AND EXISTS (SELECT FROM waiting w WHERE w.id=waiting_receipt.waiting_id AND w.status IN ('WAITING','CALLED','CONFIRMED'))))
+                    AND member_id = ANY(?) AND member_active
                 """, rs -> {
             result.put(rs.getLong("member_id"), WaitingReceiptRepository.RECEIPT.mapRow(rs, 0));
         }, storeId, day, array("bigint", members));
@@ -72,6 +72,28 @@ public class WaitingBatchRepository {
                 WHERE store_id=? AND received_date=? AND ledger_route FOR NO KEY UPDATE
                 """, (rs, i) -> new Day(rs.getLong("last_sequence"), rs.getInt("room"),rs.getInt("pending_count")), storeId, day)
                 .stream().findFirst();
+    }
+
+    public record Allocation(long previousSequence, int previousPending) {}
+
+    public Optional<Allocation> issueRegular(long store, OffsetDateTime at, List<WaitingBatchItem> items, List<UUID> ids) {
+        return append("SELECT previous_sequence,previous_pending FROM append_regular_open_receipts(?,?,?,?,?,?)",
+                List.of(store,at),items,ids);
+    }
+
+    public Optional<Allocation> issueFresh(long store, LocalDate day, OffsetDateTime at,
+                                           List<WaitingBatchItem> items, List<UUID> ids) {
+        return append("SELECT previous_sequence,previous_pending FROM append_fresh_waiting_receipts(?,?,?,?,?,?,?)",
+                List.of(store,day,at),items,ids);
+    }
+
+    private Optional<Allocation> append(String sql,List<?> scope,List<WaitingBatchItem> items,List<UUID> ids) {
+        var args=new java.util.ArrayList<Object>(scope);
+        args.add(array("bigint",items.stream().map(i->i.key().memberId()).toList()));
+        args.add(array("uuid",ids));
+        args.add(array("int4",items.stream().map(WaitingBatchItem::partyCount).toList()));
+        args.add(array("text",items.stream().map(i->i.key().token()).toList()));
+        return jdbc.query(sql,(rs,i)->new Allocation(rs.getLong(1),rs.getInt(2)),args.toArray()).stream().findFirst();
     }
 
     public void issue(long storeId, LocalDate day, long previousSequence, OffsetDateTime acceptedAt,

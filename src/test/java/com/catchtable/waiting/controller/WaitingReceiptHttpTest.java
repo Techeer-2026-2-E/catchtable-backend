@@ -168,6 +168,18 @@ class WaitingReceiptHttpTest {
     }
 
     @Test
+    void aClosedStoreAttemptDoesNotFreezeTomorrowUntilTheFirstValidApplication() throws Exception {
+        LocalDate today=LocalDate.now(clock), tomorrow=today.plusDays(1);
+        assertThat(jdbc.queryForObject("SELECT enable_waiting_intake(?,?,1)",String.class,store,today)).isEqualTo("ALREADY_ENABLED");
+        when(clock.instant()).thenReturn(START.plusSeconds(4));
+        jdbc.update("UPDATE store SET waiting_available=false WHERE id=?",store);
+        apply(first,"before-opening",2).andExpect(status().isConflict());
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM waiting_intake_day WHERE store_id=? AND received_date=?",Integer.class,store,tomorrow)).isZero();
+        jdbc.update("UPDATE store SET waiting_available=true WHERE id=?",store);
+        apply(first,"before-opening",2).andExpect(status().isAccepted()).andExpect(jsonPath("$.intakeSequence").value(1));
+    }
+
+    @Test
     void concurrentFirstRequestsOpenExactlyOneInheritedDayAndFenceLegacyInserts() throws Exception {
         LocalDate today = LocalDate.now(clock);
         jdbc.update("DELETE FROM waiting_intake_day WHERE store_id=?", store);

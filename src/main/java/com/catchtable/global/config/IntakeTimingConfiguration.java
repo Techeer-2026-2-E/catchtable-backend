@@ -1,6 +1,7 @@
 package com.catchtable.global.config;
 
 import jakarta.servlet.FilterChain;
+import org.springframework.beans.factory.annotation.Value;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -24,17 +25,21 @@ public class IntakeTimingConfiguration {
     private record Timing(long queuedMs,long startedMs,long waitUs) {}
     private static final ThreadLocal<Timing> DISPATCH=new ThreadLocal<>();
 
-    @Bean WebServerFactoryCustomizer<TomcatServletWebServerFactory> timedConnector() {
+    static Runnable timed(Runnable task) {
+        long queued=System.nanoTime(),epoch=System.currentTimeMillis();
+        return ()->{
+            DISPATCH.set(new Timing(epoch,System.currentTimeMillis(),TimeUnit.NANOSECONDS.toMicros(System.nanoTime()-queued)));
+            try {task.run();} finally {DISPATCH.remove();}
+        };
+    }
+
+    @Bean WebServerFactoryCustomizer<TomcatServletWebServerFactory> timedConnector(@Value("${waiting.intake.async.enabled:false}") boolean boundedVirtual) {
+        if(boundedVirtual) return factory -> {};
         return factory->factory.addConnectorCustomizers(c->{
             var protocol=(AbstractProtocol<?>)c.getProtocolHandler();
             var pool=new StandardThreadExecutor() {
                 @Override public void execute(Runnable task) {
-                    long queued=System.nanoTime(), epoch=System.currentTimeMillis();
-                    super.execute(()->{
-                        DISPATCH.set(new Timing(epoch,System.currentTimeMillis(),
-                                TimeUnit.NANOSECONDS.toMicros(System.nanoTime()-queued)));
-                        try { task.run(); } finally { DISPATCH.remove(); }
-                    });
+                    super.execute(timed(task));
                 }
             };
             pool.setName("intake-lab-"+c.getPort());

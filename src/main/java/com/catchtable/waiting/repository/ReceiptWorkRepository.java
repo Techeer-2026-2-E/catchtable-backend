@@ -4,12 +4,15 @@ import com.catchtable.waiting.dto.WaitingLane;
 import com.catchtable.waiting.dto.WaitingReceiptResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.support.SqlArrayValue;
 import org.springframework.stereotype.Repository;
 
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
+import java.util.HashSet;
 import java.util.UUID;
 
 @Repository
@@ -28,28 +31,57 @@ public class ReceiptWorkRepository {
         return Boolean.TRUE.equals(db.queryForObject("SELECT take_waiting_registration_slot(false)",Boolean.class));
     }
 
-    public Optional<Work> head(WaitingLane lane) {
+    /** A short priority window for committing a surge; older heads and quiet lanes always drain. */
+    public boolean receivingBurst(WaitingLane lane,long maxWaitMs) {
+        if(maxWaitMs<=0) return false;
+        return Boolean.TRUE.equals(db.queryForObject("""
+                SELECT EXISTS(
+                    SELECT FROM waiting_intake_day d
+                    JOIN waiting_receipt newest ON newest.store_id=d.store_id AND newest.received_date=d.received_date
+                         AND newest.intake_sequence=d.last_sequence
+                    JOIN LATERAL (SELECT r.accepted_at FROM waiting_receipt r
+                         WHERE r.store_id=d.store_id AND r.received_date=d.received_date AND r.status IN ('PENDING','PROCESSING')
+                         ORDER BY r.intake_sequence LIMIT 1) oldest ON true
+                    WHERE d.store_id=? AND d.received_date=? AND d.pending_count>=64
+                      AND (d.pending_count>=512 OR newest.accepted_at>clock_timestamp()-interval '100 milliseconds')
+                      AND oldest.accepted_at>clock_timestamp()-?*interval '1 millisecond')
+                """,Boolean.class,lane.storeId(),lane.day(),maxWaitMs));
+    }
+
+    public List<Work> heads(WaitingLane lane, int limit) {
         return db.query("""
-                SELECT *,lease_until<=clock_timestamp() AS expired FROM waiting_receipt
-                WHERE store_id=? AND received_date=? AND status IN ('PENDING','PROCESSING')
-                ORDER BY intake_sequence LIMIT 1 FOR NO KEY UPDATE
-                """,(r,i)->new Work(r.getLong("member_id"),r.getObject("receipt_id",UUID.class),lane,
+                SELECT member_id, receipt_id, party_count, status, claim_token, lease_until<=clock_timestamp() AS expired
+                FROM waiting_receipt WHERE store_id=? AND received_date=? AND status IN ('PENDING','PROCESSING')
+                ORDER BY intake_sequence LIMIT ? FOR NO KEY UPDATE
+                """, (r,i) -> new Work(r.getLong("member_id"),r.getObject("receipt_id",UUID.class),lane,
                 r.getInt("party_count"),r.getString("status"),r.getObject("claim_token",UUID.class),r.getBoolean("expired")),
-                lane.storeId(),lane.day()).stream().findFirst();
+                lane.storeId(),lane.day(),limit);
     }
 
-    public void claim(Work w,UUID token,long leaseMs) {
-        db.update("""
-                UPDATE waiting_receipt SET status='PROCESSING',claim_token=?,
-                    lease_until=clock_timestamp()+?*interval '1 millisecond' WHERE member_id=? AND receipt_id=?
-                """,token,leaseMs,w.member(),w.receipt());
+    private SqlArrayValue members(List<Work> rows) {
+        return new SqlArrayValue("bigint", rows.stream().map(Work::member).toArray());
     }
 
-    public void release(Work w,UUID token) {
+    private SqlArrayValue receipts(List<Work> rows) {
+        return new SqlArrayValue("uuid", rows.stream().map(Work::receipt).toArray());
+    }
+
+    public void claim(List<Work> rows, UUID token, long leaseMs) {
+        int changed = db.update("""
+                UPDATE waiting_receipt r SET status='PROCESSING',claim_token=?,
+                    lease_until=clock_timestamp()+?*interval '1 millisecond'
+                FROM unnest(?::bigint[],?::uuid[]) i(member_id,receipt_id)
+                WHERE (r.member_id,r.receipt_id)=(i.member_id,i.receipt_id)
+                """, token,leaseMs,members(rows),receipts(rows));
+        if (changed != rows.size()) throw new IllegalStateException("Receipt head changed during claim");
+    }
+
+    public void release(List<Work> rows, UUID token) {
         db.update("""
-                UPDATE waiting_receipt SET status='PENDING',claim_token=NULL,lease_until=NULL
-                WHERE member_id=? AND receipt_id=? AND claim_token=?
-                """,w.member(),w.receipt(),token);
+                UPDATE waiting_receipt r SET status='PENDING',claim_token=NULL,lease_until=NULL
+                FROM unnest(?::bigint[],?::uuid[]) i(member_id,receipt_id)
+                WHERE (r.member_id,r.receipt_id)=(i.member_id,i.receipt_id) AND r.claim_token=?
+                """,members(rows),receipts(rows),token);
     }
 
     public List<WaitingLane> lanes() {
@@ -69,19 +101,23 @@ public class ReceiptWorkRepository {
                 """,Boolean.class,lane.storeId(),lane.day(),lane.storeId(),lane.day()));
     }
 
-    public boolean wantsCancel(long member,UUID id) {
-        return Boolean.TRUE.equals(db.queryForObject("""
-                SELECT EXISTS(SELECT FROM waiting_receipt_cancel WHERE member_id=? AND receipt_id=? AND outcome IS NULL)
-                """,Boolean.class,member,id));
+    public Set<UUID> requestedCancellations(List<Work> rows) {
+        return new HashSet<>(db.queryForList("""
+                SELECT c.receipt_id FROM waiting_receipt_cancel c
+                JOIN unnest(?::bigint[],?::uuid[]) i(member_id,receipt_id) USING(member_id,receipt_id)
+                WHERE c.outcome IS NULL
+                """,UUID.class,members(rows),receipts(rows)));
     }
 
-    public void bindRegistration(Work w,UUID token,long waitingId) {
-        int count=db.update("""
-                UPDATE waiting_receipt SET status='REGISTERED',waiting_id=?,claim_token=NULL,lease_until=NULL
-                WHERE member_id=? AND receipt_id=? AND claim_token=? AND status='PROCESSING'
-                """,waitingId,w.member(),w.receipt(),token);
-        if(count!=1) throw new IllegalStateException("Registration lease changed");
-        free(w.lane());
+    public void bindRegistrations(List<Work> rows, List<Long> waitingIds, UUID token) {
+        if (rows.isEmpty()) return;
+        int count = db.update("""
+                UPDATE waiting_receipt r SET status='REGISTERED',waiting_id=i.waiting_id,claim_token=NULL,lease_until=NULL
+                FROM unnest(?::bigint[],?::uuid[],?::bigint[]) i(member_id,receipt_id,waiting_id)
+                WHERE (r.member_id,r.receipt_id)=(i.member_id,i.receipt_id) AND r.claim_token=? AND r.status='PROCESSING'
+                """,members(rows),receipts(rows),new SqlArrayValue("bigint", waitingIds.toArray()),token);
+        if (count != rows.size()) throw new IllegalStateException("Registration lease changed");
+        free(rows.getFirst().lane(), count);
     }
 
     public void requestCancel(long member,UUID id,WaitingLane lane,OffsetDateTime at) {
@@ -99,14 +135,14 @@ public class ReceiptWorkRepository {
                 AND ((status='PENDING' AND ?::uuid IS NULL) OR (status='PROCESSING' AND claim_token=?))
                 """,member,id,token,token);
         if(updated==0) return false;
-        free(lane);
+        free(lane,1);
         resolve(member,id,"WITHDRAWN");
         return true;
     }
 
-    private void free(WaitingLane lane) {
-        if(db.update("UPDATE waiting_intake_day SET pending_count=pending_count-1 WHERE store_id=? AND received_date=? AND pending_count>0",
-                lane.storeId(),lane.day())!=1) throw new IllegalStateException("Receipt capacity mismatch");
+    private void free(WaitingLane lane, int count) {
+        if(db.update("UPDATE waiting_intake_day SET pending_count=pending_count-? WHERE store_id=? AND received_date=? AND pending_count>=?",
+                count,lane.storeId(),lane.day(),count)!=1) throw new IllegalStateException("Receipt capacity mismatch");
     }
 
     public List<WaitingLane> cancellationLanes() {
