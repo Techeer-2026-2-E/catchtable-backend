@@ -1,5 +1,7 @@
 # 예약 가능 조회 공유 캐시와 웨이팅 접수·번호 발급
 
+V49 판정 뒤의 수정과 결과는 [개점 성능 및 장애 검증 후속](2026-11-23-redis-pr-fixes.md)에 있다.
+
 아래 첫 검증은 2026-11-22 21:45 시점의 V48 기록이다. 이후 매장 설정 유지·비동기 요청 상한과 최종 검증은 이 문서의 V49 후속 기록에서 다룬다.
 
 2026-11-22 KST. 로컬 `redis-product`, 브랜치 `feat/redis-waiting-availability`. 기준은 `dev@1f51158fbfda6871737368242ba57318e25326f7`이다. 조사 원본 `angelshark`는 별도로 보존했다. 팀 명세 위치는 [프로젝트 기준](../docs/PROJECT.md), 이전 구현·측정은 [PG 접수 HTTP](2026-11-22-waiting-intake-http.md)와 [묶음 커밋 비교](2026-11-22-waiting-intake-batch.md)에 있다.
