@@ -17,6 +17,11 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Clock;
 import java.time.OffsetDateTime;
+import java.util.Collection;
+import java.util.Map;
+import java.util.Set;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -46,6 +51,22 @@ public class NotificationSettingService {
     @Transactional(propagation = Propagation.SUPPORTS)
     public boolean allows(Long memberId, NotificationType type) {
         return MemberNotificationSetting.isRequired(type) || find(memberId).allows(type);
+    }
+
+    // 여러 회원 수신 여부를 한 번에 (순번 알림처럼 대상이 많을 때, 조회 1번)
+    @Transactional(propagation = Propagation.SUPPORTS)
+    public Set<Long> allowedMembers(Collection<Long> memberIds, NotificationType type) {
+        if (memberIds.isEmpty()) {
+            return Set.of();
+        }
+        if (MemberNotificationSetting.isRequired(type)) {
+            return Set.copyOf(memberIds);
+        }
+        Map<Long, MemberNotificationSetting> saved = settingRepository.findAllById(memberIds).stream()
+                .collect(Collectors.toMap(MemberNotificationSetting::getMemberId, Function.identity()));
+        return memberIds.stream()
+                .filter(id -> saved.getOrDefault(id, MemberNotificationSetting.defaults(id)).allows(type))
+                .collect(Collectors.toSet());
     }
 
     private MemberNotificationSetting find(Long memberId) {

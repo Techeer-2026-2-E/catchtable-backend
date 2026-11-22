@@ -33,7 +33,7 @@ public class NotificationInboxRecorder {
                 OffsetDateTime.now(clock));
     }
 
-    // 웨이팅은 업무 이벤트 키, 예약은 발행 키 (WaitingSseJournal과 같은 규칙)
+    // 웨이팅은 업무 이벤트 키, 예약은 발행 키 (NotificationJobRecorder의 job_key도 같은 규칙)
     private String eventKeyOf(CustomerNotificationEvent event) {
         String base = (event.waitingEvent() != null)
                 ? event.waitingEvent().eventKey()

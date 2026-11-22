@@ -50,10 +50,10 @@ import static org.mockito.Mockito.verify;
 @SpringBootTest(properties = "waiting.expiry-interval-ms=3600000")
 @RecordApplicationEvents
 class WaitingExpirySchedulerTest {
-    @Autowired com.catchtable.notification.durability.WaitingSseWorker sseWorker;
+    @Autowired com.catchtable.notification.job.NotificationJobWorker jobWorker;
     @Autowired JdbcTemplate sseJdbc;
     private void flushSse() {
-        com.catchtable.notification.durability.WaitingSseTestDrain.forStore(sseJdbc,sseWorker,store.getId()).done();
+        com.catchtable.notification.job.NotificationJobTestDrain.forStore(sseJdbc, jobWorker, store.getId()).done();
     }
 
 

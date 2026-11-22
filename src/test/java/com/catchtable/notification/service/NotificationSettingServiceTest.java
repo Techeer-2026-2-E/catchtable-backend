@@ -2,7 +2,6 @@ package com.catchtable.notification.service;
 
 import com.catchtable.global.exception.BusinessException;
 import com.catchtable.global.exception.ErrorCode;
-import com.catchtable.notification.dto.CustomerNotificationEvent;
 import com.catchtable.notification.dto.NotificationSettingRequest;
 import com.catchtable.notification.dto.NotificationSettingResponse;
 import com.catchtable.notification.dto.NotificationType;
@@ -14,15 +13,11 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.io.IOException;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.mockingDetails;
 
 // 각 테스트는 롤백된다
 @SpringBootTest
@@ -30,7 +25,6 @@ import static org.mockito.Mockito.mockingDetails;
 class NotificationSettingServiceTest {
 
     @Autowired NotificationSettingService settingService;
-    @Autowired NotificationService notificationService;
     @Autowired SseEmitterRepository emitterRepository;
     @Autowired JdbcTemplate jdbc;
 
@@ -118,18 +112,10 @@ class NotificationSettingServiceTest {
         assertThat(delivered(other, NotificationType.WAITING_POSITION_CHANGED)).isTrue();
     }
 
-    // 웨이팅은 처리 시점 허용 정책 검증; 실제 worker 전송은 WaitingSseDurabilityTest에서 검증.
-    // 예약은 기존 연결 전송도 확인.
+    // 보내는 순간의 허용 판단. 실제 전송은 NotificationJobSenderTest에서 검증
+    // (이 클래스는 @Transactional이라 커밋되지 않아 전송 스레드가 job을 볼 수 없다)
     private boolean delivered(Long memberId, NotificationType type) throws IOException {
-        if (type.name().startsWith("WAITING_")) return settingService.allows(memberId, type);
-        SseEmitter emitter = mock(SseEmitter.class);
-        emitterRepository.save(memberId, emitter);
-        try {
-            notificationService.send(new CustomerNotificationEvent(memberId, type, 1L, "알림"));
-            return !mockingDetails(emitter).getInvocations().isEmpty();
-        } finally {
-            emitterRepository.delete(memberId, emitter);
-        }
+        return settingService.allows(memberId, type);
     }
 
     private int rowCount(Long memberId) {

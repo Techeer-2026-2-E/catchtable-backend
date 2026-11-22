@@ -80,6 +80,12 @@ class ReservationCancellationRefundTest {
     private Long ownerId;
     private Long storeId;
     private SseEmitter emitter;
+    @Autowired private com.catchtable.notification.job.NotificationJobWorker jobWorker;
+
+    // 예약 알림은 전송 스레드가 보내므로, 확인 전에 이 회원의 알림 작업이 끝날 때까지 기다린다
+    private void awaitNotifications() {
+        com.catchtable.notification.job.NotificationJobTestDrain.forMember(jdbc, jobWorker, memberId).done();
+    }
 
     @BeforeEach
     void setUp() {
@@ -141,6 +147,7 @@ class ReservationCancellationRefundTest {
             assertThat(jdbc.queryForObject("SELECT cancellation_actor FROM reservation WHERE id = ?", String.class, id))
                     .isEqualTo(owner ? "OWNER" : "CUSTOMER");
             assertThat(tables.countAvailable(storeId, 2, START, START.plusHours(1), NOW)).isEqualTo(1);
+            awaitNotifications();
             verify(emitter, times(1)).send(any(SseEmitter.SseEventBuilder.class));
         } else {
             assertThatThrownBy(() -> cancel(owner, id)).isInstanceOfSatisfying(BusinessException.class,
@@ -161,6 +168,7 @@ class ReservationCancellationRefundTest {
         cancel(owner, id);
         cancel(owner, id);
         assertThat(state(id)).isEqualTo("CANCELLED");
+        awaitNotifications();
         verify(emitter, times(1)).send(any(SseEmitter.SseEventBuilder.class));
         verifyNoInteractions(toss);
     }
@@ -245,6 +253,7 @@ class ReservationCancellationRefundTest {
             connection.commit();
             cancellation.get(5, TimeUnit.SECONDS);
             assertThat(state(id)).isEqualTo("CANCELLED");
+            awaitNotifications();
             verify(emitter, times(1)).send(any(SseEmitter.SseEventBuilder.class));
             verifyNoInteractions(toss);
         } finally {
@@ -306,6 +315,7 @@ class ReservationCancellationRefundTest {
         reconciler.reconcile(paymentId);
         assertThat(state(id)).isEqualTo("CANCELLED");
         assertThat(tables.countAvailable(storeId, 2, START, START.plusHours(1), NOW)).isEqualTo(1);
+        awaitNotifications();
         verify(emitter, times(1)).send(any(SseEmitter.SseEventBuilder.class));
         verify(toss, never()).cancel(anyString(), any(), anyString(), anyString());
         verify(toss, times(1)).getByPaymentKey(key);
@@ -324,6 +334,7 @@ class ReservationCancellationRefundTest {
 
         assertThat(state(id)).isEqualTo("CANCELLED");
         assertThat(tables.countAvailable(storeId, 2, START, START.plusHours(1), NOW)).isEqualTo(1);
+        awaitNotifications();
         verify(emitter, times(1)).send(any(SseEmitter.SseEventBuilder.class));
         verifyNoInteractions(toss);
     }

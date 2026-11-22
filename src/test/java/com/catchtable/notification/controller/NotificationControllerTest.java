@@ -37,7 +37,7 @@ class NotificationControllerTest {
     private Long waitingId;
     @Autowired org.springframework.jdbc.core.JdbcTemplate jdbc;
     @Autowired org.springframework.transaction.support.TransactionTemplate tx;
-    @Autowired com.catchtable.notification.durability.WaitingSseWorker worker;
+    @Autowired com.catchtable.notification.job.NotificationJobWorker worker;
     @Autowired com.catchtable.payment.ReconcileTestClock clock;
     @org.junit.jupiter.api.BeforeEach void fixture() {
         clock.set(OffsetDateTime.parse("2026-10-11T18:00:00+09:00"));
@@ -48,7 +48,7 @@ class NotificationControllerTest {
     private void sendCall() {
         tx.executeWithoutResult(s->publisher.publishEvent(WaitingCallNotification.of(MEMBER_ID,waitingId,12,"스케줄 청담",
                 OffsetDateTime.parse("2026-10-11T18:00:00+09:00"),OffsetDateTime.parse("2026-10-11T18:10:00+09:00"))));
-        com.catchtable.notification.durability.WaitingSseTestDrain.forStore(jdbc,worker,storeId).done();
+        com.catchtable.notification.job.NotificationJobTestDrain.forStore(jdbc, worker, storeId).done();
     }
 
     @Autowired
@@ -125,8 +125,10 @@ class NotificationControllerTest {
     void payloadNullWithoutExtraData() throws Exception {
         MvcResult result = openConnection();
 
-        publisher.publishEvent(new CustomerNotificationEvent(
-                MEMBER_ID, NotificationType.RESERVATION_CANCELED, 10L, "예약이 취소되었습니다"));
+        // 새 recorder는 업무 TX 안에서만 받는다 (MANDATORY)
+        tx.executeWithoutResult(s -> publisher.publishEvent(new CustomerNotificationEvent(
+                MEMBER_ID, NotificationType.RESERVATION_CANCELED, 10L, "예약이 취소되었습니다")));
+        com.catchtable.notification.job.NotificationJobTestDrain.forMember(jdbc, worker, MEMBER_ID).done();
 
         String body = result.getResponse().getContentAsString();
         assertThat(body).contains("event:RESERVATION_CANCELED");
