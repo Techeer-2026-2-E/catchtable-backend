@@ -45,7 +45,7 @@ dependencies {
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 
-    // Redis / RabbitMQ / ClickHouse / S3 는 해당 기능 구현 시작할 때 추가할 것
+    implementation 'io.lettuce:lettuce-core'
 }
 
 tasks.named('test') {

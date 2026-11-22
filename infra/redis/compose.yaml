@@ -1,0 +1,36 @@
+# One independent Linux host per project. Set private addresses and a shared secret-file path.
+services:
+  data:
+    image: ${CT_REDIS_IMAGE:-redis:7-alpine}
+    user: redis
+    network_mode: host
+    restart: unless-stopped
+    entrypoint: ["/bin/sh","/opt/catchtable/node.sh"]
+    environment:
+      CT_REDIS_ROLE: ${CT_DATA_ROLE:?set cache, primary or replica}
+      CT_REDIS_BIND: ${CT_PRIVATE_BIND:?set the private bind address}
+      CT_REDIS_ANNOUNCE: ${CT_PRIVATE_ANNOUNCE:?set the reachable private address}
+      CT_REDIS_INITIAL_MASTER: ${CT_INITIAL_QUEUE_HOST:?set initial queue primary address}
+      CT_REDIS_PASSWORD_FILE: /run/secrets/redis_password
+    secrets: [redis_password]
+    volumes: ["data:/data","./node.sh:/opt/catchtable/node.sh:ro"]
+  sentinel:
+    image: ${CT_REDIS_IMAGE:-redis:7-alpine}
+    user: redis
+    network_mode: host
+    restart: unless-stopped
+    entrypoint: ["/bin/sh","/opt/catchtable/node.sh"]
+    environment:
+      CT_REDIS_ROLE: sentinel
+      CT_REDIS_BIND: ${CT_PRIVATE_BIND:?set the private bind address}
+      CT_REDIS_ANNOUNCE: ${CT_PRIVATE_ANNOUNCE:?set the reachable private address}
+      CT_REDIS_INITIAL_MASTER: ${CT_INITIAL_QUEUE_HOST:?set initial queue primary address}
+      CT_REDIS_PASSWORD_FILE: /run/secrets/redis_password
+    secrets: [redis_password]
+    volumes: ["sentinel:/data","./node.sh:/opt/catchtable/node.sh:ro"]
+secrets:
+  redis_password:
+    file: ${CT_REDIS_SECRET_FILE:?set secret file outside repository}
+volumes:
+  data:
+  sentinel:

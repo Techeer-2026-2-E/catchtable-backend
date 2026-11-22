@@ -3,6 +3,7 @@ package com.catchtable.global.exception;
 import lombok.extern.slf4j.Slf4j;
 import org.hibernate.exception.ConstraintViolationException;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
@@ -25,7 +26,11 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(BusinessException.class)
     public ResponseEntity<ErrorResponse> handleBusiness(BusinessException e) {
         ErrorCode code = e.getErrorCode();
-        return ResponseEntity.status(code.getStatus()).body(ErrorResponse.of(code));
+        var response = ResponseEntity.status(code.getStatus());
+        if (code == ErrorCode.WAITING_INTAKE_FULL || code == ErrorCode.AVAILABILITY_BUSY) {
+            response.header(HttpHeaders.RETRY_AFTER, "2");
+        }
+        return response.body(ErrorResponse.of(code));
     }
 
     @ExceptionHandler(DataIntegrityViolationException.class)
