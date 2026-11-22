@@ -1,5 +1,7 @@
 package com.catchtable.reservation.service;
 
+import com.catchtable.notification.job.NotificationJobTestDrain;
+import com.catchtable.notification.job.NotificationJobWorker;
 import com.catchtable.global.exception.BusinessException;
 import com.catchtable.global.exception.ErrorCode;
 import com.catchtable.global.exception.GlobalExceptionHandler;
@@ -73,6 +75,7 @@ import static org.mockito.ArgumentMatchers.any;
 class ReservationSettingsTest {
 
     @Autowired private JdbcTemplate jdbc;
+    @Autowired private NotificationJobWorker notificationWorker;
     @Autowired private ReservationService reservations;
     @Autowired private ReservationRefundExecutionService refundExecution;
     @Autowired private OwnerReservationService ownerReservations;
@@ -582,6 +585,7 @@ class ReservationSettingsTest {
                                 .contentType(MediaType.APPLICATION_JSON).content("{\"partySize\":2}"))
                         .andExpect(status().isOk()).andExpect(jsonPath("$.partySize").value(2));
             }
+            NotificationJobTestDrain.forMember(jdbc, notificationWorker, customerId).done();
             verify(emitter, times(1)).send(any(SseEmitter.SseEventBuilder.class));
             var changed = reservationRepository.findById(id).orElseThrow();
             assertThat(changed.getReservationStartAt()).isEqualTo(original.getReservationStartAt());

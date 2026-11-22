@@ -1,5 +1,6 @@
 package com.catchtable.reservation.service;
 
+import com.catchtable.notification.job.NotificationJobTestDrain;
 import com.catchtable.global.exception.BusinessException;
 import com.catchtable.global.exception.ErrorCode;
 import com.catchtable.payment.PaymentTestData;
@@ -96,6 +97,12 @@ class ReservationPaymentServiceTest {
     private Long paymentId;
     private String orderId;
     private SseEmitter emitter;
+    @Autowired private com.catchtable.notification.job.NotificationJobWorker jobWorker;
+
+    // 예약 알림은 전송 스레드가 보내므로, 확인 전에 이 회원의 알림 작업이 끝날 때까지 기다린다
+    private void awaitNotifications() {
+        com.catchtable.notification.job.NotificationJobTestDrain.forMember(jdbc, jobWorker, memberId).done();
+    }
 
     @BeforeEach
     void setUp() {
@@ -155,6 +162,8 @@ class ReservationPaymentServiceTest {
         assertThat(historyCount()).isEqualTo(1);
         assertThat(fenced()).isTrue();
         verify(toss, times(1)).confirm("pk-test", orderId, 10000, "confirm-" + orderId);
+        awaitNotifications();
+        NotificationJobTestDrain.forMember(jdbc, jobWorker, memberId).done();
         verify(emitter, times(1)).send(any(SseEmitter.SseEventBuilder.class));
         assertFailure(() -> service.confirm(memberId, new PaymentConfirmRequest(orderId, "pk-other", 10000)),
                 ErrorCode.PAYMENT_MISMATCH);
@@ -308,6 +317,8 @@ class ReservationPaymentServiceTest {
         assertThat(state()).isEqualTo("CONFIRMED");
         assertThat(historyCount()).isEqualTo(1);
         assertThat(fenced()).isTrue();
+        awaitNotifications();
+        NotificationJobTestDrain.forMember(jdbc, jobWorker, memberId).done();
         verify(emitter, times(1)).send(any(SseEmitter.SseEventBuilder.class));
     }
 
@@ -435,6 +446,8 @@ class ReservationPaymentServiceTest {
             assertThat(first.get(10, TimeUnit.SECONDS).status()).isEqualTo(PaymentStatus.DONE);
         }
         verify(toss, times(1)).confirm(anyString(), anyString(), anyLong(), anyString());
+        awaitNotifications();
+        NotificationJobTestDrain.forMember(jdbc, jobWorker, memberId).done();
         verify(emitter, times(1)).send(any(SseEmitter.SseEventBuilder.class));
     }
 
@@ -483,6 +496,8 @@ class ReservationPaymentServiceTest {
         now.set(NOW.plusMinutes(5));
         assertThat(service.confirm(memberId, request()).status()).isEqualTo(PaymentStatus.DONE);
         verify(toss, times(1)).confirm(anyString(), anyString(), anyLong(), anyString());
+        awaitNotifications();
+        NotificationJobTestDrain.forMember(jdbc, jobWorker, memberId).done();
         verify(emitter, times(1)).send(any(SseEmitter.SseEventBuilder.class));
     }
 
@@ -576,6 +591,8 @@ class ReservationPaymentServiceTest {
         assertThat(historyCount()).isEqualTo(1);
         assertThat(jdbc.queryForObject("SELECT refund_required_at FROM payment WHERE id = ?",
                 OffsetDateTime.class, paymentId)).isNull();
+        awaitNotifications();
+        NotificationJobTestDrain.forMember(jdbc, jobWorker, memberId).done();
         verify(emitter, times(1)).send(any(SseEmitter.SseEventBuilder.class));
         verify(toss, times(1)).confirm(anyString(), anyString(), anyLong(), anyString());
         verify(toss, never()).getByOrderId(anyString());
@@ -652,6 +669,8 @@ class ReservationPaymentServiceTest {
         assertThat(confirmed.tableId()).isEqualTo(original.tableId());
         assertThat(confirmed.reservationStartAt()).isAtSameInstantAs(original.reservationStartAt());
         assertThat(historyCount()).isEqualTo(2);
+        awaitNotifications();
+        NotificationJobTestDrain.forMember(jdbc, jobWorker, memberId).done();
         verify(emitter, times(1)).send(any(SseEmitter.SseEventBuilder.class));
         verify(toss, times(1)).getByPaymentKey(request().paymentKey());
     }

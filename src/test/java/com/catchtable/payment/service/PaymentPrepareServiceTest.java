@@ -1,5 +1,7 @@
 package com.catchtable.payment.service;
 
+import com.catchtable.notification.job.NotificationJobTestDrain;
+import com.catchtable.notification.job.NotificationJobWorker;
 import com.catchtable.global.exception.BusinessException;
 import com.catchtable.global.exception.ErrorCode;
 import com.catchtable.member.entity.Member;
@@ -76,6 +78,7 @@ class PaymentPrepareServiceTest {
     private static final OffsetDateTime EXPIRY = NOW.plusMinutes(4);
     private static final OffsetDateTime START = NOW.plusDays(2);
     @Autowired JdbcTemplate jdbc;
+    @Autowired NotificationJobWorker notificationWorker;
     @Autowired PaymentPrepareService service;
     @Autowired ReservationPaymentService approvals;
     @Autowired ReservationService reservations;
@@ -467,6 +470,7 @@ class PaymentPrepareServiceTest {
         assertThat(jdbc.queryForObject("SELECT reservation_start_at FROM reservation WHERE id = ?",
                 OffsetDateTime.class, holdId)).isAtSameInstantAs(START);
         assertThat(historyCount()).isEqualTo(2);
+        NotificationJobTestDrain.forMember(jdbc, notificationWorker, memberId).done();
         verify(emitter, times(1)).send(any(SseEmitter.SseEventBuilder.class));
         verify(toss, times(1)).confirm(anyString(), anyString(), anyLong(), anyString());
         assertStatusQueryConflict();
@@ -522,6 +526,7 @@ class PaymentPrepareServiceTest {
         assertThat(paymentCount()).isEqualTo(1);
         assertThat(historyCount()).isEqualTo(3);
         assertThat(toss.cancelExecutions()).isEqualTo(1);
+        NotificationJobTestDrain.forMember(jdbc, notificationWorker, memberId).done();
         verify(emitter, times(2)).send(any(SseEmitter.SseEventBuilder.class));
     }
 
@@ -536,6 +541,7 @@ class PaymentPrepareServiceTest {
         }
         assertThat(toss.cancelExecutions()).isEqualTo(1);
         assertThat(historyCount()).isEqualTo(3);
+        NotificationJobTestDrain.forMember(jdbc, notificationWorker, memberId).done();
         verify(emitter, times(2)).send(any(SseEmitter.SseEventBuilder.class));
     }
 

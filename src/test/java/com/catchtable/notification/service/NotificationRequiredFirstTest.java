@@ -2,10 +2,18 @@ package com.catchtable.notification.service;
 
 import com.catchtable.member.repository.MemberRepository;
 import com.catchtable.notification.dto.CustomerNotificationEvent;
+import com.catchtable.notification.dto.NotificationMessage;
 import com.catchtable.notification.dto.NotificationType;
+import com.catchtable.notification.entity.NotificationJob;
+import com.catchtable.notification.entity.NotificationJobResult;
+import com.catchtable.notification.job.NotificationJobSender;
+import com.catchtable.notification.job.NotificationJobTargetQuery;
+import com.catchtable.notification.job.SseConnectionWriter;
 import com.catchtable.notification.repository.MemberNotificationSettingRepository;
 import com.catchtable.notification.repository.SseEmitterRepository;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.springframework.dao.DataAccessResourceFailureException;
@@ -13,6 +21,9 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.io.IOException;
 import java.time.Clock;
+import java.time.Duration;
+import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -29,7 +40,15 @@ class NotificationRequiredFirstTest {
     private final NotificationSettingService settingService =
             new NotificationSettingService(settingRepository, mock(MemberRepository.class), Clock.systemUTC());
     private final SseEmitterRepository emitterRepository = new SseEmitterRepository();
-    private final NotificationService notificationService = new NotificationService(emitterRepository, settingService, mock(com.catchtable.notification.durability.WaitingSseJournal.class));
+    private final ObjectMapper mapper = new ObjectMapper().findAndRegisterModules();
+    private final SseConnectionWriter writer = new SseConnectionWriter(emitterRepository, Duration.ofSeconds(1), 4);
+    private final NotificationJobSender sender = new NotificationJobSender(
+            emitterRepository, settingService, mock(NotificationJobTargetQuery.class), mapper, Clock.systemUTC(), writer);
+
+    @AfterEach
+    void closeWriter() {
+        writer.close();
+    }
 
     @ParameterizedTest
     @EnumSource(value = NotificationType.class,
@@ -42,7 +61,10 @@ class NotificationRequiredFirstTest {
 
         assertThat(settingService.allows(1L, type)).isTrue();
         if (type == NotificationType.RESERVATION_CANCELED) {
-            notificationService.send(new CustomerNotificationEvent(1L, type, 1L, "알림"));
+            var event = new CustomerNotificationEvent(1L, type, 1L, "알림");
+            String payload = mapper.writeValueAsString(NotificationMessage.from(event, LocalDateTime.now()));
+            var job = NotificationJob.notify("test:1", 1L, type, 1L, null, payload, OffsetDateTime.now());
+            assertThat(sender.sendNotify(job, () -> {})).isEqualTo(NotificationJobResult.SENT);
             verify(emitter).send(any(SseEmitter.SseEventBuilder.class));
         }
         verify(settingRepository, never()).findById(any());

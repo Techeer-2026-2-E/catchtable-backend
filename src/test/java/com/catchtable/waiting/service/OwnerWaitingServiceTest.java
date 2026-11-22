@@ -50,10 +50,10 @@ import static org.mockito.Mockito.verify;
 
 @SpringBootTest
 class OwnerWaitingServiceTest {
-    @Autowired com.catchtable.notification.durability.WaitingSseWorker sseWorker;
+    @Autowired com.catchtable.notification.job.NotificationJobWorker jobWorker;
     @Autowired JdbcTemplate sseJdbc;
     private void flushSse() {
-        com.catchtable.notification.durability.WaitingSseTestDrain.forStore(sseJdbc,sseWorker,store.getId()).done();
+        com.catchtable.notification.job.NotificationJobTestDrain.forStore(sseJdbc, jobWorker, store.getId()).done();
     }
 
 
@@ -506,6 +506,8 @@ class OwnerWaitingServiceTest {
     void respondNotifiesOwnerOnceAndRetryDoesNotSendAgain() throws Exception {
         Waiting waiting = waiting(1, WaitingStatus.WAITING);
         service.callWaiting(owner.getId(), waiting.getId());
+        // 호출의 점주 갱신(REFRESH)이 끝난 뒤 응답해야 1개로 합쳐지지 않고 2번 나간다
+        flushSse();
 
         waitingService.respondToCall(customer.getId(), waiting.getId());
         waitingService.respondToCall(customer.getId(), waiting.getId());

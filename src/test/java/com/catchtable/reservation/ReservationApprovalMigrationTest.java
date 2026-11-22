@@ -1,5 +1,6 @@
 package com.catchtable.reservation;
 
+import com.catchtable.support.MigrationSqlFiles;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -7,7 +8,6 @@ import org.springframework.boot.test.context.SpringBootTest;
 import javax.sql.DataSource;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.Comparator;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -25,12 +25,8 @@ class ReservationApprovalMigrationTest {
             sql.execute("CREATE SCHEMA " + schema);
             try {
                 sql.execute("SET search_path TO " + schema + ", public");
-                try (var paths = Files.list(Path.of("src/main/resources/db/migration"))) {
-                    for (Path path : paths.filter(p -> p.toString().endsWith(".sql"))
-                            .filter(p -> version(p) < 24)
-                            .sorted(Comparator.comparingInt(ReservationApprovalMigrationTest::version)).toList()) {
-                        sql.execute(Files.readString(path));
-                    }
+                for (Path migration : MigrationSqlFiles.before(24)) {
+                    sql.execute(Files.readString(migration));
                 }
                 sql.execute(Files.readAllLines(Path.of("scripts/local-seed.sql")).stream()
                         .filter(line -> !line.startsWith("\\")).collect(Collectors.joining("\n")));
@@ -114,10 +110,5 @@ class ReservationApprovalMigrationTest {
                 sql.execute("DROP SCHEMA IF EXISTS " + schema + " CASCADE");
             }
         }
-    }
-
-    private static int version(Path path) {
-        String name = path.getFileName().toString();
-        return Integer.parseInt(name.substring(1, name.indexOf("__")));
     }
 }
