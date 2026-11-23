@@ -33,6 +33,34 @@ Redis 값 하나가 매장·서울 조회일·인원 수에 해당하는 하루 
 
 같은 매장의 변경은 동시 쓰기 트랜잭션별 슬롯에 합쳐 둔다. 슬롯 하나가 날짜 32개를 초과하면 매장 전체를 무효화한다. Redis 중단 중 같은 매장에 변경이 계속되어도 커밋 수만큼 새 행을 쌓지 않는다.
 
+한 번 켠 무효화 추적은 앱 설정을 꺼도 DB에 남아 예약·테이블·영업시간 쓰기마다 기록을 만든다. 모든 앱에서 `availability.cache.enabled`를 끈 뒤 `UPDATE availability_cache_control SET tracking = false WHERE id = 1`로 멈춘다. 캐시를 켠 앱이 남아 있으면 그 앱은 무효화 없이 최대 2초 TTL로만 갱신된다. 다시 켜면 앱이 시작할 때 `enable_availability_tracking()`으로 켠다.
+
+### DB 함수의 현재 정의
+
+여러 마이그레이션이 같은 함수를 `CREATE OR REPLACE`로 다시 정의한다. 동작을 확인하거나 고칠 때는 아래 `현재 정의` 파일을 기준으로 한다. 이미 적용된 마이그레이션은 수정하지 않고, 바꿀 때는 새 마이그레이션에서 다시 정의한다.
+
+| 함수 | 현재 정의 | 이전 정의 |
+| --- | --- | --- |
+| `guard_waiting_intake_day_activation` | V43.2 | - |
+| `capture_reservation_availability` | V44 | - |
+| `capture_store_availability` | V44 | - |
+| `dirty_reservation_interval` | V44 | - |
+| `enable_availability_tracking` | V47 | - |
+| `take_waiting_registration_slot` | V48 | - |
+| `enable_waiting_intake` | V49 | - |
+| `guard_waiting_registration_route` | V49 | V43.3, V46 |
+| `guard_waiting_slot` | V49 | V48 |
+| `open_waiting_intake_day` | V49 | - |
+| `retire_waiting_intake` | V49 | V43.3, V46 |
+| `waiting_ledger_route` | V49 | - |
+| `waiting_policy_capacity` | V49 | - |
+| `waiting_slots_required` | V49 | - |
+| `append_fresh_waiting_receipts` | V52 | - |
+| `reflect_restaurant_member_activity` | V52 | - |
+| `set_receipt_member_active` | V52 | - |
+| `append_regular_open_receipts` | V54 | V53 |
+| `dirty_availability` | V55 | V44, V45, V50, V51 |
+
 ## 호스트 구성
 
 설계 구성은 A에 비영속 캐시와 Sentinel 1, B에 대기열 주 노드와 Sentinel 2, C에 복제 노드와 Sentinel 3이다. B와 C는 AOF everysec, Sentinel 정족수는 2다. 세 호스트는 서로의 사설 주소로 접근할 수 있어야 한다. 각 호스트에서 `CT_DATA_ROLE`을 `cache`, `primary`, `replica`로 각각 정하고 `CT_PRIVATE_BIND`, `CT_PRIVATE_ANNOUNCE`, `CT_INITIAL_QUEUE_HOST`, `CT_REDIS_SECRET_FILE`을 지정한다. 데이터 포트는 6379, Sentinel 포트는 26379다. 승격 뒤에도 마지막 역할 및 설정을 읽도록 데이터 노드와 Sentinel 설정은 쓰기 가능한 볼륨에 둔다. [호스트별 Compose](../infra/redis/compose.yaml)
