@@ -8,8 +8,8 @@
 | --- | --- |
 | `availability.cache.enabled`, `availability.cache.uri` | 기본 꺼짐. 날짜별 `GET /api/user/stores/{storeId}/availability`만 적용한다. 모든 앱의 캐시 URI와 prefix를 맞춘다. |
 | `availability.cache.db-permits` | Redis 장애 때 동시에 DB 계산을 시작할 수 있는 앱별 대표 요청 수. 초기값 1. 초과하면 503과 재시도 간격을 반환한다. |
-| `waiting.dispatch.enabled`, `waiting.dispatch.uri`, `waiting.dispatch.sentinel-password` | 워커 기본 꺼짐. 전환 전 모든 앱에 같은 대기열 연결 정보와 워커 설정을 적용한다. 앱 기본값과 제공 구성의 Sentinel 그룹 이름은 `ct-waiting`이다. 데이터 노드와 Sentinel 인증값은 런타임 비밀로 전달한다. |
-| `waiting_intake_policy`, `waiting_intake_day` | 매장에서 새 방식을 한 번 켜면 그날부터 이어진다. 서울 날짜가 바뀐 뒤 첫 신청이 그날의 경로와 미완료 한도를 고정한다. Redis 대기열이 중단돼도 PG 여유 안에서 신규 수락하고, 가득 차면 429를 준다. 기존 표의 조회·재시도·취소는 계속 처리한다. |
+| `waiting.dispatch.enabled`, `waiting.dispatch.uri`, `waiting.dispatch.sentinel-password` | 워커 기본 꺼짐. 전환 전 모든 앱에 같은 대기열 연결 정보와 워커 설정을 적용한다. 앱 기본값과 제공 구성의 Sentinel 그룹 이름은 `ct-waiting`이다. 데이터 노드와 Sentinel 인증값은 런타임 비밀로 전달한다. `/actuator/health`는 켠 Redis에 연결할 수 없거나, 워커가 꺼진 앱에서 처리되지 않은 장부 작업이 보이면 `DEGRADED`(HTTP 200)를 반환한다. |
+| `waiting_intake_policy`, `waiting_intake_day` | 매장에서 새 방식을 한 번 켜면 그날부터 이어진다. 서울 날짜가 바뀐 뒤 첫 신청이 그날의 경로와 미완료 한도를 고정한다. Redis 대기열이 중단돼도 PG 여유 안에서 신규 수락하고, 가득 차면 429를 준다. 이 동안 워커는 PG 장부에서 미완료 매장을 직접 읽어 번호를 계속 발급하고, 한산한 매장의 첫 신청도 같은 요청 안에서 번호를 받는다. 기존 표의 조회·재시도·취소는 계속 처리한다. |
 | `waiting_registration_permit` | 번호 발급 트랜잭션이 커밋할 때까지 허가 행을 잠근다. V48의 초기값은 DB 전체 2개다. 장부를 사용하는 기간에는 기존 경로의 번호 발급도 같은 허가를 사용한다. |
 | `waiting.intake.batch.enabled`, `waiting.intake.async.enabled` | 기본 꺼짐. 매장별 한 묶음은 최대 256건이다. 평상시는 최대 2ms, 4건 이상이 모인 경우 최대 48ms 안에 커밋 작업을 시작한다. 고부하 HTTP 모드에서는 가상 작업자가 PG 커밋을 기다린다. 서블릿 처리를 시작한 요청 수는 JVM 최대 힙 512KiB당 1개, 최대 2,048개로 제한한다. `waiting.intake.async.max-in-flight`로 더 줄일 수 있다. 묶음 쓰기 작업자는 앱당 2개라, 묶음 안의 잠금 하나를 기다리는 시간은 `waiting.intake.batch.lock-timeout`(기본 5초, 1ms 이상)까지다. 잠금마다 따로 적용되므로 묶음 전체의 응답 시간 상한은 아니다. 한 SQL로 처리하는 경로는 넘으면 아무것도 쓰지 않고 일반 경로로 넘어간다. 일반 경로에서 넘으면 그 묶음은 롤백되고 503과 재시도 간격을 반환한다. 고객은 같은 요청 키로 다시 신청한다. |
 | `waiting.dispatch.immediate`, `waiting.dispatch.poll-hint-seconds`, `waiting.dispatch.max-poll-seconds` | 한산한 매장의 첫 신청은 즉시 발급을 시도한다. 미완료 표의 기본 조회 간격은 2~10초다. `waiting.dispatch.admission-priority-ms`는 폭주 매장의 수락 커밋을 먼저 진행하는 최대 시간이다. 기본 1,800ms이며 가장 오래된 표가 이 시간을 넘으면 새 신청이 이어져도 워커가 진행한다. |
@@ -21,7 +21,7 @@
 1. 같은 매장·날짜의 장부 행에서 수용량과 다음 순번을 갱신한다. 표 ID, 회원·요청 키 및 최초 순번이 같은 PG 트랜잭션에서 커밋된 뒤 응답한다. 커밋 전 실패는 자리를 차지하지 않는다. 커밋 뒤 응답이 끊기면 같은 키로 원래 표를 조회한다.
 2. Redis sorted set의 항목은 매장·접수일이다. Redis에 게시만 남거나 게시가 유실된 경우에도 DB에서 실제 미완료 선두·회원·순번을 확인한다. 장부에 없는 고객을 Redis에서 발급할 경로는 없다.
 3. 워커는 매장별 PG 잠금, 만료 가능한 처리 권한, 트랜잭션 전체에 걸친 공통 등록 허가를 사용한다. 선두부터 최대 `waiting.dispatch.quantum`건(기본 16건)을 차례대로 번호 발급하며 중간 취소를 대조한다. 나중 표 때문에 묶음이 롤백되면 선두만 별도로 재시도한다. 실제 웨이팅·기존 이벤트·장부와 식당 번호 연결은 같은 트랜잭션에 기록한다.
-4. 새 대기열 연결에서 미완료 매장·일자를 PG에서 다시 읽은 뒤 일을 가져온다. 이후에도 주기적으로 누락을 채운다. AOF에 마지막 게시가 없거나 저장된 힌트가 오래됐어도 최초 순서는 장부에 남아 있다.
+4. 새 대기열 연결에서 미완료 매장·일자를 PG에서 다시 읽은 뒤 일을 가져온다. 연결할 수 없는 동안에는 같은 목록을 PG에서 바로 처리한다. 이후에도 주기적으로 누락을 채운다. AOF에 마지막 게시가 없거나 저장된 힌트가 오래됐어도 최초 순서는 장부에 남아 있다.
 5. 매장 전환 함수 `enable_waiting_intake(store_id, effective_date, capacity)`는 이미 등록을 시작한 기존 경로를 보호한다. 이후 날짜는 같은 정책과 한도를 상속하고, 여러 앱이 동시에 첫 신청을 받아도 매장 잠금 안에서 당일 장부를 한 번 만든다. 다음 날짜부터 다른 한도를 예약할 수 있다. V43.1~V48에서 직접 만든 일자 행은 해당 날짜의 선택으로 보존한다. 기존 시범 매장을 이후 날짜에도 계속 운영하려면 위 함수로 시작일을 지정한다.
 6. 상시 설정을 원복하는 `retire_waiting_intake(store_id, received_date)`는 그날까지의 미처리 표·취소·실제 번호와 순서를 대조한다. 미완료 상태가 있으면 false를 반환하고, 성공하면 해당 일자부터 기존 경로로 받는다. 이미 발급한 표의 URL과 키는 유지한다. 일회성 날짜 설정만 있던 기존 매장의 원복은 원래 날짜 범위를 사용한다. 로컬 `rollout.py expand`는 검증 판정이 부족하면 코드 2로 종료하며 매장을 추가하지 않는다.
 
