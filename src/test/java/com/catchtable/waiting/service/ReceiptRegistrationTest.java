@@ -109,10 +109,11 @@ class ReceiptRegistrationTest {
     @Test
     @org.springframework.transaction.annotation.Transactional
     void theOldestReceiptBoundsAdmissionPriorityEvenDuringContinuedIntake() {
-        db.update("UPDATE waiting_intake_day SET capacity=65,last_sequence=65,pending_count=65 WHERE store_id=?",store);
+        // 512건 이상이면 '최신 접수 100ms 이내' 조건을 보지 않는다. 가장 오래된 접수의 상한만 검증한다.
+        db.update("UPDATE waiting_intake_day SET capacity=512,last_sequence=512,pending_count=512 WHERE store_id=?",store);
         db.update("""
                 WITH new_members AS (
-                    INSERT INTO member(name,phone,user_type) SELECT 'fixture','000','CUSTOMER' FROM generate_series(1,64)
+                    INSERT INTO member(name,phone,user_type) SELECT 'fixture','000','CUSTOMER' FROM generate_series(1,511)
                     RETURNING id
                 )
                 INSERT INTO waiting_receipt(member_id,receipt_id,store_id,received_date,intake_sequence,party_count,accepted_at)
