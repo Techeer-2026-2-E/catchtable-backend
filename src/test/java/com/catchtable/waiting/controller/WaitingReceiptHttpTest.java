@@ -1,8 +1,9 @@
 package com.catchtable.waiting.controller;
 
 import com.catchtable.global.exception.BusinessException;
+import com.catchtable.waiting.WaitingApplicant;
 import com.catchtable.waiting.WaitingBusinessHourFixture;
-import com.catchtable.waiting.service.WaitingService;
+import com.catchtable.waiting.service.WaitingIntakeService;
 import org.junit.jupiter.api.*;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -64,7 +65,7 @@ class WaitingReceiptHttpTest {
         @Override public Clock withZone(ZoneId zone) { return Clock.fixed(instant(), zone); }
     }
 
-    @Autowired WaitingService legacyService;
+    @Autowired WaitingIntakeService intake;
     @Autowired MockMvc mvc;
     @Autowired JdbcTemplate jdbc;
     @Autowired SteppedClock clock;
@@ -270,7 +271,7 @@ class WaitingReceiptHttpTest {
 
     @Test
     void keylessServiceEntryAlsoRespectsTheLedgerDay() {
-        assertThatThrownBy(() -> legacyService.createWaiting(first, store, 2))
+        assertThatThrownBy(() -> WaitingApplicant.apply(intake, first, store, 2))
                 .isInstanceOf(BusinessException.class);
         assertThat(jdbc.queryForObject("SELECT count(*) FROM waiting WHERE store_id=?", Integer.class, store)).isZero();
     }

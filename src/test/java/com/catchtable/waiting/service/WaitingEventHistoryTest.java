@@ -12,6 +12,7 @@ import com.catchtable.payment.ReconcileTestClock;
 import com.catchtable.store.entity.Store;
 import com.catchtable.store.entity.StoreCategory;
 import com.catchtable.store.repository.StoreRepository;
+import com.catchtable.waiting.WaitingApplicant;
 import com.catchtable.waiting.WaitingBusinessHourFixture;
 import com.catchtable.waiting.dto.WaitingCallNotification;
 import com.catchtable.waiting.dto.WaitingEventReference;
@@ -59,6 +60,7 @@ class WaitingEventHistoryTest {
     private static final OffsetDateTime START = OffsetDateTime.parse("2030-01-20T12:00:00+09:00");
     @Autowired OwnerWaitingService ownerService;
     @Autowired WaitingService service;
+    @Autowired WaitingIntakeService intake;
     @Autowired WaitingExpiryScheduler scheduler;
     @Autowired WaitingEventRecorder recorder;
     @Autowired WaitingEventRepository eventRepository;
@@ -94,7 +96,7 @@ class WaitingEventHistoryTest {
                 .reservationSlotMinutes(30).arrivalGraceMinutes(10).build());
         ownerService.openWaiting(owner.getId(), store.getId());
         WaitingBusinessHourFixture.openNow(jdbc, clock, store.getId());
-        waitingId = service.createWaiting(customer.getId(), store.getId(), 2).response().waitingId();
+        waitingId = WaitingApplicant.apply(intake, customer.getId(), store.getId(), 2).response().waitingId();
     }
 
     @AfterEach
@@ -114,7 +116,7 @@ class WaitingEventHistoryTest {
 
     @Test
     void acceptedCallsKeepFirstCallResponsesAndLifetimeResendCounters() throws Exception {
-        assertThat(service.createWaiting(customer.getId(), store.getId(), 2).created()).isFalse();
+        assertThat(WaitingApplicant.apply(intake, customer.getId(), store.getId(), 2).created()).isFalse();
         ownerService.callWaiting(owner.getId(), waitingId);
         clock.set(START.plusSeconds(1));
         service.respondToCall(customer.getId(), waitingId);
@@ -234,7 +236,7 @@ class WaitingEventHistoryTest {
     void deferSwapAndSeatingPreserveOriginalHistoriesAndIdempotentSeating() {
         var other = member(UserType.CUSTOMER);
         try {
-            Long nextId = service.createWaiting(other.getId(), store.getId(), 2).response().waitingId();
+            Long nextId = WaitingApplicant.apply(intake, other.getId(), store.getId(), 2).response().waitingId();
             reject("DEFERRED");
             assertThatThrownBy(() -> ownerService.deferWaiting(owner.getId(), waitingId)).isInstanceOf(RuntimeException.class);
             assertThat(waitings.findById(waitingId).orElseThrow().getQueueOrder()).isEqualTo(1);
@@ -260,7 +262,7 @@ class WaitingEventHistoryTest {
         service.cancelWaiting(customer.getId(), waitingId);
         service.cancelWaiting(customer.getId(), waitingId);
         assertThat(types()).containsExactly("REGISTERED", "CUSTOMER_CANCELED");
-        waitingId = service.createWaiting(customer.getId(), store.getId(), 2).response().waitingId();
+        waitingId = WaitingApplicant.apply(intake, customer.getId(), store.getId(), 2).response().waitingId();
         ownerService.callWaiting(owner.getId(), waitingId);
         ownerService.markNoShow(owner.getId(), waitingId, WaitingEndReason.NO_RESPONSE, "test");
         ownerService.markNoShow(owner.getId(), waitingId, WaitingEndReason.NO_RESPONSE, "test");
@@ -314,7 +316,7 @@ class WaitingEventHistoryTest {
         for (int i = 0; i < 9; i++) {
             var extra = member(UserType.CUSTOMER);
             additionalMembers.add(extra);
-            service.createWaiting(extra.getId(), store.getId(), 2);
+            WaitingApplicant.apply(intake, extra.getId(), store.getId(), 2);
         }
         flushSse();
         Long previousId = jdbc.queryForObject("select coalesce(max(id),0) from waiting_event", Long.class);

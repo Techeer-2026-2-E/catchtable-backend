@@ -10,12 +10,13 @@ import com.catchtable.store.entity.StoreTable;
 import com.catchtable.store.entity.TableStatus;
 import com.catchtable.store.repository.StoreRepository;
 import com.catchtable.store.repository.StoreTableRepository;
+import com.catchtable.waiting.WaitingApplicant;
 import com.catchtable.waiting.WaitingBusinessHourFixture;
 import com.catchtable.waiting.entity.Waiting;
 import com.catchtable.waiting.entity.WaitingStatus;
 import com.catchtable.waiting.repository.WaitingRepository;
 import com.catchtable.waiting.repository.WaitingEndHistoryRepository;
-import com.catchtable.waiting.service.WaitingService;
+import com.catchtable.waiting.service.WaitingIntakeService;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -69,7 +70,7 @@ class OwnerWaitingControllerTest {
     }
 
     @Autowired MockMvc mockMvc;
-    @Autowired WaitingService waitingService;
+    @Autowired WaitingIntakeService intake;
     @Autowired WaitingRepository waitingRepository;
     @Autowired WaitingEndHistoryRepository historyRepository;
     @Autowired StoreRepository storeRepository;
@@ -164,8 +165,8 @@ class OwnerWaitingControllerTest {
     void newWaitingNotifiesOwnerOnceAndRetryDoesNotSendAgain() throws Exception {
         MvcResult stream = subscribe();
 
-        var created = waitingService.createWaiting(customer.getId(), store.getId(), 2);
-        var retried = waitingService.createWaiting(customer.getId(), store.getId(), 2);
+        var created = WaitingApplicant.apply(intake, customer.getId(), store.getId(), 2);
+        var retried = WaitingApplicant.apply(intake, customer.getId(), store.getId(), 2);
 
         assertThat(created.created()).isTrue();
         assertThat(retried.created()).isFalse();
@@ -179,7 +180,7 @@ class OwnerWaitingControllerTest {
         MvcResult stream = subscribe();
 
         transactions.executeWithoutResult(transaction -> {
-            waitingService.createWaiting(customer.getId(), store.getId(), 2);
+            WaitingApplicant.apply(intake, customer.getId(), store.getId(), 2);
             // 같은 TX 안에서는 job이 보이지만 아직 PENDING이고 보내기 전
             assertThat(jdbc.queryForList("SELECT status FROM notification_job WHERE store_id=?",
                     String.class, store.getId())).containsExactly("PENDING");

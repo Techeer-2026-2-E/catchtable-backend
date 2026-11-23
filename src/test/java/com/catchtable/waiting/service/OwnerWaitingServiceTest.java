@@ -9,6 +9,7 @@ import com.catchtable.notification.repository.SseEmitterRepository;
 import com.catchtable.store.entity.Store;
 import com.catchtable.store.entity.StoreCategory;
 import com.catchtable.store.repository.StoreRepository;
+import com.catchtable.waiting.WaitingApplicant;
 import com.catchtable.waiting.WaitingBusinessHourFixture;
 import com.catchtable.waiting.entity.ArrivalIntent;
 import com.catchtable.waiting.entity.Waiting;
@@ -60,6 +61,7 @@ class OwnerWaitingServiceTest {
     @Autowired OwnerWaitingService service;
     @Autowired WaitingQueryService queryService;
     @Autowired WaitingService waitingService;
+    @Autowired WaitingIntakeService intake;
     @Autowired WaitingRepository waitingRepository;
     @Autowired WaitingEndHistoryRepository historyRepository;
     @Autowired MemberRepository memberRepository;
@@ -361,13 +363,13 @@ class OwnerWaitingServiceTest {
     @Test
     void closingRejectsNewApplicationsButKeepsWaitingTeams() {
         service.openWaiting(owner.getId(), store.getId());
-        Long firstId = waitingService.createWaiting(customer.getId(), store.getId(), 2).response().waitingId();
+        Long firstId = WaitingApplicant.apply(intake, customer.getId(), store.getId(), 2).response().waitingId();
         Waiting called = waiting(2, WaitingStatus.CALLED);
         Member late = member("늦은 고객", UserType.CUSTOMER);
 
         service.closeWaiting(owner.getId(), store.getId());
 
-        assertBusinessFailure(() -> waitingService.createWaiting(late.getId(), store.getId(), 2), ErrorCode.WAITING_CLOSED);
+        assertBusinessFailure(() -> WaitingApplicant.apply(intake, late.getId(), store.getId(), 2), ErrorCode.WAITING_CLOSED);
         assertThat(waitingRepository.findById(firstId).orElseThrow().getStatus()).isEqualTo(WaitingStatus.WAITING);
         assertThat(waitingRepository.findById(called.getId()).orElseThrow().getStatus()).isEqualTo(WaitingStatus.CALLED);
         assertThat(queryService.getMyWaiting(customer.getId(), firstId).currentPosition()).isEqualTo(1);

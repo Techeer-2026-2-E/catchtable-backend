@@ -48,20 +48,6 @@ public class WaitingService {
     private final ApplicationEventPublisher eventPublisher;
     private final Clock clock;
 
-    // 원격 웨이팅 신청
-    @Transactional
-    public WaitingCreateResult createWaiting(Long memberId, Long storeId, int partyCount) {
-        // 1. 매장 조회 + 락 (없으면 404)
-        Store store = storeRepository.findByIdForUpdate(storeId)
-                .orElseThrow(() -> new BusinessException(ErrorCode.STORE_NOT_FOUND));
-
-        LocalDateTime at = LocalDateTime.now(clock);
-        if (receipts.openForLockedStore(storeId, at.toLocalDate())) {
-            throw new BusinessException(ErrorCode.INVALID_INPUT);
-        }
-        return registerLocked(memberId, store, partyCount, at);
-    }
-
     // Called within the submission transaction with the store write lock already held.
     WaitingCreateResult registerLocked(Long memberId, Store store, int partyCount, LocalDateTime at) {
         Long storeId = store.getId();

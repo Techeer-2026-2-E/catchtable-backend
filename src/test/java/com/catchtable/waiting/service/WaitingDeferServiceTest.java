@@ -4,6 +4,7 @@ import com.catchtable.global.exception.BusinessException;
 import com.catchtable.global.exception.ErrorCode;
 import com.catchtable.notification.dto.CustomerNotificationEvent;
 import com.catchtable.notification.dto.NotificationType;
+import com.catchtable.waiting.WaitingApplicant;
 import com.catchtable.waiting.WaitingBusinessHourFixture;
 import com.catchtable.waiting.dto.OwnerWaitingResponse;
 import com.catchtable.waiting.dto.WaitingDeferResponse;
@@ -36,7 +37,7 @@ class WaitingDeferServiceTest {
     private static final LocalDate TODAY = LocalDate.of(2030, 1, 11);
 
     @Autowired OwnerWaitingService service;
-    @Autowired WaitingService waitingService;
+    @Autowired WaitingIntakeService intake;
     @Autowired WaitingQueryService queryService;
     @Autowired WaitingDeferHistoryRepository deferHistoryRepository;
     @Autowired JdbcTemplate jdbc;
@@ -212,7 +213,7 @@ class WaitingDeferServiceTest {
         service.deferWaiting(ownerId, first);
         Long newcomer = insertMember("newcomer", "CUSTOMER");
 
-        var created = waitingService.createWaiting(newcomer, storeId, 2).response();
+        var created = WaitingApplicant.apply(intake, newcomer, storeId, 2).response();
 
         assertThat(created.waitNumber()).isEqualTo(3);
         assertThat(created.teamsAhead()).isEqualTo(2);

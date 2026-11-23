@@ -8,6 +8,7 @@ import com.catchtable.member.repository.MemberRepository;
 import com.catchtable.store.entity.Store;
 import com.catchtable.store.entity.StoreCategory;
 import com.catchtable.store.repository.StoreRepository;
+import com.catchtable.waiting.WaitingApplicant;
 import com.catchtable.waiting.WaitingBusinessHourFixture;
 import com.catchtable.waiting.dto.WaitingCreateResult;
 import com.catchtable.waiting.entity.ArrivalIntent;
@@ -62,6 +63,9 @@ class WaitingServiceTest {
 
 
     @Autowired WaitingService waitingService;
+
+
+    @Autowired WaitingIntakeService intake;
     @Autowired WaitingRepository waitingRepository;
     @Autowired WaitingEndHistoryRepository historyRepository;
     @Autowired StoreRepository storeRepository;
@@ -108,8 +112,8 @@ class WaitingServiceTest {
         Member a = saveMember("고객A");
         Member b = saveMember("고객B");
 
-        WaitingCreateResult first = waitingService.createWaiting(a.getId(), store.getId(), 2);
-        WaitingCreateResult second = waitingService.createWaiting(b.getId(), store.getId(), 3);
+        WaitingCreateResult first = WaitingApplicant.apply(intake, a.getId(), store.getId(), 2);
+        WaitingCreateResult second = WaitingApplicant.apply(intake, b.getId(), store.getId(), 3);
 
         assertThat(first.created()).isTrue();
         assertThat(first.response().waitNumber()).isEqualTo(1);
@@ -125,7 +129,7 @@ class WaitingServiceTest {
         closeWaiting();
         Member customer = saveMember("고객");
 
-        assertThatThrownBy(() -> waitingService.createWaiting(customer.getId(), store.getId(), 2))
+        assertThatThrownBy(() -> WaitingApplicant.apply(intake, customer.getId(), store.getId(), 2))
                 .isInstanceOf(BusinessException.class)
                 .extracting("errorCode").isEqualTo(ErrorCode.WAITING_CLOSED);
     }
@@ -137,7 +141,7 @@ class WaitingServiceTest {
         changeBusinessHoursToLaterToday();
         Member customer = saveMember("고객");
 
-        assertThatThrownBy(() -> waitingService.createWaiting(customer.getId(), store.getId(), 2))
+        assertThatThrownBy(() -> WaitingApplicant.apply(intake, customer.getId(), store.getId(), 2))
                 .isInstanceOf(BusinessException.class)
                 .extracting("errorCode").isEqualTo(ErrorCode.WAITING_OUTSIDE_BUSINESS_HOURS);
         assertThat(waitingRepository.count()).isZero();
@@ -151,7 +155,7 @@ class WaitingServiceTest {
                 store.getId(), LocalDate.now(clock));
         Member customer = saveMember("고객");
 
-        assertThatThrownBy(() -> waitingService.createWaiting(customer.getId(), store.getId(), 2))
+        assertThatThrownBy(() -> WaitingApplicant.apply(intake, customer.getId(), store.getId(), 2))
                 .isInstanceOf(BusinessException.class)
                 .extracting("errorCode").isEqualTo(ErrorCode.WAITING_OUTSIDE_BUSINESS_HOURS);
     }
@@ -161,10 +165,10 @@ class WaitingServiceTest {
     @DisplayName("신청 뒤 영업이 끝나도 같은 인원으로 재시도하면 기존 웨이팅을 돌려준다")
     void create_retryAfterBusinessHours_returnsExisting() {
         Member customer = saveMember("고객");
-        WaitingCreateResult first = waitingService.createWaiting(customer.getId(), store.getId(), 2);
+        WaitingCreateResult first = WaitingApplicant.apply(intake, customer.getId(), store.getId(), 2);
 
         changeBusinessHoursToLaterToday();
-        WaitingCreateResult retry = waitingService.createWaiting(customer.getId(), store.getId(), 2);
+        WaitingCreateResult retry = WaitingApplicant.apply(intake, customer.getId(), store.getId(), 2);
 
         assertThat(retry.created()).isFalse();
         assertThat(retry.response().waitingId()).isEqualTo(first.response().waitingId());
@@ -176,7 +180,7 @@ class WaitingServiceTest {
     void create_storeNotFound_fails() {
         Member customer = saveMember("고객");
 
-        assertThatThrownBy(() -> waitingService.createWaiting(customer.getId(), -1L, 2))
+        assertThatThrownBy(() -> WaitingApplicant.apply(intake, customer.getId(), -1L, 2))
                 .isInstanceOf(BusinessException.class)
                 .extracting("errorCode").isEqualTo(ErrorCode.STORE_NOT_FOUND);
     }
@@ -187,8 +191,8 @@ class WaitingServiceTest {
     void create_retrySamePartyCount_returnsExisting() {
         Member customer = saveMember("고객");
 
-        WaitingCreateResult first = waitingService.createWaiting(customer.getId(), store.getId(), 2);
-        WaitingCreateResult retry = waitingService.createWaiting(customer.getId(), store.getId(), 2);
+        WaitingCreateResult first = WaitingApplicant.apply(intake, customer.getId(), store.getId(), 2);
+        WaitingCreateResult retry = WaitingApplicant.apply(intake, customer.getId(), store.getId(), 2);
 
         assertThat(retry.created()).isFalse();
         assertThat(retry.response().waitingId()).isEqualTo(first.response().waitingId());
@@ -200,9 +204,9 @@ class WaitingServiceTest {
     @DisplayName("진행 중인 웨이팅이 있는데 다른 인원으로 신청하면 실패한다")
     void create_differentPartyCount_fails() {
         Member customer = saveMember("고객");
-        waitingService.createWaiting(customer.getId(), store.getId(), 2);
+        WaitingApplicant.apply(intake, customer.getId(), store.getId(), 2);
 
-        assertThatThrownBy(() -> waitingService.createWaiting(customer.getId(), store.getId(), 4))
+        assertThatThrownBy(() -> WaitingApplicant.apply(intake, customer.getId(), store.getId(), 4))
                 .isInstanceOf(BusinessException.class)
                 .extracting("errorCode").isEqualTo(ErrorCode.DUPLICATE_ACTIVE_WAITING);
     }
@@ -212,10 +216,10 @@ class WaitingServiceTest {
     @DisplayName("신청 후 접수가 마감되어도 재시도는 기존 웨이팅을 돌려준다")
     void create_retryAfterClose_returnsExisting() {
         Member customer = saveMember("고객");
-        WaitingCreateResult first = waitingService.createWaiting(customer.getId(), store.getId(), 2);
+        WaitingCreateResult first = WaitingApplicant.apply(intake, customer.getId(), store.getId(), 2);
 
         closeWaiting();
-        WaitingCreateResult retry = waitingService.createWaiting(customer.getId(), store.getId(), 2);
+        WaitingCreateResult retry = WaitingApplicant.apply(intake, customer.getId(), store.getId(), 2);
 
         assertThat(retry.created()).isFalse();
         assertThat(retry.response().waitingId()).isEqualTo(first.response().waitingId());
@@ -229,7 +233,7 @@ class WaitingServiceTest {
         Set<Long> waitingIds = ConcurrentHashMap.newKeySet();
 
         runConcurrently(10, i -> waitingIds.add(
-                waitingService.createWaiting(customer.getId(), store.getId(), 2).response().waitingId()));
+                WaitingApplicant.apply(intake, customer.getId(), store.getId(), 2).response().waitingId()));
 
         assertThat(waitingRepository.count()).isEqualTo(1);
         assertThat(waitingIds).hasSize(1);
@@ -246,7 +250,7 @@ class WaitingServiceTest {
         Set<Integer> numbers = ConcurrentHashMap.newKeySet();
 
         runConcurrently(count, i -> numbers.add(
-                waitingService.createWaiting(customers.get(i).getId(), store.getId(), 2).response().waitNumber()));
+                WaitingApplicant.apply(intake, customers.get(i).getId(), store.getId(), 2).response().waitNumber()));
 
         Set<Integer> expected = IntStream.rangeClosed(1, count).boxed().collect(Collectors.toSet());
         assertThat(numbers).isEqualTo(expected);
@@ -340,7 +344,7 @@ class WaitingServiceTest {
     @DisplayName("대기 중인 웨이팅을 취소하면 CANCELED가 되고 고객 취소 이력이 남는다")
     void cancel_waiting_recordsCustomerHistory() {
         Member member = saveMember("고객");
-        Long waitingId = waitingService.createWaiting(member.getId(), store.getId(), 2).response().waitingId();
+        Long waitingId = WaitingApplicant.apply(intake, member.getId(), store.getId(), 2).response().waitingId();
 
         var response = waitingService.cancelWaiting(member.getId(), waitingId);
 
@@ -378,7 +382,7 @@ class WaitingServiceTest {
     @DisplayName("같은 취소를 반복하면 성공하고 이력은 한 번만 남는다")
     void cancel_retry_keepsSingleHistory() {
         Member member = saveMember("고객");
-        Long waitingId = waitingService.createWaiting(member.getId(), store.getId(), 2).response().waitingId();
+        Long waitingId = WaitingApplicant.apply(intake, member.getId(), store.getId(), 2).response().waitingId();
         waitingService.cancelWaiting(member.getId(), waitingId);
         OffsetDateTime endedAt = waitingRepository.findById(waitingId).orElseThrow().getEndedAt();
 
@@ -427,10 +431,10 @@ class WaitingServiceTest {
     @DisplayName("취소한 뒤 같은 매장에 다시 신청하면 새 번호로 등록된다")
     void cancel_thenApplyAgain_createsNewWaiting() {
         Member member = saveMember("고객");
-        Long canceledId = waitingService.createWaiting(member.getId(), store.getId(), 2).response().waitingId();
+        Long canceledId = WaitingApplicant.apply(intake, member.getId(), store.getId(), 2).response().waitingId();
         waitingService.cancelWaiting(member.getId(), canceledId);
 
-        WaitingCreateResult again = waitingService.createWaiting(member.getId(), store.getId(), 2);
+        WaitingCreateResult again = WaitingApplicant.apply(intake, member.getId(), store.getId(), 2);
 
         assertThat(again.created()).isTrue();
         assertThat(again.response().waitingId()).isNotEqualTo(canceledId);
@@ -443,7 +447,7 @@ class WaitingServiceTest {
     void cancel_othersOrUnknown_notFound() {
         Member owner = saveMember("주인");
         Member other = saveMember("남");
-        Long waitingId = waitingService.createWaiting(owner.getId(), store.getId(), 2).response().waitingId();
+        Long waitingId = WaitingApplicant.apply(intake, owner.getId(), store.getId(), 2).response().waitingId();
 
         assertThatThrownBy(() -> waitingService.cancelWaiting(other.getId(), waitingId))
                 .isInstanceOf(BusinessException.class)
