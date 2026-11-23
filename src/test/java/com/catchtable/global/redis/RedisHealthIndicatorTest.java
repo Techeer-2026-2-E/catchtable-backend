@@ -35,6 +35,13 @@ class RedisHealthIndicatorTest {
     }
 
     @Test
+    void ledgerLookupFailureIsReportedAsDownInsteadOfBreakingTheEndpoint() {
+        when(ledger.lanes()).thenThrow(new org.springframework.dao.DataAccessResourceFailureException("db down"));
+        var health = new RedisHealthIndicator(cache, queue, ledger, false, false).health();
+        assertThat(health.getStatus()).isEqualTo(Status.DOWN);
+    }
+
+    @Test
     void ledgerWorkWithoutAWorkerIsDegraded() {
         when(ledger.lanes()).thenReturn(List.of(new WaitingLane(1L, LocalDate.of(2031, 2, 1))));
         var health = new RedisHealthIndicator(cache, queue, ledger, false, false).health();
