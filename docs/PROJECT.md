@@ -52,12 +52,12 @@ docker compose ps postgres
 
 ## 검증
 
-통합·동시성·마이그레이션 테스트는 실제 PostgreSQL을 사용하며 데이터를 쓰거나 스키마를 만든다. 보존할 데이터가 없는 개발자 전용 테스트 DB를 사용한다. 운영·공용 DB를 연결하거나 개발 DB의 데이터를 지워 테스트 환경을 만들지 않는다.
+통합·동시성·마이그레이션 테스트는 실제 PostgreSQL을 사용하며 데이터를 쓰거나 스키마를 만든다. Redis 경로 테스트는 `REDIS_HOST`·`REDIS_PORT`(기본 `localhost:6379`)의 DB 14·15를 비우고 사용한다. 보존할 데이터가 없는 개발자 전용 테스트 DB와 Redis를 사용한다. 운영·공용 DB를 연결하거나 개발 DB의 데이터를 지워 테스트 환경을 만들지 않는다.
 
 아래 예시는 로컬 Compose의 기본 포트·계정 기준이다. 테스트 DB는 처음 한 번 만든다. `catchtable_test`가 이미 있으면 본인의 테스트 전용 DB인지 확인하고 생성 단계를 생략한다.
 
 ```bash
-docker compose up -d postgres
+docker compose up -d postgres redis
 docker compose exec -T postgres sh -c 'createdb -U "$POSTGRES_USER" catchtable_test'
 DB_HOST=localhost DB_PORT=5433 DB_NAME=catchtable_test DB_USERNAME=catchtable DB_PASSWORD=catchtable ./gradlew build
 ```
@@ -69,7 +69,7 @@ DB_HOST=localhost DB_PORT=5433 DB_NAME=catchtable_test DB_USERNAME=catchtable DB
 | 테스트 결과 | 실행 후 `build/reports/tests/test/index.html`, `build/test-results/test/` |
 | 문서·양식 변경 | 상대 링크·파일 경로, 명령과 현재 설정의 일치, YAML·import 구문, `git diff --check` |
 
-명령·DB 대상·성공/실패·미실행 이유를 PR 또는 work-log에 남긴다. 기존 [CI](../.github/workflows/ci.yml)는 JDK 21·PostgreSQL 16 서비스에서 `./gradlew build`를 실행한다. 로컬 명령이 같더라도 CI 실행 결과를 대신하지 않는다.
+명령·DB 대상·성공/실패·미실행 이유를 PR 또는 work-log에 남긴다. 기존 [CI](../.github/workflows/ci.yml)는 JDK 21·PostgreSQL 16·Redis 7 서비스에서 `./gradlew build`를 실행한다. 로컬 명령이 같더라도 CI 실행 결과를 대신하지 않는다.
 
 ## 꼭 유지할 경계
 

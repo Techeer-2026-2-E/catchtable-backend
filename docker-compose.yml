@@ -9,7 +9,8 @@
 # 키워드 검색용 OpenSearch(nori 포함)는 profile search 로만 실행한다.
 #   docker compose --profile search up -d
 #
-# Redis / RabbitMQ 는 해당 기능 구현 시작할 때 추가할 것
+# Redis는 테스트와 로컬 확인용 단일 노드다. 테스트는 DB 14·15를 비우고 사용한다.
+# RabbitMQ 는 해당 기능 구현 시작할 때 추가할 것
 services:
   postgres:
     image: postgres:16
@@ -27,6 +28,12 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: catchtable-redis
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
 
   # 로컬 전용: 단일 노드, 보안 플러그인 끔
   opensearch:
