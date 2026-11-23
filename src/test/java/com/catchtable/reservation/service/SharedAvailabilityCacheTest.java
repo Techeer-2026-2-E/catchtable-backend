@@ -45,6 +45,13 @@ class SharedAvailabilityCacheTest {
         verifyNoInteractions(source);
     }
 
+    @Test void invalidPartySizeFailsExactlyLikeTheUncachedPath() {
+        var uncached=new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.BAD_REQUEST,"partySize");
+        when(source.getAvailability(1L,day,0)).thenThrow(uncached);
+        assertThatThrownBy(()->cache.get(1,day,0)).isSameAs(uncached);
+        verifyNoInteractions(redis);
+    }
+
     @Test void onlyLeaderUsesBypassPermitAndNothingIsRetainedLocally() throws Exception {
         when(db.queryForObject("SELECT enable_availability_tracking()",Boolean.class)).thenReturn(true);
         cache.startTracking();

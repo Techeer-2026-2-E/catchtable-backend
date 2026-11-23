@@ -103,7 +103,7 @@ public class AvailabilityCache {
 
     private Read read(long store,LocalDate date,int party) {
         if(!enabled) return new Read(source.getAvailability(store,date,party),null);
-        if(party<1) throw new BusinessException(ErrorCode.INVALID_INPUT);
+        if(party<1) return new Read(source.getAvailability(store,date,party),null); // same 400 as the uncached path
         Query query=new Query(store,date,party);
         if(!tracking) return new Read(compute(query,null),null);
         Lookup lookup;
