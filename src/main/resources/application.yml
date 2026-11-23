@@ -62,6 +62,11 @@ management:
     web:
       exposure:
         include: health, info
+  endpoint:
+    health:
+      status:
+        # Redis 장애 중에도 PG 경로로 동작한다. DEGRADED는 200으로 응답하고 UP보다 먼저 드러난다.
+        order: DOWN, OUT_OF_SERVICE, DEGRADED, UP, UNKNOWN
 
 logging:
   level:
