@@ -70,7 +70,12 @@ public class WaitingDispatch {
         if (!enabled || !immediate || !accepted.idleHead() || TransactionSynchronizationManager.isActualTransactionActive()) return r;
         try {
             var lane=new WaitingLane(r.storeId(),r.receivedDate());
-            redis.use(s->{reconcile(s);offer(s,lane);return true;});
+            try {
+                redis.use(s->{reconcile(s);offer(s,lane);return true;});
+            } catch(RedisException hintLost) {
+                // The hint only wakes other workers. The ledger alone decides the head, so keep going.
+                meters.counter("waiting.dispatch.redis.unavailable").increment();
+            }
             var head=registration.claim(lane,r.receiptId());
             if(head.isPresent()) registration.complete(head.get());
             return registration.view(member,r.receiptId());
@@ -93,28 +98,49 @@ public class WaitingDispatch {
     @Scheduled(scheduler="waitingReceiptScheduler",fixedDelayString="${waiting.dispatch.poll-ms:25}")
     public void tick() {
         if(!enabled) return;
+        WaitingLane lane;
         try {
             var hint=redis.use(s->{reconcile(s);return s.commands().zpopmin(READY);});
             if(hint==null || !hint.hasValue()) return;
-            WaitingLane lane=WaitingLane.parse(hint.getValue());
-            var head = registration.claimPrefix(lane,null,quantum);
-            if (head.isPresent()) {
-                try {
-                    registration.complete(head.get());
-                } catch (RuntimeException batchFailure) {
-                    // A later member (for example, the SSE capacity boundary) must not prevent
-                    // an earlier valid head from completing. The batch transaction has rolled back.
-                    if (head.get().rows().size()==1) throw batchFailure;
-                    registration.completeFirstAndReleaseRemainder(head.get());
-                    meters.counter("waiting.dispatch.batch.fallback").increment();
-                }
-            }
+            lane=WaitingLane.parse(hint.getValue());
+        } catch(RedisException unavailable) {
+            meters.counter("waiting.dispatch.redis.unavailable").increment();
+            // Every unfinished lane is in the ledger. Keep issuing numbers until Redis returns;
+            // reconcile() republishes them on the next connection.
+            for(var unfinished:ledger.lanes()) advanceQuietly(unfinished);
+            return;
+        }
+        if(!advanceQuietly(lane)) return;
+        try {
             if(ledger.hasWork(lane)) redis.use(s->{reconcile(s);offer(s,lane);return true;});
         } catch(RedisException unavailable) {
             meters.counter("waiting.dispatch.redis.unavailable").increment();
+        }
+    }
+
+    // One failing lane must not stop the others; its rows stay in the ledger for the next pass.
+    private boolean advanceQuietly(WaitingLane lane) {
+        try {
+            advance(lane);
+            return true;
         } catch(RuntimeException failure) {
             meters.counter("waiting.dispatch.retry").increment();
             log.warn("Waiting dispatch failed; ledger retains unfinished work",failure);
+            return false;
+        }
+    }
+
+    private void advance(WaitingLane lane) {
+        var head = registration.claimPrefix(lane,null,quantum);
+        if (head.isEmpty()) return;
+        try {
+            registration.complete(head.get());
+        } catch (RuntimeException batchFailure) {
+            // A later member (for example, the SSE capacity boundary) must not prevent
+            // an earlier valid head from completing. The batch transaction has rolled back.
+            if (head.get().rows().size()==1) throw batchFailure;
+            registration.completeFirstAndReleaseRemainder(head.get());
+            meters.counter("waiting.dispatch.batch.fallback").increment();
         }
     }
 }
