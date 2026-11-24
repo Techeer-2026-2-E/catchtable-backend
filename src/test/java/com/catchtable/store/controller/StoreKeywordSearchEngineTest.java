@@ -21,6 +21,7 @@ import org.springframework.transaction.annotation.Transactional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.hasItem;
 import static org.hamcrest.Matchers.hasSize;
+import static org.hamcrest.Matchers.not;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -48,6 +49,20 @@ class StoreKeywordSearchEngineTest {
 
             assertThat(outboxCount(jdbc, id)).isZero();
             assertThat(context.getBeansOfType(StoreSearchSyncService.class)).isEmpty();
+        }
+
+        @Test
+        @DisplayName("기본값 postgres는 키워드 + 인원도 기존 DB 검색(이름 부분 일치)이다")
+        void defaultEngineKeywordWithPartySizeUsesDatabase() throws Exception {
+            long cutlet = ownedStore(jdbc, "호재돈까스");
+            table(jdbc, cutlet);
+            long synonym = ownedStore(jdbc, "고미돈가스");
+            table(jdbc, synonym);
+
+            mvc.perform(get("/api/user/stores").param("keyword", "돈까스").param("partySize", "2").param("size", "50"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.stores[*].id", hasItem((int) cutlet)))
+                    .andExpect(jsonPath("$.stores[*].id", not(hasItem((int) synonym))));
         }
 
         @Test
@@ -109,6 +124,17 @@ class StoreKeywordSearchEngineTest {
         }
 
         @Test
+        @DisplayName("키워드 + 인원도 OpenSearch에 연결할 수 없으면 DB 검색으로 대체한다")
+        void keywordWithPartySizeFallsBackToDatabase() throws Exception {
+            long id = ownedStore(jdbc, "호재돈까스");
+            table(jdbc, id);
+
+            mvc.perform(get("/api/user/stores").param("keyword", "돈까스").param("partySize", "2").param("size", "50"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.stores[*].id", hasItem((int) id)));
+        }
+
+        @Test
         @DisplayName("대체 중에도 키워드 검색 50페이지부터는 400")
         void pageLimitStillApplies() throws Exception {
             mvc.perform(get("/api/user/stores").param("keyword", "돈까스").param("page", "50"))
@@ -124,6 +150,11 @@ class StoreKeywordSearchEngineTest {
                                    reservation_duration_minutes, reservation_slot_minutes, arrival_grace_minutes)
                 VALUES (?, ?, 'KOREAN', '서울특별시 중구 세종대로 1', false, 120, 30, 10) RETURNING id
                 """, Long.class, owner, name);
+    }
+
+    private static void table(JdbcTemplate jdbc, long storeId) {
+        jdbc.update("INSERT INTO store_table (store_id, table_number, min_capacity, capacity, status) VALUES (?, 1, 2, 4, 'ACTIVE')",
+                storeId);
     }
 
     private static int outboxCount(JdbcTemplate jdbc, long storeId) {

@@ -27,7 +27,9 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.nio.file.Path;
+import java.time.Clock;
 import java.time.Duration;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -70,6 +72,7 @@ class StoreOpenSearchKeywordSearchTest {
     @Autowired StoreSearchOutbox outbox;
     @Autowired StoreSearchSyncService syncService;
     @Autowired EntityManager entityManager;
+    @Autowired Clock clock;
 
     @Test
     @DisplayName("돈까스·돈가스·돈카츠는 같은 매장을 찾는다")
@@ -248,6 +251,46 @@ class StoreOpenSearchKeywordSearchTest {
         assertThat(outboxCount(id)).isZero();
     }
 
+    @Test
+    @DisplayName("키워드 + 날짜·인원은 동의어 매장 중 예약 가능한 곳만 관련도 순으로 찾는다")
+    void keywordWithDateAndPartySize() throws Exception {
+        LocalDate date = LocalDate.now(clock).plusDays(1);
+        long owner = owner();
+        long cutlet = bookable(owner, "호재돈까스", date);
+        long cutletPlain = bookable(owner, "돈까스", date);
+        long noTable = store(owner, "고미돈가스", "KOREAN", "서울특별시 마포구 양화로 1");
+        hours(noTable, date);
+        long closed = store(owner, "또돈카츠", "JAPANESE", "서울특별시 종로구 종로 1");
+        table(closed);
+        long otherKeyword = bookable(owner, "김밥천국", date);
+        reindexService.reindexAll();
+
+        List<Long> relevance = search("돈가스").stream().filter(id -> id == cutlet || id == cutletPlain).toList();
+        List<Long> result = ids(mvc.perform(get("/api/user/stores").param("keyword", "돈가스")
+                        .param("date", date.toString()).param("time", "12:00").param("partySize", "2"))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString());
+
+        assertThat(relevance).hasSize(2);
+        assertThat(result).containsExactlyElementsOf(relevance).doesNotContain(noTable, closed, otherKeyword);
+    }
+
+    @Test
+    @DisplayName("키워드 + 인원만(날짜 없음)도 동의어로 찾고 테이블 없는 매장은 뺀다")
+    void keywordWithPartySizeOnly() throws Exception {
+        long owner = owner();
+        long withTable = store(owner, "호재돈까스", "KOREAN", "서울특별시 송파구 올림픽로 1");
+        table(withTable);
+        long noTable = store(owner, "고미돈가스", "KOREAN", "서울특별시 마포구 양화로 1");
+        reindexService.reindexAll();
+
+        List<Long> result = ids(mvc.perform(get("/api/user/stores").param("keyword", "돈카츠").param("partySize", "2"))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString());
+
+        assertThat(result).contains(withTable).doesNotContain(noTable);
+        mvc.perform(get("/api/user/stores").param("keyword", "돈카츠").param("partySize", "2").param("page", "50"))
+                .andExpect(status().isBadRequest());
+    }
+
     private void writeBlock(RestClient client, boolean blocked) {
         client.put().uri("/stores/_settings").contentType(org.springframework.http.MediaType.APPLICATION_JSON)
                 .body(java.util.Map.of("index.blocks.write", blocked)).retrieve().toBodilessEntity();
@@ -279,5 +322,23 @@ class StoreOpenSearchKeywordSearchTest {
                                    reservation_duration_minutes, reservation_slot_minutes, arrival_grace_minutes)
                 VALUES (?, ?, ?, ?, false, 120, 30, 10) RETURNING id
                 """, Long.class, ownerId, name, category, address);
+    }
+
+    // 영업시간(해당 요일 10~22시)·2~4인 테이블이 있는 입점 매장
+    private long bookable(long owner, String name, LocalDate date) {
+        long id = store(owner, name, "KOREAN", "서울특별시 송파구 올림픽로 1");
+        hours(id, date);
+        table(id);
+        return id;
+    }
+
+    private void hours(long storeId, LocalDate date) {
+        jdbc.update("INSERT INTO business_hour (store_id, day_of_week, open_time, closing_time) VALUES (?, ?, '10:00', '22:00')",
+                storeId, date.getDayOfWeek().getValue());
+    }
+
+    private void table(long storeId) {
+        jdbc.update("INSERT INTO store_table (store_id, table_number, min_capacity, capacity, status) VALUES (?, 1, 2, 4, 'ACTIVE')",
+                storeId);
     }
 }
