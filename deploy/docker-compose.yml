@@ -1,7 +1,7 @@
-# EC2 배포용. 백엔드와 PostgreSQL을 한 서버에서 띄운다.
+# EC2 배포용. 백엔드·PostgreSQL·Redis를 한 서버(메모리 4GB 이상)에서 띄운다.
 #   cd deploy && cp .env.example .env   (값 채우기)
 #   docker compose up -d --build
-# DB 포트는 외부에 열지 않는다. 백엔드는 호스트 80번으로 받는다.
+# DB·Redis 포트는 외부에 열지 않는다. 백엔드는 호스트 80번으로 받는다.
 services:
   postgres:
     image: postgres:16
@@ -19,12 +19,26 @@ services:
       timeout: 3s
       retries: 20
 
+  # 웨이팅 대기열 힌트와 예약 조회 캐시. 접수 순서와 번호의 원본은 PostgreSQL 장부라 디스크에 남기지 않는다.
+  # 캐시 키만 TTL이 있어 메모리가 차면 캐시만 밀려난다.
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--save", "", "--appendonly", "no", "--maxmemory", "256mb", "--maxmemory-policy", "volatile-lru"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
   app:
     build: ..
     image: catchtable-backend
     restart: unless-stopped
     depends_on:
       postgres:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     environment:
       DB_HOST: postgres
@@ -34,8 +48,26 @@ services:
       DB_PASSWORD: ${DB_PASSWORD}
       TOSS_SECRET_KEY: ${TOSS_SECRET_KEY:-}
       LOGGING_LEVEL_COM_CATCHTABLE: ${LOG_LEVEL:-INFO}
-      JAVA_OPTS: ${JAVA_OPTS:--Xms256m -Xmx512m -XX:+ExitOnOutOfMemoryError}
+      # 개점 부하 측정에서 목표를 통과한 실행 설정이다(docs/redis-product.md).
+      # 네이티브 메모리까지 제한해야 대량 접수 중 컨테이너 메모리 한도를 넘지 않는다.
+      JAVA_OPTS: ${JAVA_OPTS:--Xms768m -Xmx768m -Xss512k -XX:ReservedCodeCacheSize=192m -XX:MaxDirectMemorySize=96m -XX:TieredStopAtLevel=1 -XX:CICompilerCount=2 -XX:+UseG1GC -XX:+ExitOnOutOfMemoryError}
+      MALLOC_ARENA_MAX: "2"
+      SERVER_TOMCAT_THREADS_MAX: "120"
+      SERVER_TOMCAT_MAXCONNECTIONS: "12000"
+      SERVER_TOMCAT_ACCEPTCOUNT: "4096"
+      SPRING_DATASOURCE_HIKARI_MAXIMUMPOOLSIZE: "12"
+      # 웨이팅 장부 접수. SQL로 매장을 전환하기 전에는 기존 웨이팅 흐름 그대로다.
+      WAITING_DISPATCH_ENABLED: "true"
+      WAITING_DISPATCH_URI: redis://redis:6379/1
+      WAITING_INTAKE_BATCH_ENABLED: "true"
+      WAITING_INTAKE_ASYNC_ENABLED: "true"
+      # 예약 가능 조회 캐시는 최대 2초 전 값을 줄 수 있어 기본 꺼짐이다.
+      AVAILABILITY_CACHE_ENABLED: ${AVAILABILITY_CACHE_ENABLED:-false}
+      AVAILABILITY_CACHE_URI: redis://redis:6379/0
       TZ: Asia/Seoul
+    mem_limit: 2g
+    sysctls:
+      net.core.somaxconn: 4096
     ports:
       - "${APP_PORT:-80}:8080"
     logging:
