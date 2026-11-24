@@ -38,8 +38,10 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      # Redis 없이도 PostgreSQL 장부로 동작하므로 함께 띄우되 기다리지 않는다.
       redis:
-        condition: service_healthy
+        condition: service_started
+        required: false
     environment:
       DB_HOST: postgres
       DB_PORT: 5432

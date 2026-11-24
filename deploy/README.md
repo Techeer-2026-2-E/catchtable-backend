@@ -19,6 +19,7 @@ EC2 한 대에서 백엔드·PostgreSQL 16·Redis 7을 Docker Compose로 띄운�
 ```bash
 # Docker 설치
 sudo apt-get update && sudo apt-get install -y docker.io docker-compose-v2 git
+docker compose version   # 2.20 이상이어야 한다 (Redis를 선택 의존성으로 두는 required 옵션)
 sudo usermod -aG docker $USER   # 다시 접속하면 sudo 없이 docker 사용
 
 # 메모리가 4GB보다 작다면 스왑 2GB 추가
