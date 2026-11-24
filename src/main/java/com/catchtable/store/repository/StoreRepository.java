@@ -50,14 +50,16 @@ public interface StoreRepository extends JpaRepository<Store,Long> {
     List<Store> findAllByCategory(StoreCategory category, Sort sort);
     // 날짜 없는 필터 목록. 후보 전체를 JVM으로 가져오지 않고 DB에서 거른 뒤 페이징한다.
     // keywordPattern은 이스케이프된 LIKE 패턴이다 (이름 부분 일치, 대소문자 무시).
+    // storeIds: 키워드 후보 id 제한("{1,2,3}" 형식, null이면 제한 없음)
     @Query(value = """
             WITH criteria AS (
                 SELECT CAST(:category AS TEXT) AS category, CAST(:keywordPattern AS TEXT) AS keyword_pattern,
-                       CAST(:partySize AS INTEGER) AS party_size
+                       CAST(:partySize AS INTEGER) AS party_size, CAST(:storeIds AS BIGINT[]) AS store_ids
             )
             SELECT s.* FROM store s CROSS JOIN criteria c
             WHERE (c.category IS NULL OR s.category = c.category)
               AND (c.keyword_pattern IS NULL OR s.name ILIKE c.keyword_pattern)
+              AND (c.store_ids IS NULL OR s.id = ANY (c.store_ids))
               AND (c.party_size IS NULL OR (s.owner_id IS NOT NULL AND EXISTS (
                   SELECT 1 FROM store_table st
                   WHERE st.store_id = s.id AND st.status = 'ACTIVE'
@@ -67,7 +69,7 @@ public interface StoreRepository extends JpaRepository<Store,Long> {
             LIMIT :limit OFFSET :offset
             """, nativeQuery = true)
     List<Store> searchFiltered(@Param("category") String category, @Param("keywordPattern") String keywordPattern,
-                               @Param("partySize") Integer partySize,
+                               @Param("partySize") Integer partySize, @Param("storeIds") String storeIds,
                                @Param("limit") int limit, @Param("offset") long offset);
 
     // 날짜·시간 필터 목록. 영업 구간은 미리 계산한 store_open_window(검색 날짜 + 전날의 자정 넘김 영업),
@@ -76,12 +78,14 @@ public interface StoreRepository extends JpaRepository<Store,Long> {
             WITH criteria AS (
                 SELECT CAST(:category AS TEXT) AS category, CAST(:keywordPattern AS TEXT) AS keyword_pattern,
                        CAST(:partySize AS INTEGER) AS party_size,
-                       CAST(:startAt AS TIMESTAMP) AS start_at, CAST(:now AS TIMESTAMP) AS now_at
+                       CAST(:startAt AS TIMESTAMP) AS start_at, CAST(:now AS TIMESTAMP) AS now_at,
+                       CAST(:storeIds AS BIGINT[]) AS store_ids
             )
             SELECT s.* FROM store s CROSS JOIN criteria c
             WHERE s.owner_id IS NOT NULL
               AND (c.category IS NULL OR s.category = c.category)
               AND (c.keyword_pattern IS NULL OR s.name ILIKE c.keyword_pattern)
+              AND (c.store_ids IS NULL OR s.id = ANY (c.store_ids))
               AND (c.party_size IS NULL OR EXISTS (
                   SELECT 1 FROM store_table st
                   WHERE st.store_id = s.id AND st.status = 'ACTIVE'
@@ -105,5 +109,6 @@ public interface StoreRepository extends JpaRepository<Store,Long> {
     List<Store> searchFilteredAt(@Param("category") String category, @Param("keywordPattern") String keywordPattern,
                                  @Param("partySize") Integer partySize,
                                  @Param("startAt") LocalDateTime startAt, @Param("now") LocalDateTime now,
+                                 @Param("storeIds") String storeIds,
                                  @Param("limit") int limit, @Param("offset") long offset);
 }

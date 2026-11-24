@@ -50,6 +50,8 @@ public class StoreService {
     private final Optional<StoreSearchIndex> storeSearchIndex;   // catchtable.search.engine=opensearch일 때만 사용
 
     private static final int MAX_KEYWORD_PAGE = 49;
+    // 키워드 + 예약 조건 검색의 OpenSearch 후보 수 (이 안에서만 예약 조건으로 거름)
+    static final int KEYWORD_CANDIDATE_LIMIT = 1_000;
 
     public StoreDetailResponse getStoreDetail(Long storeId)
     {
@@ -102,28 +104,37 @@ public class StoreService {
 
     private StoreListResponse searchWithFilter(StoreSearchCondition condition)
     {
+        List<Store> matches = findFiltered(condition, condition.keywordPattern(), null,
+                condition.size() + 1, (long) condition.page() * condition.size());
+        return toPage(condition, matches);
+    }
+
+    // 날짜·시간 → searchFilteredAt, 아니면 searchFiltered (id 순)
+    private List<Store> findFiltered(StoreSearchCondition condition, String keywordPattern, String storeIds,
+                                     int limit, long offset)
+    {
         String category = condition.category() == null ? null : condition.category().name();
-        int limit = condition.size() + 1;
-        long offset = (long) condition.page() * condition.size();
-        List<Store> matches;
         if (condition.hasDateTime()) {
             storeOpenWindowService.ensureForSearch(condition.date());
-            matches = storeRepository.searchFilteredAt(category, condition.keywordPattern(), condition.partySize(),
-                    condition.date().atTime(condition.time()), LocalDateTime.now(clock), limit, offset);
-        } else {
-            matches = storeRepository.searchFiltered(category, condition.keywordPattern(), condition.partySize(),
-                    limit, offset);
+            return storeRepository.searchFilteredAt(category, keywordPattern, condition.partySize(),
+                    condition.date().atTime(condition.time()), LocalDateTime.now(clock), storeIds, limit, offset);
         }
+        return storeRepository.searchFiltered(category, keywordPattern, condition.partySize(), storeIds, limit, offset);
+    }
+
+    // size+1건 → 한 페이지와 hasNext
+    private StoreListResponse toPage(StoreSearchCondition condition, List<Store> matches)
+    {
         boolean hasNext = matches.size() > condition.size();
         List<StoreSummaryResponse> stores = matches.stream().limit(condition.size())
                 .map(StoreSummaryResponse::of).toList();
         return new StoreListResponse(withStats(stores), condition.page(), condition.size(), hasNext);
     }
 
-    // 키워드만 있는 검색(카테고리 함께 가능)
+    // 키워드 검색(카테고리·인원·날짜 함께 가능)
     private boolean usesOpenSearch(StoreSearchCondition condition)
     {
-        return condition.keyword() != null && condition.partySize() == null && !condition.hasDateTime()
+        return condition.keyword() != null
                 && storeSearchIndex.filter(StoreSearchIndex::searchEnabled).isPresent();
     }
 
@@ -132,6 +143,9 @@ public class StoreService {
     {
         if (condition.page() > MAX_KEYWORD_PAGE) {
             throw new BusinessException(ErrorCode.INVALID_INPUT);
+        }
+        if (condition.partySize() != null || condition.hasDateTime()) {
+            return searchByKeywordWithFilter(condition);
         }
         List<Long> ids;
         try {
@@ -149,6 +163,31 @@ public class StoreService {
                 .map(found::get).filter(Objects::nonNull)
                 .map(StoreSummaryResponse::of).toList();
         return new StoreListResponse(withStats(stores), condition.page(), condition.size(), hasNext);
+    }
+
+    // 키워드 후보 id(관련도 순 최대 KEYWORD_CANDIDATE_LIMIT개) → DB 예약 조건 → 관련도 순 페이지.
+    // 한계: 후보 밖 매장은 예약 가능해도 나오지 않음
+    private StoreListResponse searchByKeywordWithFilter(StoreSearchCondition condition)
+    {
+        List<Long> ids;
+        try {
+            ids = storeSearchIndex.orElseThrow().searchIds(condition.keyword(), condition.category(),
+                    0, KEYWORD_CANDIDATE_LIMIT);
+        } catch (RestClientException e) {
+            log.warn("OpenSearch 키워드 검색 실패, DB 검색으로 대체: {}", e.toString());
+            return searchWithFilter(condition);
+        }
+        if (ids.isEmpty()) {
+            return toPage(condition, List.of());
+        }
+        String storeIds = ids.stream().map(String::valueOf).collect(Collectors.joining(",", "{", "}"));
+        Map<Long, Store> available = findFiltered(condition, null, storeIds, ids.size(), 0).stream()
+                .collect(Collectors.toMap(Store::getId, Function.identity()));
+        List<Store> ordered = ids.stream().map(available::get).filter(Objects::nonNull)
+                .skip((long) condition.page() * condition.size())
+                .limit(condition.size() + 1L)
+                .toList();
+        return toPage(condition, ordered);
     }
 
     // 한 페이지 매장의 영업 상태·별점을 id 목록으로 한 번씩만 읽어 채운다 (지도 목록 MapStoreEnricher와 같은 규칙)
