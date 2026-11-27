@@ -50,6 +50,8 @@ docker compose ps postgres
 
 정상 확인은 기본 포트 기준 `curl --fail http://localhost:8080/actuator/health`로 한다. 목 계정·매장 데이터는 앱 시작과 Flyway 적용 후 [README의 목 데이터 절차](../README.md#로컬-예약-api-확인)를 따른다. 테스트 전에 목 데이터를 넣을 필요는 없다.
 
+Compose에서 앱과 Grafana를 함께 실행하는 방법과 내부 헬스체크는 [Grafana 모니터링](../deploy/README.md#grafana-모니터링)을 따른다.
+
 ## 검증
 
 통합·동시성·마이그레이션 테스트는 실제 PostgreSQL을 사용하며 데이터를 쓰거나 스키마를 만든다. Redis 경로 테스트는 `REDIS_HOST`·`REDIS_PORT`(기본 `localhost:6379`)의 DB 14·15를 비우고 사용한다. 보존할 데이터가 없는 개발자 전용 테스트 DB와 Redis를 사용한다. 운영·공용 DB를 연결하거나 개발 DB의 데이터를 지워 테스트 환경을 만들지 않는다.
