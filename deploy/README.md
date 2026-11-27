@@ -50,12 +50,14 @@ scp -i 키.pem catchtable.dump ubuntu@<탄력적IP>:~/
 # EC2에서 (deploy 폴더)
 docker compose up -d postgres
 docker compose exec -T postgres pg_restore -U catchtable -d catchtable --no-owner --no-acl < ~/catchtable.dump
-docker compose up -d --build app
+docker compose up -d --build
 ```
 
 덤프의 스키마가 최신보다 낮으면 앱이 시작할 때 Flyway가 남은 마이그레이션을 적용한다. 빈 DB로 시작하려면 복원을 건너뛰고 `docker compose up -d --build`만 실행한다.
 
-### 확인
+### 기본 구성 확인
+
+모니터링을 함께 실행하면 아래 Grafana 절의 내부 헬스체크 명령을 사용한다.
 
 ```bash
 curl http://localhost/actuator/health          # {"status":"UP"}
@@ -63,6 +65,27 @@ docker compose logs -f app                      # 로그
 ```
 
 PC에서 `http://<탄력적IP>/actuator/health`도 열리는지 확인한다. `DEGRADED`는 Redis에 연결할 수 없다는 뜻이다. 앱은 PostgreSQL만으로 계속 동작하므로 `docker compose logs redis`를 확인한다.
+
+### Grafana 모니터링
+
+Mac과 EC2에서 같은 대시보드를 사용한다. `deploy` 디렉터리에서 `.env`에 아래 값을 설정한다. 로컬에서 별도로 검증할 때는 고유한 `COMPOSE_PROJECT_NAME`(새 DB·지표 볼륨), `APP_IMAGE`(별도 앱 이미지 태그), `APP_PORT=127.0.0.1:18080`을 함께 지정한다. EC2에서 기존 데이터를 이어 쓰려면 기존 Compose 프로젝트 이름을 유지한다.
+
+```dotenv
+COMPOSE_FILE=docker-compose.yml:compose.monitoring.yml
+GRAFANA_ADMIN_PASSWORD=<처음 로그인할 때 쓸 관리자 암호>
+```
+
+```bash
+docker compose config --quiet
+docker compose up -d --build
+docker compose exec -T prometheus wget -qO- http://app:8081/actuator/health
+```
+
+모니터링 구성에서는 Actuator가 내부 포트 8081로 이동한다. 기존 외부 헬스체크가 있다면 이 경로 변경을 반영한다. Redis 연결 장애 시 health는 HTTP 200과 `DEGRADED`를 반환한다. Prometheus의 `up`은 지표 수집 성공 여부를 나타낸다.
+
+로컬에서는 [Grafana 대시보드](http://localhost:3000/d/catchtable-backend)에서 기본 관리자 계정으로 로그인한다. EC2에서는 PC에서 `ssh -N -L 3000:127.0.0.1:3000 ubuntu@<EC2 주소>`로 연결한 후 같은 주소를 연다. Grafana는 루프백에 바인딩되고 Prometheus와 관리 포트는 Compose 내부에서 접근한다. Grafana 포트를 바꾸려면 `GRAFANA_PORT`를 설정한다.
+
+[대시보드 JSON](monitoring/grafana/dashboards/backend.json)과 [데이터 소스](monitoring/grafana/provisioning/datasources/prometheus.yml)는 시작 시 자동으로 등록된다. API 그래프는 SSE 구독을 제외한 완료 요청을 집계한다. API를 몇 번 호출한 후 15초 간격으로 두 번 이상 수집되면 요청량과 p95를 확인할 수 있다. 요청이 없는 구간의 p95와 오류율은 비어 있을 수 있다. CPU는 앱 JVM 프로세스 기준이며, 플랫폼 스레드 수에는 Java 21 가상 스레드가 포함되지 않는다. 최근 5분 GC 정지 시간 합계와 힙 사용량, HikariCP 사용률과 연결 대기를 p95 변화와 함께 본다. Grafana와 Prometheus 데이터는 실행 환경별 Docker 볼륨에 보관된다.
 
 ### 웨이팅 장부 접수 켜기
 

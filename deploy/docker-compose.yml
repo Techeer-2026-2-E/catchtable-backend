@@ -33,7 +33,7 @@ services:
 
   app:
     build: ..
-    image: catchtable-backend
+    image: ${APP_IMAGE:-catchtable-backend}
     restart: unless-stopped
     depends_on:
       postgres:

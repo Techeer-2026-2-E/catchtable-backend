@@ -1,0 +1,7 @@
+apiVersion: 1
+providers:
+  - name: CatchTable
+    type: file
+    updateIntervalSeconds: 15
+    options:
+      path: /etc/grafana/dashboards
